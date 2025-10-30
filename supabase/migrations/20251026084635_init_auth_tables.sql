@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS organisations (
   permissions JSONB NOT NULL DEFAULT '{}',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  name TEXT
+  name TEXT,
   stripe_customer_id TEXT
 );
 
