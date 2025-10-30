@@ -20,7 +20,6 @@ export const scrapeRightmove = task({
     const { knowledgeBaseId } = payload
     
     logger.info("🏠 Starting Rightmove scraper", { knowledgeBaseId })
-    // 
 
     // Get knowledge base details
     const supabase = createTriggerClient()
