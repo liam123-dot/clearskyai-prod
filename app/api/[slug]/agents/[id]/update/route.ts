@@ -71,6 +71,7 @@ export async function PATCH(
       updateData.voice = {
         ...(assistant.voice as any),
         voiceId: voiceId,
+        provider: 'elevenlabs',
       }
     }
 
