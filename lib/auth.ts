@@ -1,5 +1,5 @@
 'use server'
-import { withAuth } from '@workos-inc/authkit-nextjs';
+import { getSignInUrl, withAuth } from '@workos-inc/authkit-nextjs';
 import { WorkOS } from '@workos-inc/node';
 import { createServiceClient } from '@/lib/supabase/server';
 import { Organisation, DEFAULT_PERMISSIONS } from '@/types/organisation';
@@ -191,7 +191,8 @@ export async function getAuthSession(requestedSlug?: string) {
   }
 
   if (!effectiveOrgId || !organisation) {
-    redirect('/');
+    const signInUrl = await getSignInUrl()
+    redirect(signInUrl)
   }
 
   return { 

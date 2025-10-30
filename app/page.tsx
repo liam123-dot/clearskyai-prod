@@ -15,8 +15,6 @@ export default async function Home() {
     redirect("/admin")
   } else if (user && slug) {
     redirect(`/${slug}`)
-  } else {
-    redirect(await getSignInUrl({redirectUri: `${process.env.NEXT_PUBLIC_APP_URL}/signedin`}))
   }
 
 }
