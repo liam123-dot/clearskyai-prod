@@ -9,8 +9,6 @@ The `agents` table stores AI agents that are associated with organizations and s
 | `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Internal database ID |
 | `organization_id` | UUID | REFERENCES organisations(id) ON DELETE CASCADE | Organization that owns this agent |
 | `vapi_assistant_id` | TEXT | UNIQUE, NOT NULL | VAPI assistant ID |
-| `vapi_phone_number_id` | TEXT | NULL | VAPI phone number ID for SIP calling |
-| `sip_uri` | TEXT | NULL | SIP URI for forwarding calls (e.g., sip:username@sip.vapi.ai) |
 | `created_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Timestamp when the record was created |
 | `updated_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Timestamp when the record was last updated |
 
@@ -18,7 +16,6 @@ The `agents` table stores AI agents that are associated with organizations and s
 
 - `idx_agents_organization_id` on `organization_id` - Fast lookups by organization
 - `idx_agents_vapi_assistant_id` on `vapi_assistant_id` - Fast lookups by VAPI assistant ID
-- `idx_agents_sip_uri` on `sip_uri` - Fast lookups by SIP URI
 
 ## Triggers
 
@@ -30,14 +27,6 @@ The `agents` table stores AI agents that are associated with organizations and s
 - The `vapi_assistant_id` is unique across all agents and maps to the VAPI platform
 - When an organization is deleted, their agents are automatically deleted (CASCADE)
 - Agents are synchronized with VAPI assistants
-
-### SIP Configuration
-
-- `vapi_phone_number_id` and `sip_uri` are automatically created when a phone number is first assigned to the agent
-- Multiple phone numbers can be assigned to the same agent, all using the same SIP configuration
-- The SIP URI is in the format `sip:agent_{agent_id}@sip.vapi.ai`
-- Incoming calls to phone numbers assigned to this agent are forwarded to the agent's SIP URI via `/api/agent/[id]/call-incoming`
-- This allows business logic to be applied before forwarding to VAPI
 
 ## Example Queries
 

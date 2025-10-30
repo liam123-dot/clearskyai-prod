@@ -2,7 +2,7 @@ import { getPhoneNumbersByOrganization } from '@/lib/phone-numbers'
 import { getAgentsByOrganization } from '@/lib/vapi/agents'
 import { createServiceClient } from '@/lib/supabase/server'
 import { ImportTwilioDialog } from '@/components/phone-numbers/import-twilio-dialog'
-import { BuyNumberDialog } from '@/components/phone-numbers/buy-number-dialog'
+// import { BuyNumberDialog } from '@/components/phone-numbers/buy-number-dialog'
 import { PhoneNumbersTable } from '@/components/phone-numbers/phone-numbers-table'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
@@ -48,7 +48,7 @@ export default async function OrganizationPhoneNumbersPage({ params }: PageProps
         </div>
         <div className="flex gap-2">
           <ImportTwilioDialog isAdmin={false} organizationSlug={slug} />
-          <BuyNumberDialog isAdmin={false} organizationSlug={slug} />
+          {/* <BuyNumberDialog isAdmin={false} organizationSlug={slug} /> */}
         </div>
       </div>
 
