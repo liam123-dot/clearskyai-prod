@@ -7,7 +7,7 @@ import { getSignInUrl } from "@workos-inc/authkit-nextjs";
 
 export default async function Home() {
   const { user, slug, isAdmin } = await getAuthSession()
-
+// 
   if (isAdmin) {
     redirect("/admin")
   } else if (user && slug) {
