@@ -29,6 +29,7 @@ interface AgentSettingsFormProps {
   slug: string
   initialPrompt: string
   initialVoiceId: string
+  initialFirstMessage: string
 }
 
 export function AgentSettingsForm({
@@ -36,7 +37,9 @@ export function AgentSettingsForm({
   slug,
   initialPrompt,
   initialVoiceId,
+  initialFirstMessage,
 }: AgentSettingsFormProps) {
+  const [firstMessage, setFirstMessage] = useState(initialFirstMessage)
   const [prompt, setPrompt] = useState(initialPrompt)
   const [selectedVoiceId, setSelectedVoiceId] = useState(initialVoiceId)
   const [voices, setVoices] = useState<Voice[]>([])
@@ -135,7 +138,9 @@ export function AgentSettingsForm({
     e.preventDefault()
 
     const hasChanges =
-      prompt !== initialPrompt || selectedVoiceId !== initialVoiceId
+      firstMessage !== initialFirstMessage ||
+      prompt !== initialPrompt ||
+      selectedVoiceId !== initialVoiceId
 
     if (!hasChanges) {
       toast.info('No changes to save')
@@ -151,6 +156,7 @@ export function AgentSettingsForm({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          firstMessage: firstMessage !== initialFirstMessage ? firstMessage : undefined,
           prompt: prompt !== initialPrompt ? prompt : undefined,
           voiceId: selectedVoiceId !== initialVoiceId ? selectedVoiceId : undefined,
         }),
@@ -181,6 +187,30 @@ export function AgentSettingsForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl">
+      <Card>
+        <CardHeader>
+          <CardTitle>First Message</CardTitle>
+          <CardDescription>
+            Configure the first message that the agent will say when a call starts.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="firstMessage">First Message</Label>
+            <Textarea
+              id="firstMessage"
+              placeholder="Enter the first message..."
+              value={firstMessage}
+              onChange={(e) => setFirstMessage(e.target.value)}
+              className="min-h-[100px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              This is the initial greeting message that will be spoken when a call begins.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>System Prompt</CardTitle>
@@ -361,7 +391,12 @@ export function AgentSettingsForm({
       <div className="flex justify-end gap-4">
         <Button
           type="submit"
-          disabled={isSaving || prompt === initialPrompt && selectedVoiceId === initialVoiceId}
+          disabled={
+            isSaving ||
+            (firstMessage === initialFirstMessage &&
+              prompt === initialPrompt &&
+              selectedVoiceId === initialVoiceId)
+          }
         >
           {isSaving ? (
             <>

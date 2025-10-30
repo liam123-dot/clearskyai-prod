@@ -12,12 +12,12 @@ export async function PATCH(
     const { organizationId } = await getAuthSession(slug)
 
     const body = await request.json()
-    const { prompt, voiceId } = body
+    const { firstMessage, prompt, voiceId } = body
 
     // Validate that at least one field is being updated
-    if (prompt === undefined && voiceId === undefined) {
+    if (firstMessage === undefined && prompt === undefined && voiceId === undefined) {
       return NextResponse.json(
-        { error: 'At least one of prompt or voiceId must be provided' },
+        { error: 'At least one of firstMessage, prompt, or voiceId must be provided' },
         { status: 400 }
       )
     }
@@ -51,6 +51,11 @@ export async function PATCH(
 
     // Prepare update object
     const updateData: any = {}
+
+    // Update firstMessage if provided
+    if (firstMessage !== undefined) {
+      updateData.firstMessage = firstMessage
+    }
 
     // Update prompt if provided
     if (prompt !== undefined) {

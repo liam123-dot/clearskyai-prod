@@ -36,6 +36,9 @@ export default async function AgentConfigurationPage({ params }: { params: Promi
     notFound()
   }
 
+  // Extract firstMessage
+  const firstMessage = (agent.vapiAssistant.firstMessage as string) || ''
+
   // Extract prompt from system message
   const prompt = agent.vapiAssistant.model?.messages?.find(
     (msg: any) => msg.role === 'system'
@@ -49,6 +52,7 @@ export default async function AgentConfigurationPage({ params }: { params: Promi
       <AgentSettingsForm
         agentId={id}
         slug={slug}
+        initialFirstMessage={firstMessage}
         initialPrompt={prompt}
         initialVoiceId={voiceId}
       />
