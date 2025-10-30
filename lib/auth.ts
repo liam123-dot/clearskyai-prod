@@ -4,7 +4,6 @@ import { WorkOS } from '@workos-inc/node';
 import { createServiceClient } from '@/lib/supabase/server';
 import { Organisation, DEFAULT_PERMISSIONS } from '@/types/organisation';
 import { checkIsAdminEmail } from '@/app/(admin)/lib/admin-auth';
-import { redirect } from 'next/navigation';
 
 const workos = new WorkOS(process.env.WORKOS_API_KEY);
 
@@ -189,13 +188,19 @@ export async function getAuthSession(requestedSlug?: string) {
     // No slug requested, use user's org
     organisation = userOrganisation;
     slug = userSlug;
+    effectiveOrgId = userOrganisation?.id;
   }
 
+<<<<<<< HEAD
   if (!effectiveOrgId || !organisation) {
     const signInUrl = await getSignInUrl()
     redirect(signInUrl)
   }
 
+=======
+  // Don't redirect here - let the calling code handle the case where no org exists
+  // This prevents infinite loops when called from the base route
+>>>>>>> 05f5d060d099e52685de37df76e29d244b43f427
   return { 
     user, 
     organizationId: effectiveOrgId, // Always the DB ID, never WorkOS ID
