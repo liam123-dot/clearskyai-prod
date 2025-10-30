@@ -183,6 +183,7 @@ export async function getAuthSession(requestedSlug?: string) {
       effectiveOrgId = undefined;
       organisation = userOrganisation;
       slug = userSlug;
+      
     }
   } else {
     // No slug requested, use user's org
