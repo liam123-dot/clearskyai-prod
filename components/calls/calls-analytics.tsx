@@ -19,7 +19,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Loader2, Info } from 'lucide-react'
+import { Loader2, Info, Clock } from 'lucide-react'
 import { IconPhone, IconRobot, IconUsers, IconRotateClockwise } from '@tabler/icons-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { CardDescription } from '@/components/ui/card'
@@ -57,6 +57,7 @@ interface AnalyticsData {
     agent: number
     team: number
     teamAnswered: number
+    totalDurationSeconds: number
   }
 }
 
@@ -75,12 +76,6 @@ const TIME_GROUPINGS = [
   { value: 'month', label: 'Month' },
 ]
 
-const CHART_SERIES = [
-  { value: 'total', label: 'Total Calls' },
-  { value: 'agentDirect', label: 'Direct to Agent' },
-  { value: 'teamAnswered', label: 'Team Pickup' },
-  { value: 'agentSaves', label: 'Agent Saves' },
-]
 
 export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: CallsAnalyticsProps) {
   const router = useRouter()
@@ -135,15 +130,6 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
   )
   const [agentsOpen, setAgentsOpen] = useState(false)
   const [statusesOpen, setStatusesOpen] = useState(false)
-  
-  // Get initial chart series from URL or default to total
-  const getInitialChartSeries = useCallback(() => {
-    const seriesParam = searchParams.get('chartSeries')
-    return seriesParam ? seriesParam.split(',').filter(Boolean) : ['total']
-  }, [searchParams])
-  
-  const [selectedChartSeries, setSelectedChartSeries] = useState<string[]>(getInitialChartSeries)
-  const [chartSeriesOpen, setChartSeriesOpen] = useState(false)
 
   // Track if component has mounted to prevent updates during initial render
   const hasMounted = useRef(false)
@@ -155,7 +141,6 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
     agents?: string[]
     statuses?: string[]
     groupBy?: string
-    chartSeries?: string[]
     organizationId?: string | undefined
   }) => {
     // Don't update URL during initial render
@@ -189,17 +174,6 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
           params.delete('groupBy')
         } else {
           params.set('groupBy', updates.groupBy)
-        }
-      }
-      if (updates.chartSeries !== undefined) {
-        const defaultSeries = ['total']
-        const isDefault = updates.chartSeries.length === defaultSeries.length &&
-          updates.chartSeries.every(s => defaultSeries.includes(s)) &&
-          defaultSeries.every(s => updates.chartSeries!.includes(s))
-        if (isDefault) {
-          params.delete('chartSeries')
-        } else {
-          params.set('chartSeries', updates.chartSeries.join(','))
         }
       }
       if (updates.organizationId !== undefined) {
@@ -359,16 +333,6 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
       setTimeGrouping(urlGroupBy)
     }
 
-    const urlChartSeries = searchParams.get('chartSeries')
-    if (urlChartSeries !== null) {
-      const urlChartSeriesArray = urlChartSeries ? urlChartSeries.split(',').filter(Boolean) : []
-      const currentSeriesStr = JSON.stringify(selectedChartSeries.sort())
-      const urlSeriesStr = JSON.stringify(urlChartSeriesArray.sort())
-      if (currentSeriesStr !== urlSeriesStr) {
-        setSelectedChartSeries(urlChartSeriesArray.length > 0 ? urlChartSeriesArray : ['total'])
-      }
-    }
-
     // Reset flag after state updates complete
     requestAnimationFrame(() => {
       isUpdatingFromURL.current = false
@@ -414,7 +378,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
 
       // Fetch analytics data
       const { data: analyticsData, isLoading: analyticsLoading, error } = useQuery<AnalyticsData>({
-        queryKey: ['calls-analytics', isAdmin ? 'admin' : slug, selectedOrganizationId, dateRange, selectedAgents, selectedStatuses, timeGrouping],
+        queryKey: ['calls-analytics', isAdmin ? 'admin' : slug, selectedOrganizationId, dateRange.from.toISOString(), dateRange.to.toISOString(), selectedAgents, selectedStatuses, timeGrouping],
         queryFn: async () => {
           // Normalize date range: start from midnight of start day, end at end of day for end day
           const normalizedFrom = new Date(dateRange.from)
@@ -514,45 +478,6 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
     }, 0)
   }
 
-  const toggleChartSeries = (series: string) => {
-    setSelectedChartSeries(prev => {
-      const updated = prev.includes(series)
-        ? prev.filter(s => s !== series)
-        : [...prev, series]
-      // Ensure at least one series is selected
-      if (updated.length === 0) {
-        return prev
-      }
-      // Defer URL update to avoid render issues
-      setTimeout(() => {
-        if (hasMounted.current) {
-          updateURL({ chartSeries: updated })
-        }
-      }, 0)
-      return updated
-    })
-  }
-
-  const selectAllChartSeries = () => {
-    const allSeries = CHART_SERIES.map(s => s.value)
-    setSelectedChartSeries(allSeries)
-    setTimeout(() => {
-      if (hasMounted.current) {
-        updateURL({ chartSeries: allSeries })
-      }
-    }, 0)
-  }
-
-  const deselectAllChartSeries = () => {
-    // Keep at least one selected - default to total
-    setSelectedChartSeries(['total'])
-    setTimeout(() => {
-      if (hasMounted.current) {
-        updateURL({ chartSeries: ['total'] })
-      }
-    }, 0)
-  }
-
   const formatPeriodLabel = (period: string) => {
     switch (timeGrouping) {
       case '15min':
@@ -570,43 +495,28 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
     }
   }
 
-  const totals = analyticsData?.totals || { total: 0, agent: 0, team: 0, teamAnswered: 0 }
+  const totals = analyticsData?.totals || { total: 0, agent: 0, team: 0, teamAnswered: 0, totalDurationSeconds: 0 }
   const agentPickups = totals.team - totals.teamAnswered
   const totalAgentHandled = totals.agent + agentPickups
   const agentHandledPercentage = totals.total > 0 ? ((totalAgentHandled / totals.total) * 100).toFixed(1) : '0'
   const savedCallsPercentage = totals.total > 0 ? ((agentPickups / totals.total) * 100).toFixed(1) : '0'
 
-  // Build dynamic chart config based on selected series
+  // Format duration as "xm ys"
+  const formatDuration = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}m ${secs}s`
+  }
+
+  // Chart config - only show total calls
   const chartConfig = useMemo(() => {
-    const config: Record<string, { label: string; color: string }> = {}
-    
-    if (selectedChartSeries.includes('total')) {
-      config.total = {
+    return {
+      total: {
         label: 'Total Calls',
         color: 'hsl(217 91% 60%)', // blue-500
       }
-    }
-    if (selectedChartSeries.includes('agentDirect')) {
-      config.agentDirect = {
-        label: 'Direct to Agent',
-        color: 'hsl(221 83% 53%)', // blue-600
-      }
-    }
-    if (selectedChartSeries.includes('teamAnswered')) {
-      config.teamAnswered = {
-        label: 'Team Pickup',
-        color: 'hsl(215 20% 65%)', // muted slate-blue
-      }
-    }
-    if (selectedChartSeries.includes('agentSaves')) {
-      config.agentSaves = {
-        label: 'Agent Saves',
-        color: 'hsl(160 84% 39%)', // teal-600
-      }
-    }
-    
-    return config satisfies ChartConfig
-  }, [selectedChartSeries])
+    } satisfies ChartConfig
+  }, [])
 
   // Handle organization change (admin mode only)
   const handleOrganizationChange = (value: string) => {
@@ -728,56 +638,6 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
           </SelectContent>
         </Select>
 
-        <Popover open={chartSeriesOpen} onOpenChange={setChartSeriesOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8 min-w-[140px]">
-              Chart ({selectedChartSeries.length}/{CHART_SERIES.length})
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[250px] p-4">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>Chart Series</Label>
-                <div className="flex gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={selectAllChartSeries}
-                    className="h-7 text-xs"
-                  >
-                    All
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={deselectAllChartSeries}
-                    className="h-7 text-xs"
-                  >
-                    Reset
-                  </Button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {CHART_SERIES.map((series) => (
-                  <div key={series.value} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`chart-series-${series.value}`}
-                      checked={selectedChartSeries.includes(series.value)}
-                      onCheckedChange={() => toggleChartSeries(series.value)}
-                    />
-                    <Label
-                      htmlFor={`chart-series-${series.value}`}
-                      className="text-sm font-normal cursor-pointer flex-1"
-                    >
-                      {series.label}
-                    </Label>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </PopoverContent>
-        </Popover>
-
         <Popover open={agentsOpen} onOpenChange={setAgentsOpen}>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="h-8 min-w-[140px]">
@@ -886,7 +746,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
       </div>
 
       {/* Metrics Cards - Compact Design */}
-      <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
+      <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         {/* Total Calls */}
         <Card className="overflow-hidden border-l-4 border-l-slate-400">
           <CardContent className="p-4">
@@ -967,6 +827,31 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
             </div>
           </CardContent>
         </Card>
+
+        {/* Minutes Used */}
+        <Card className="overflow-hidden border-l-4 border-l-purple-600">
+          <CardContent className="p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-2">
+                  <Clock className="h-4 w-4 text-purple-600 dark:text-purple-400 flex-shrink-0" />
+                  <span className="text-sm font-medium text-muted-foreground">Minutes Used</span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button type="button" className="text-muted-foreground/60 hover:text-muted-foreground transition-colors">
+                        <Info className="h-3 w-3" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs">
+                      <p className="text-xs">Total call duration for the selected period</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <div className="text-3xl font-bold tabular-nums tracking-tight">{formatDuration(totals.totalDurationSeconds)}</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Chart - Stacked Bar */}
@@ -991,27 +876,10 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
             <ChartContainer config={chartConfig} className="h-[300px] w-full">
               <BarChart
                 accessibilityLayer
-                data={analyticsData.groupedData.map(d => {
-                  const dataPoint: Record<string, string | number> = {
-                    period: d.period,
-                  }
-                  
-                  // Add only selected series
-                  if (selectedChartSeries.includes('total')) {
-                    dataPoint.total = d.total
-                  }
-                  if (selectedChartSeries.includes('agentDirect')) {
-                    dataPoint.agentDirect = d.agent
-                  }
-                  if (selectedChartSeries.includes('teamAnswered')) {
-                    dataPoint.teamAnswered = d.teamAnswered
-                  }
-                  if (selectedChartSeries.includes('agentSaves')) {
-                    dataPoint.agentSaves = d.team - d.teamAnswered
-                  }
-                  
-                  return dataPoint
-                })}
+                data={analyticsData.groupedData.map(d => ({
+                  period: d.period,
+                  total: d.total,
+                }))}
                 margin={{
                   left: 0,
                   right: 0,
@@ -1093,38 +961,11 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                   } 
                 />
                 <ChartLegend content={<ChartLegendContent />} />
-                {selectedChartSeries.includes('agentDirect') && (
-                  <Bar
-                    dataKey="agentDirect"
-                    stackId={selectedChartSeries.length > 1 && !selectedChartSeries.includes('total') ? "a" : undefined}
-                    fill="var(--color-agentDirect)"
-                    radius={selectedChartSeries.length === 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-                  />
-                )}
-                {selectedChartSeries.includes('teamAnswered') && (
-                  <Bar
-                    dataKey="teamAnswered"
-                    stackId={selectedChartSeries.length > 1 && !selectedChartSeries.includes('total') ? "a" : undefined}
-                    fill="var(--color-teamAnswered)"
-                    radius={selectedChartSeries.length === 1 ? [4, 4, 0, 0] : selectedChartSeries.includes('agentSaves') ? [0, 0, 0, 0] : [0, 0, 4, 4]}
-                  />
-                )}
-                {selectedChartSeries.includes('agentSaves') && (
-                  <Bar
-                    dataKey="agentSaves"
-                    stackId={selectedChartSeries.length > 1 && !selectedChartSeries.includes('total') ? "a" : undefined}
-                    fill="var(--color-agentSaves)"
-                    radius={selectedChartSeries.length === 1 ? [4, 4, 0, 0] : [4, 4, 0, 0]}
-                  />
-                )}
-                {selectedChartSeries.includes('total') && (
-                  <Bar
-                    dataKey="total"
-                    stackId={undefined}
-                    fill="var(--color-total)"
-                    radius={selectedChartSeries.length === 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-                  />
-                )}
+                <Bar
+                  dataKey="total"
+                  fill="var(--color-total)"
+                  radius={[4, 4, 0, 0]}
+                />
               </BarChart>
             </ChartContainer>
           )}

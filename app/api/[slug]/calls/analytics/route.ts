@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import type { Call } from '@/lib/calls-helpers'
-import { getWentToTeam, getTeamAnswered } from '@/lib/calls-helpers'
+import { getWentToTeam, getTeamAnswered, getCallDuration } from '@/lib/calls-helpers'
 
 export async function GET(
   request: NextRequest,
@@ -348,12 +348,14 @@ function calculateTotals(calls: Call[]): {
   agent: number
   team: number
   teamAnswered: number
+  totalDurationSeconds: number
 } {
   const totals = {
     total: calls.length,
     agent: 0,
     team: 0,
     teamAnswered: 0,
+    totalDurationSeconds: 0,
   }
 
   calls.forEach((call) => {
@@ -368,6 +370,10 @@ function calculateTotals(calls: Call[]): {
     } else {
       totals.agent++
     }
+
+    // Add call duration to total
+    const duration = getCallDuration(call.data)
+    totals.totalDurationSeconds += duration
   })
 
   return totals
