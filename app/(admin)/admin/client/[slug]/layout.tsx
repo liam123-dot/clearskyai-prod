@@ -1,5 +1,10 @@
 import { NavTabs } from "@/components/nav-tabs"
 import { getClientBySlug } from "@/lib/client"
+import { Button } from "@/components/ui/button"
+import { IconExternalLink } from "@tabler/icons-react"
+import Link from "next/link"
+
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL
 
 export default async function AdminClientLayout({ children, params }: { children: React.ReactNode, params: Promise<{ slug: string }> }) {
   const { slug } = await params
@@ -9,7 +14,24 @@ export default async function AdminClientLayout({ children, params }: { children
   return (
     <div className="px-4 lg:px-6">
       <div className="space-y-6">
-        <h1>{client?.name}</h1>
+        <div className="flex items-center gap-2">
+          <h1>{client?.name}</h1>
+          {client?.slug && baseUrl && (
+            <Button
+              variant="ghost"
+              size="sm"
+              asChild
+            >
+              <Link 
+                href={`${baseUrl}/${client.slug}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <IconExternalLink className="h-4 w-4" />
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
       <NavTabs tabs={[
         {
