@@ -20,7 +20,7 @@ interface SetupFeeDialogProps {
   organizationId: string
   currentEmail?: string | null
   hasPaymentMethod?: boolean
-  onInvoiceCreated: (invoiceUrl: string) => void
+  onInvoiceCreated?: (invoiceUrl: string) => void
 }
 
 export function SetupFeeDialog({ organizationId, currentEmail, hasPaymentMethod, onInvoiceCreated }: SetupFeeDialogProps) {
@@ -86,7 +86,7 @@ export function SetupFeeDialog({ organizationId, currentEmail, hasPaymentMethod,
       setDaysUntilDue('30')
       
       if (invoice.hosted_invoice_url) {
-        onInvoiceCreated(invoice.hosted_invoice_url)
+        onInvoiceCreated?.(invoice.hosted_invoice_url)
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : `Failed to ${chargeNow ? 'charge' : 'create'} invoice`)

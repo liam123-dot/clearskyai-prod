@@ -113,12 +113,12 @@ export function AppSidebar({ type, slug, orgName, user, ...props }: AppSidebarPr
     },
   ]
 
-  const navSecondaryItems = [
+  const navSecondaryItems = type === "admin" ? [] : [
     {
       title: "Settings",
-      url: type === "organization" ? `/${slug}/settings` : "/admin/settings",
+      url: `/${slug}/settings`,
       icon: IconSettings,
-      items: type === "organization" ? [
+      items: [
         {
           title: "General",
           url: `/${slug}/settings`,
@@ -127,7 +127,7 @@ export function AppSidebar({ type, slug, orgName, user, ...props }: AppSidebarPr
           title: "Billing",
           url: `/${slug}/settings/billing`,
         },
-      ] : undefined,
+      ],
     },
   ]
 

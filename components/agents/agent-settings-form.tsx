@@ -14,6 +14,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Play, Loader2 } from 'lucide-react'
+import { Slider } from '@/components/ui/slider'
+import { Input } from '@/components/ui/input'
 
 interface Voice {
   voice_id: string
@@ -27,16 +29,59 @@ interface Voice {
 interface AgentSettingsFormProps {
   agentId: string
   slug: string
+  isAdmin: boolean
   initialPrompt: string
   initialVoiceId: string
+  initialFirstMessage: string
+  initialEndpointing: number
+  initialEotThreshold: number
+  initialEotTimeoutMs: number
+  initialStartSpeakingPlanWaitSeconds: number
+  initialTranscriptionOnPunctuationSeconds: number
+  initialTranscriptionOnNoPunctuationSeconds: number
+  initialTranscriptionOnNumberSeconds: number
+  initialStopSpeakingPlanVoiceSeconds: number
+  initialStopSpeakingPlanNumWords: number
+  initialStopSpeakingPlanBackoffSeconds: number
+  initialServerMessages: string[]
 }
 
 export function AgentSettingsForm({
   agentId,
   slug,
+  isAdmin,
   initialPrompt,
   initialVoiceId,
+  initialFirstMessage,
+  initialEndpointing,
+  initialEotThreshold,
+  initialEotTimeoutMs,
+  initialStartSpeakingPlanWaitSeconds,
+  initialTranscriptionOnPunctuationSeconds,
+  initialTranscriptionOnNoPunctuationSeconds,
+  initialTranscriptionOnNumberSeconds,
+  initialStopSpeakingPlanVoiceSeconds,
+  initialStopSpeakingPlanNumWords,
+  initialStopSpeakingPlanBackoffSeconds,
+  initialServerMessages,
 }: AgentSettingsFormProps) {
+  // Baseline values (last saved state) - used for change detection
+  const [baselineFirstMessage, setBaselineFirstMessage] = useState(initialFirstMessage)
+  const [baselinePrompt, setBaselinePrompt] = useState(initialPrompt)
+  const [baselineVoiceId, setBaselineVoiceId] = useState(initialVoiceId)
+  const [baselineEndpointing, setBaselineEndpointing] = useState(initialEndpointing)
+  const [baselineEotThreshold, setBaselineEotThreshold] = useState(initialEotThreshold)
+  const [baselineEotTimeoutMs, setBaselineEotTimeoutMs] = useState(initialEotTimeoutMs)
+  const [baselineStartSpeakingPlanWaitSeconds, setBaselineStartSpeakingPlanWaitSeconds] = useState(initialStartSpeakingPlanWaitSeconds)
+  const [baselineTranscriptionOnPunctuationSeconds, setBaselineTranscriptionOnPunctuationSeconds] = useState(initialTranscriptionOnPunctuationSeconds)
+  const [baselineTranscriptionOnNoPunctuationSeconds, setBaselineTranscriptionOnNoPunctuationSeconds] = useState(initialTranscriptionOnNoPunctuationSeconds)
+  const [baselineTranscriptionOnNumberSeconds, setBaselineTranscriptionOnNumberSeconds] = useState(initialTranscriptionOnNumberSeconds)
+  const [baselineStopSpeakingPlanVoiceSeconds, setBaselineStopSpeakingPlanVoiceSeconds] = useState(initialStopSpeakingPlanVoiceSeconds)
+  const [baselineStopSpeakingPlanNumWords, setBaselineStopSpeakingPlanNumWords] = useState(initialStopSpeakingPlanNumWords)
+  const [baselineStopSpeakingPlanBackoffSeconds, setBaselineStopSpeakingPlanBackoffSeconds] = useState(initialStopSpeakingPlanBackoffSeconds)
+
+  // Current form values
+  const [firstMessage, setFirstMessage] = useState(initialFirstMessage)
   const [prompt, setPrompt] = useState(initialPrompt)
   const [selectedVoiceId, setSelectedVoiceId] = useState(initialVoiceId)
   const [voices, setVoices] = useState<Voice[]>([])
@@ -48,6 +93,18 @@ export function AgentSettingsForm({
   const [availableLanguages, setAvailableLanguages] = useState<string[]>([])
   const [availableAccents, setAvailableAccents] = useState<string[]>([])
   const audioRefs = useRef<Record<string, HTMLAudioElement>>({})
+  
+  // Admin-only state
+  const [endpointing, setEndpointing] = useState(initialEndpointing)
+  const [eotThreshold, setEotThreshold] = useState(initialEotThreshold)
+  const [eotTimeoutMs, setEotTimeoutMs] = useState(initialEotTimeoutMs)
+  const [startSpeakingPlanWaitSeconds, setStartSpeakingPlanWaitSeconds] = useState(initialStartSpeakingPlanWaitSeconds)
+  const [transcriptionOnPunctuationSeconds, setTranscriptionOnPunctuationSeconds] = useState(initialTranscriptionOnPunctuationSeconds)
+  const [transcriptionOnNoPunctuationSeconds, setTranscriptionOnNoPunctuationSeconds] = useState(initialTranscriptionOnNoPunctuationSeconds)
+  const [transcriptionOnNumberSeconds, setTranscriptionOnNumberSeconds] = useState(initialTranscriptionOnNumberSeconds)
+  const [stopSpeakingPlanVoiceSeconds, setStopSpeakingPlanVoiceSeconds] = useState(initialStopSpeakingPlanVoiceSeconds)
+  const [stopSpeakingPlanNumWords, setStopSpeakingPlanNumWords] = useState(initialStopSpeakingPlanNumWords)
+  const [stopSpeakingPlanBackoffSeconds, setStopSpeakingPlanBackoffSeconds] = useState(initialStopSpeakingPlanBackoffSeconds)
 
   // Fetch voices with filters
   useEffect(() => {
@@ -135,7 +192,21 @@ export function AgentSettingsForm({
     e.preventDefault()
 
     const hasChanges =
-      prompt !== initialPrompt || selectedVoiceId !== initialVoiceId
+      firstMessage !== baselineFirstMessage ||
+      prompt !== baselinePrompt ||
+      selectedVoiceId !== baselineVoiceId ||
+      (isAdmin && (
+        endpointing !== baselineEndpointing ||
+        eotThreshold !== baselineEotThreshold ||
+        eotTimeoutMs !== baselineEotTimeoutMs ||
+        startSpeakingPlanWaitSeconds !== baselineStartSpeakingPlanWaitSeconds ||
+        transcriptionOnPunctuationSeconds !== baselineTranscriptionOnPunctuationSeconds ||
+        transcriptionOnNoPunctuationSeconds !== baselineTranscriptionOnNoPunctuationSeconds ||
+        transcriptionOnNumberSeconds !== baselineTranscriptionOnNumberSeconds ||
+        stopSpeakingPlanVoiceSeconds !== baselineStopSpeakingPlanVoiceSeconds ||
+        stopSpeakingPlanNumWords !== baselineStopSpeakingPlanNumWords ||
+        stopSpeakingPlanBackoffSeconds !== baselineStopSpeakingPlanBackoffSeconds
+      ))
 
     if (!hasChanges) {
       toast.info('No changes to save')
@@ -145,15 +216,66 @@ export function AgentSettingsForm({
     setIsSaving(true)
 
     try {
+      const updatePayload: any = {
+        firstMessage: firstMessage !== baselineFirstMessage ? firstMessage : undefined,
+        prompt: prompt !== baselinePrompt ? prompt : undefined,
+        voiceId: selectedVoiceId !== baselineVoiceId ? selectedVoiceId : undefined,
+      }
+
+      // Add admin-only fields if user is admin
+      if (isAdmin) {
+        // Always set serverMessages to end-of-call-report when admin saves
+        updatePayload.serverMessages = ['end-of-call-report']
+
+        // Always set transcriber with flux-general-en and deepgram provider when admin saves
+        updatePayload.transcriber = {
+          model: 'flux-general-en',
+          provider: 'deepgram',
+          language: 'en',
+          endpointing,
+          eotThreshold,
+          eotTimeoutMs,
+        }
+
+        // Always set startSpeakingPlan with smartEndpointingEnabled: false when admin saves
+        updatePayload.startSpeakingPlan = {
+          waitSeconds: startSpeakingPlanWaitSeconds,
+          smartEndpointingEnabled: false,
+          transcriptionEndpointingPlan: {
+            onPunctuationSeconds: transcriptionOnPunctuationSeconds,
+            onNoPunctuationSeconds: transcriptionOnNoPunctuationSeconds,
+            onNumberSeconds: transcriptionOnNumberSeconds,
+          },
+        }
+
+        // Only update stopSpeakingPlan if it changed
+        const hasStopSpeakingPlanChanges =
+          stopSpeakingPlanVoiceSeconds !== baselineStopSpeakingPlanVoiceSeconds ||
+          stopSpeakingPlanNumWords !== baselineStopSpeakingPlanNumWords ||
+          stopSpeakingPlanBackoffSeconds !== baselineStopSpeakingPlanBackoffSeconds
+
+        if (hasStopSpeakingPlanChanges) {
+          updatePayload.stopSpeakingPlan = {
+            voiceSeconds: stopSpeakingPlanVoiceSeconds,
+            numWords: stopSpeakingPlanNumWords,
+            backoffSeconds: stopSpeakingPlanBackoffSeconds,
+          }
+        }
+      }
+
+      // Remove undefined fields
+      Object.keys(updatePayload).forEach(key => {
+        if (updatePayload[key] === undefined) {
+          delete updatePayload[key]
+        }
+      })
+
       const response = await fetch(`/api/${slug}/agents/${agentId}/update`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          prompt: prompt !== initialPrompt ? prompt : undefined,
-          voiceId: selectedVoiceId !== initialVoiceId ? selectedVoiceId : undefined,
-        }),
+        body: JSON.stringify(updatePayload),
       })
 
       const data = await response.json()
@@ -162,10 +284,25 @@ export function AgentSettingsForm({
         throw new Error(data.error || 'Failed to update agent')
       }
 
-      toast.success('Agent settings updated successfully!')
+      // Optimistic update: update baseline values to current values
+      setBaselineFirstMessage(firstMessage)
+      setBaselinePrompt(prompt)
+      setBaselineVoiceId(selectedVoiceId)
       
-      // Refresh the page to show updated data
-      window.location.reload()
+      if (isAdmin) {
+        setBaselineEndpointing(endpointing)
+        setBaselineEotThreshold(eotThreshold)
+        setBaselineEotTimeoutMs(eotTimeoutMs)
+        setBaselineStartSpeakingPlanWaitSeconds(startSpeakingPlanWaitSeconds)
+        setBaselineTranscriptionOnPunctuationSeconds(transcriptionOnPunctuationSeconds)
+        setBaselineTranscriptionOnNoPunctuationSeconds(transcriptionOnNoPunctuationSeconds)
+        setBaselineTranscriptionOnNumberSeconds(transcriptionOnNumberSeconds)
+        setBaselineStopSpeakingPlanVoiceSeconds(stopSpeakingPlanVoiceSeconds)
+        setBaselineStopSpeakingPlanNumWords(stopSpeakingPlanNumWords)
+        setBaselineStopSpeakingPlanBackoffSeconds(stopSpeakingPlanBackoffSeconds)
+      }
+
+      toast.success('Agent settings updated successfully!')
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'An error occurred while updating the agent.'
@@ -181,6 +318,30 @@ export function AgentSettingsForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl">
+      <Card>
+        <CardHeader>
+          <CardTitle>First Message</CardTitle>
+          <CardDescription>
+            Configure the first message that the agent will say when a call starts.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="firstMessage">First Message</Label>
+            <Textarea
+              id="firstMessage"
+              placeholder="Enter the first message..."
+              value={firstMessage}
+              onChange={(e) => setFirstMessage(e.target.value)}
+              className="min-h-[100px]"
+            />
+            <p className="text-xs text-muted-foreground">
+              This is the initial greeting message that will be spoken when a call begins.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>System Prompt</CardTitle>
@@ -358,10 +519,231 @@ export function AgentSettingsForm({
         </CardContent>
       </Card>
 
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Advanced Settings</CardTitle>
+            <CardDescription>
+              Advanced transcriber and speaking plan configurations (Admin only).
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="endpointing" className="text-sm font-medium">
+                  Endpointing: {endpointing}
+                </Label>
+                <Slider
+                  id="endpointing"
+                  min={0}
+                  max={1000}
+                  step={10}
+                  value={[endpointing]}
+                  onValueChange={(values) => setEndpointing(values[0])}
+                  className="mt-2"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Controls when the transcriber detects the end of a phrase (0-1000).
+                </p>
+              </div>
+
+              <div>
+                <Label htmlFor="eotThreshold" className="text-sm font-medium">
+                  EOT Threshold: {eotThreshold.toFixed(2)}
+                </Label>
+                <Slider
+                  id="eotThreshold"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={[eotThreshold]}
+                  onValueChange={(values) => setEotThreshold(values[0])}
+                  className="mt-2"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  End-of-turn confidence threshold (0.0-1.0).
+                </p>
+              </div>
+
+              <div>
+                <Label htmlFor="eotTimeoutMs" className="text-sm font-medium">
+                  EOT Timeout (ms): {eotTimeoutMs}
+                </Label>
+                <Slider
+                  id="eotTimeoutMs"
+                  min={0}
+                  max={5000}
+                  step={100}
+                  value={[eotTimeoutMs]}
+                  onValueChange={(values) => setEotTimeoutMs(values[0])}
+                  className="mt-2"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Maximum time to wait for end-of-turn detection in milliseconds (0-5000ms).
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-6 pt-4 border-t">
+              <div>
+                <Label htmlFor="startSpeakingPlanWaitSeconds" className="text-sm font-medium">
+                  Start Speaking Wait: {startSpeakingPlanWaitSeconds.toFixed(1)} (sec)
+                </Label>
+                <Slider
+                  id="startSpeakingPlanWaitSeconds"
+                  min={0}
+                  max={5}
+                  step={0.1}
+                  value={[startSpeakingPlanWaitSeconds]}
+                  onValueChange={(values) => setStartSpeakingPlanWaitSeconds(values[0])}
+                  className="mt-2"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  How long to wait before the agent starts speaking (0-5 sec).
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <Label className="text-sm font-medium">Transcription Endpointing Plan</Label>
+                
+                <div>
+                  <Label htmlFor="transcriptionOnPunctuationSeconds" className="text-sm font-medium">
+                    On Punctuation: {transcriptionOnPunctuationSeconds.toFixed(1)} (sec)
+                  </Label>
+                  <Slider
+                    id="transcriptionOnPunctuationSeconds"
+                    min={0}
+                    max={3}
+                    step={0.1}
+                    value={[transcriptionOnPunctuationSeconds]}
+                    onValueChange={(values) => setTranscriptionOnPunctuationSeconds(values[0])}
+                    className="mt-2"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Minimum seconds to wait after transcription ending with punctuation (0-3 sec).
+                  </p>
+                </div>
+
+                <div>
+                  <Label htmlFor="transcriptionOnNoPunctuationSeconds" className="text-sm font-medium">
+                    On No Punctuation: {transcriptionOnNoPunctuationSeconds.toFixed(1)} (sec)
+                  </Label>
+                  <Slider
+                    id="transcriptionOnNoPunctuationSeconds"
+                    min={0}
+                    max={3}
+                    step={0.1}
+                    value={[transcriptionOnNoPunctuationSeconds]}
+                    onValueChange={(values) => setTranscriptionOnNoPunctuationSeconds(values[0])}
+                    className="mt-2"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Minimum seconds to wait after transcription ending without punctuation (0-3 sec).
+                  </p>
+                </div>
+
+                <div>
+                  <Label htmlFor="transcriptionOnNumberSeconds" className="text-sm font-medium">
+                    On Number: {transcriptionOnNumberSeconds.toFixed(1)} (sec)
+                  </Label>
+                  <Slider
+                    id="transcriptionOnNumberSeconds"
+                    min={0}
+                    max={3}
+                    step={0.1}
+                    value={[transcriptionOnNumberSeconds]}
+                    onValueChange={(values) => setTranscriptionOnNumberSeconds(values[0])}
+                    className="mt-2"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Minimum seconds to wait after transcription ending with a number (0-3 sec).
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4 pt-4 border-t">
+                <Label className="text-sm font-medium">Stop Speaking Plan</Label>
+                
+                <div>
+                  <Label htmlFor="stopSpeakingPlanNumWords" className="text-sm font-medium">
+                    Number of Words: {stopSpeakingPlanNumWords}
+                  </Label>
+                  <Slider
+                    id="stopSpeakingPlanNumWords"
+                    min={0}
+                    max={10}
+                    step={1}
+                    value={[stopSpeakingPlanNumWords]}
+                    onValueChange={(values) => setStopSpeakingPlanNumWords(values[0])}
+                    className="mt-2"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Number of words the customer has to say before the assistant will stop talking (0-10).
+                  </p>
+                </div>
+
+                <div>
+                  <Label htmlFor="stopSpeakingPlanVoiceSeconds" className="text-sm font-medium">
+                    Voice Seconds: {stopSpeakingPlanVoiceSeconds.toFixed(1)} (sec)
+                  </Label>
+                  <Slider
+                    id="stopSpeakingPlanVoiceSeconds"
+                    min={0}
+                    max={0.5}
+                    step={0.1}
+                    value={[stopSpeakingPlanVoiceSeconds]}
+                    onValueChange={(values) => setStopSpeakingPlanVoiceSeconds(values[0])}
+                    className="mt-2"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Seconds customer has to speak before the assistant stops talking (0-0.5 sec).
+                  </p>
+                </div>
+
+                <div>
+                  <Label htmlFor="stopSpeakingPlanBackoffSeconds" className="text-sm font-medium">
+                    Back Off Seconds: {stopSpeakingPlanBackoffSeconds.toFixed(1)} (sec)
+                  </Label>
+                  <Slider
+                    id="stopSpeakingPlanBackoffSeconds"
+                    min={0}
+                    max={10}
+                    step={0.1}
+                    value={[stopSpeakingPlanBackoffSeconds]}
+                    onValueChange={(values) => setStopSpeakingPlanBackoffSeconds(values[0])}
+                    className="mt-2"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Seconds to wait before the assistant will start talking again after being interrupted (0-10 sec).
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex justify-end gap-4">
         <Button
           type="submit"
-          disabled={isSaving || prompt === initialPrompt && selectedVoiceId === initialVoiceId}
+          disabled={
+            isSaving ||
+            (firstMessage === baselineFirstMessage &&
+              prompt === baselinePrompt &&
+              selectedVoiceId === baselineVoiceId &&
+              (!isAdmin || (
+                endpointing === baselineEndpointing &&
+                eotThreshold === baselineEotThreshold &&
+                eotTimeoutMs === baselineEotTimeoutMs &&
+                startSpeakingPlanWaitSeconds === baselineStartSpeakingPlanWaitSeconds &&
+                transcriptionOnPunctuationSeconds === baselineTranscriptionOnPunctuationSeconds &&
+                transcriptionOnNoPunctuationSeconds === baselineTranscriptionOnNoPunctuationSeconds &&
+                transcriptionOnNumberSeconds === baselineTranscriptionOnNumberSeconds &&
+                stopSpeakingPlanVoiceSeconds === baselineStopSpeakingPlanVoiceSeconds &&
+                stopSpeakingPlanNumWords === baselineStopSpeakingPlanNumWords &&
+                stopSpeakingPlanBackoffSeconds === baselineStopSpeakingPlanBackoffSeconds
+              )))
+          }
         >
           {isSaving ? (
             <>

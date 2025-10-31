@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/app/(admin)/lib/admin-auth'
 import { createServiceClient } from '@/lib/supabase/server'
 import type { Call } from '@/lib/calls-helpers'
-import { getWentToTeam, getTeamAnswered } from '@/lib/calls-helpers'
+import { getWentToTeam, getTeamAnswered, getCallDuration } from '@/lib/calls-helpers'
 
 export async function GET(request: NextRequest) {
   try {
@@ -92,8 +92,8 @@ export async function GET(request: NextRequest) {
     // Group calls by time period and fill in missing periods
     const groupedData = groupCallsByTimePeriod(callsData, groupBy, dateFrom, dateTo)
 
-    // Calculate totals
-    const totals = calculateTotals(callsData)
+    // Calculate totals (async now to handle updates)
+    const totals = await calculateTotals(callsData, supabase)
 
     return NextResponse.json({
       groupedData,
@@ -338,20 +338,25 @@ function groupCallsByTimePeriod(
     .sort((a, b) => a.period.localeCompare(b.period))
 }
 
-function calculateTotals(calls: Call[]): {
+async function calculateTotals(calls: Call[], supabase: Awaited<ReturnType<typeof createServiceClient>>): Promise<{
   total: number
   agent: number
   team: number
   teamAnswered: number
-} {
+  totalDurationSeconds: number
+}> {
   const totals = {
     total: calls.length,
     agent: 0,
     team: 0,
     teamAnswered: 0,
+    totalDurationSeconds: 0,
   }
 
-  calls.forEach((call) => {
+  // Track calls that need to be updated with roundedDurationSeconds
+  const callsToUpdate: Array<{ id: string; roundedDurationSeconds: number; data: any }> = []
+
+  for (const call of calls) {
     const wentToTeam = getWentToTeam(call)
     const teamAnswered = getTeamAnswered(call)
 
@@ -363,7 +368,48 @@ function calculateTotals(calls: Call[]): {
     } else {
       totals.agent++
     }
-  })
+
+    // Check for roundedDurationSeconds first, otherwise calculate and save it
+    let roundedDurationSeconds: number
+    const callData = call.data as any
+    if (callData?.roundedDurationSeconds !== undefined) {
+      roundedDurationSeconds = callData.roundedDurationSeconds
+    } else {
+      // Calculate by rounding UP durationSeconds
+      const durationSeconds = getCallDuration(call.data)
+      roundedDurationSeconds = durationSeconds > 0 ? Math.ceil(durationSeconds) : 0
+      
+      // Mark this call for update
+      if (roundedDurationSeconds > 0) {
+        callsToUpdate.push({
+          id: call.id,
+          roundedDurationSeconds,
+          data: {
+            ...callData,
+            roundedDurationSeconds,
+          },
+        })
+      }
+    }
+
+    totals.totalDurationSeconds += roundedDurationSeconds
+  }
+
+  // Batch update calls that need roundedDurationSeconds
+  if (callsToUpdate.length > 0) {
+    // Update calls in parallel (batched)
+    await Promise.all(
+      callsToUpdate.map(async ({ id, data }) => {
+        const { error } = await supabase
+          .from('calls')
+          .update({ data })
+          .eq('id', id)
+        if (error) {
+          console.error(`Error updating call ${id} with roundedDurationSeconds:`, error)
+        }
+      })
+    )
+  }
 
   return totals
 }

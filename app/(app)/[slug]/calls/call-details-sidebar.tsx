@@ -11,7 +11,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { IconPlayerPlay, IconPlayerPause, IconPhone, IconClock, IconUser, IconRoute } from "@tabler/icons-react"
+import { IconPlayerPlay, IconPlayerPause, IconPhone, IconClock, IconUser, IconRoute, IconTool, IconCheck } from "@tabler/icons-react"
 import { 
   formatDuration, 
   getCallDuration, 
@@ -410,11 +410,133 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
                   if (msg.role === 'system') return null
                   
                   const isBot = msg.role === 'bot'
+                  const isToolCalls = msg.role === 'tool_calls'
+                  const isToolResult = msg.role === 'tool_call_result'
                   
-                  // Handle different message types
-                  const messageContent = 'message' in msg ? msg.message : 
-                                       'result' in msg ? `Tool Result: ${msg.result}` : 
-                                       'Unknown message type'
+                  // Handle tool calls
+                  if (isToolCalls && 'toolCalls' in msg && Array.isArray(msg.toolCalls)) {
+                    return (
+                      <div key={index} className="rounded-lg p-4 bg-muted/50">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <IconTool className="size-4 text-muted-foreground" />
+                            <span className="text-xs font-semibold uppercase tracking-wider text-foreground">
+                              Tool Call
+                            </span>
+                          </div>
+                          {msg.secondsFromStart !== undefined && (
+                            <span className="text-muted-foreground text-xs font-mono">
+                              {formatDuration(msg.secondsFromStart)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          {msg.toolCalls.map((toolCall: any, toolIndex: number) => {
+                            let args = {}
+                            try {
+                              args = typeof toolCall.function?.arguments === 'string' 
+                                ? JSON.parse(toolCall.function.arguments)
+                                : toolCall.function?.arguments || {}
+                            } catch {
+                              args = {}
+                            }
+                            
+                            return (
+                              <div key={toolIndex} className="bg-background rounded p-3 border border-border">
+                                <div className="font-medium text-sm mb-2 text-foreground">
+                                  {toolCall.function?.name || 'Unknown Tool'}
+                                </div>
+                                {Object.keys(args).length > 0 && (
+                                  <div className="text-xs text-muted-foreground space-y-1">
+                                    {Object.entries(args).map(([key, value]) => (
+                                      <div key={key} className="flex gap-2">
+                                        <span className="font-medium">{key}:</span>
+                                        <span className="font-mono">
+                                          {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  }
+                  
+                  // Handle tool call results
+                  if (isToolResult && 'result' in msg) {
+                    let resultData: any = null
+                    let resultSummary = ''
+                    
+                    try {
+                      resultData = typeof msg.result === 'string' ? JSON.parse(msg.result) : msg.result
+                      
+                      // Extract meaningful summary based on result structure
+                      if (resultData?.properties && Array.isArray(resultData.properties)) {
+                        const count = resultData.totalCount || resultData.properties.length
+                        resultSummary = `Found ${count} ${count === 1 ? 'property' : 'properties'}`
+                      } else if (resultData?.success !== undefined) {
+                        resultSummary = resultData.success ? 'Success' : 'Failed'
+                      } else if (typeof resultData === 'object' && Object.keys(resultData).length > 0) {
+                        resultSummary = 'Result received'
+                      } else {
+                        resultSummary = 'Completed'
+                      }
+                    } catch {
+                      resultSummary = typeof msg.result === 'string' && msg.result.length < 100 
+                        ? msg.result 
+                        : 'Result received'
+                    }
+                    
+                    return (
+                      <div key={index} className="rounded-lg p-4 bg-muted/50">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <IconCheck className="size-4 text-muted-foreground" />
+                            <span className="text-xs font-semibold uppercase tracking-wider text-foreground">
+                              {('name' in msg && msg.name) ? `Tool: ${msg.name}` : 'Tool Result'}
+                            </span>
+                          </div>
+                          {msg.secondsFromStart !== undefined && (
+                            <span className="text-muted-foreground text-xs font-mono">
+                              {formatDuration(msg.secondsFromStart)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-foreground mb-2 font-medium">
+                          {resultSummary}
+                        </div>
+                        {resultData && resultData.properties && Array.isArray(resultData.properties) && resultData.properties.length > 0 && (
+                          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+                            {resultData.properties.slice(0, 3).map((prop: any, propIndex: number) => {
+                              const location = prop.full_address || prop.location || prop.city || ''
+                              return (
+                                <div key={propIndex} className="bg-background rounded p-2 border border-border">
+                                  {prop.title && <div className="font-medium text-foreground mb-1">{prop.title}</div>}
+                                  <div className="flex flex-wrap gap-3 text-xs">
+                                    {prop.beds && <span>{prop.beds} bed{prop.beds !== 1 ? 's' : ''}</span>}
+                                    {prop.price && <span>£{prop.price.toLocaleString()}{prop.transaction_type === 'rent' ? '/mo' : ''}</span>}
+                                    {location && <span>{location}</span>}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                            {resultData.properties.length > 3 && (
+                              <div className="text-xs text-muted-foreground italic">
+                                +{resultData.properties.length - 3} more
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  }
+                  
+                  // Handle regular messages
+                  const messageContent = 'message' in msg ? msg.message : 'Unknown message type'
 
                   return (
                     <div 

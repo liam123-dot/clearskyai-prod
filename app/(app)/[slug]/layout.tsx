@@ -8,12 +8,14 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar"
 
-export default async function AppLayout({
-  children,
-}: {
+interface SlugLayoutProps {
+  params: Promise<{ slug: string }>
   children: React.ReactNode
-}) {
-  const { user, slug, organisation, isAdmin } = await getAuthSession()
+}
+
+export default async function SlugLayout({ params, children }: SlugLayoutProps) {
+  const { slug } = await params
+  const { user, organizationId, organisation, isAdmin, slug: userSlug } = await getAuthSession(slug)
 
   // If no user, redirect to sign in
   if (!user) {
@@ -21,10 +23,14 @@ export default async function AppLayout({
     redirect(signInUrl)
   }
 
-  // If no slug/organization, redirect to sign in (shouldn't happen in normal flow)
-  if (!slug) {
-    const signInUrl = await getSignInUrl()
-    redirect(signInUrl)
+  // If no organizationId (no access to this slug), redirect to user's org or sign in
+  if (!organizationId) {
+    if (userSlug) {
+      redirect(`/${userSlug}`)
+    } else {
+      const signInUrl = await getSignInUrl()
+      redirect(signInUrl)
+    }
   }
 
   return (

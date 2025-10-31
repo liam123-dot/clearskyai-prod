@@ -31,9 +31,9 @@ export default async function AgentLayout({ params, children }: AgentLayoutProps
             <h1 className="text-3xl font-bold tracking-tight">
               {agent.vapiAssistant.name || "Unnamed Agent"}
             </h1>
-            <p className="text-muted-foreground mt-2">
+            {/* <p className="text-muted-foreground mt-2">
               Agent ID: {id}
-            </p>
+            </p> */}
           </div>
           {isAdmin && (
             <Button asChild variant="outline">

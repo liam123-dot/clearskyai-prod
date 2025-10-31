@@ -77,12 +77,22 @@ async function handleEndOfCallReport(report: Vapi.ServerMessageEndOfCallReport) 
             details: report as unknown as Record<string, unknown>,
         });
 
+        // Calculate rounded duration (round UP to nearest second)
+        const durationSeconds = (report as any).durationSeconds || (report.call as any)?.duration || 0;
+        const roundedDurationSeconds = durationSeconds > 0 ? Math.ceil(durationSeconds) : 0;
+
+        // Prepare data with rounded duration
+        const callData = {
+            ...(report as unknown as Record<string, unknown>),
+            roundedDurationSeconds: roundedDurationSeconds,
+        };
+
         if (existingCallRecord) {
             // Update existing call record
             const { error: updateError } = await supabase
                 .from('calls')
                 .update({
-                    data: report as unknown as Record<string, unknown>,
+                    data: callData,
                     event_sequence: eventSequence,
                     routing_status: 'completed',
                 })
@@ -104,7 +114,7 @@ async function handleEndOfCallReport(report: Vapi.ServerMessageEndOfCallReport) 
                     call_sid: callSid || null,
                     routing_status: 'completed',
                     event_sequence: eventSequence,
-                    data: report as unknown as Record<string, unknown>
+                    data: callData
                 });
 
             if (insertError) {
@@ -291,8 +301,8 @@ async function sendMeterEventForCall(report: Vapi.ServerMessageEndOfCallReport, 
             return;
         }
         
-        // Round to nearest second
-        const seconds = Math.round(durationSeconds);
+        // Round UP to nearest second
+        const seconds = Math.ceil(durationSeconds);
         
         console.log(`Seconds: ${seconds}`);
         
