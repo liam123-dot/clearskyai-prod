@@ -224,53 +224,31 @@ export function AgentSettingsForm({
 
       // Add admin-only fields if user is admin
       if (isAdmin) {
-        const hasTranscriberChanges =
-          endpointing !== baselineEndpointing ||
-          eotThreshold !== baselineEotThreshold ||
-          eotTimeoutMs !== baselineEotTimeoutMs
-
-        const hasSpeakingPlanChanges =
-          startSpeakingPlanWaitSeconds !== baselineStartSpeakingPlanWaitSeconds ||
-          transcriptionOnPunctuationSeconds !== baselineTranscriptionOnPunctuationSeconds ||
-          transcriptionOnNoPunctuationSeconds !== baselineTranscriptionOnNoPunctuationSeconds ||
-          transcriptionOnNumberSeconds !== baselineTranscriptionOnNumberSeconds ||
-          stopSpeakingPlanVoiceSeconds !== baselineStopSpeakingPlanVoiceSeconds ||
-          stopSpeakingPlanNumWords !== baselineStopSpeakingPlanNumWords ||
-          stopSpeakingPlanBackoffSeconds !== baselineStopSpeakingPlanBackoffSeconds
-
-        // If admin updates any settings, always ensure serverMessages is set to end-of-call-report
+        // Always set serverMessages to end-of-call-report when admin saves
         updatePayload.serverMessages = ['end-of-call-report']
 
-        // If transcriber settings changed, update transcriber with flux-general-en
-        if (hasTranscriberChanges) {
-          updatePayload.transcriber = {
-            model: 'flux-general-en',
-            provider: 'deepgram',
-            language: 'en',
-            endpointing,
-            eotThreshold,
-            eotTimeoutMs,
-          }
+        // Always set transcriber with flux-general-en and deepgram provider when admin saves
+        updatePayload.transcriber = {
+          model: 'flux-general-en',
+          provider: 'deepgram',
+          language: 'en',
+          endpointing,
+          eotThreshold,
+          eotTimeoutMs,
         }
 
-        // Update speaking plans if changed
-        const hasStartSpeakingPlanChanges =
-          startSpeakingPlanWaitSeconds !== baselineStartSpeakingPlanWaitSeconds ||
-          transcriptionOnPunctuationSeconds !== baselineTranscriptionOnPunctuationSeconds ||
-          transcriptionOnNoPunctuationSeconds !== baselineTranscriptionOnNoPunctuationSeconds ||
-          transcriptionOnNumberSeconds !== baselineTranscriptionOnNumberSeconds
-
-        if (hasStartSpeakingPlanChanges) {
-          updatePayload.startSpeakingPlan = {
-            waitSeconds: startSpeakingPlanWaitSeconds,
-            smartEndpointingEnabled: false,
-            transcriptionEndpointingPlan: {
-              onPunctuationSeconds: transcriptionOnPunctuationSeconds,
-              onNoPunctuationSeconds: transcriptionOnNoPunctuationSeconds,
-              onNumberSeconds: transcriptionOnNumberSeconds,
-            },
-          }
+        // Always set startSpeakingPlan with smartEndpointingEnabled: false when admin saves
+        updatePayload.startSpeakingPlan = {
+          waitSeconds: startSpeakingPlanWaitSeconds,
+          smartEndpointingEnabled: false,
+          transcriptionEndpointingPlan: {
+            onPunctuationSeconds: transcriptionOnPunctuationSeconds,
+            onNoPunctuationSeconds: transcriptionOnNoPunctuationSeconds,
+            onNumberSeconds: transcriptionOnNumberSeconds,
+          },
         }
+
+        // Only update stopSpeakingPlan if it changed
         const hasStopSpeakingPlanChanges =
           stopSpeakingPlanVoiceSeconds !== baselineStopSpeakingPlanVoiceSeconds ||
           stopSpeakingPlanNumWords !== baselineStopSpeakingPlanNumWords ||
