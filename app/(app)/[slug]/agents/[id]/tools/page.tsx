@@ -1,6 +1,6 @@
 import { getAuthSession } from "@/lib/auth"
 import { getAgentById } from "@/lib/vapi/agents"
-import { getOrCreateAgentTools, getToolsByOrganization } from "@/lib/tools"
+import { getToolsByOrganization, getAgentTools } from "@/lib/tools"
 import { Card, CardContent } from "@/components/ui/card"
 import {
   Empty,
@@ -36,22 +36,46 @@ export default async function AgentToolsPage({ params }: AgentToolsPageProps) {
 
   const toolIds = agent.vapiAssistant.model?.toolIds || []
 
-  let attachedTools: Awaited<ReturnType<typeof getOrCreateAgentTools>> = []
+  let attachedTools: Awaited<ReturnType<typeof getAgentTools>> = []
   let availableTools: Awaited<ReturnType<typeof getToolsByOrganization>> = []
   let error: string | null = null
 
   try {
-    // Get or create tools for the agent's toolIds
-    attachedTools = await getOrCreateAgentTools(id, toolIds)
+    // Get tools from both VAPI toolIds and agent_tools table
+    attachedTools = await getAgentTools(id)
 
     // Get all organization tools
     const allOrgTools = await getToolsByOrganization(organizationId)
 
-    // Filter out tools that are already attached
-    const attachedToolExternalIds = new Set(attachedTools.map(t => t.external_tool_id))
-    availableTools = allOrgTools.filter(
-      tool => !attachedToolExternalIds.has(tool.external_tool_id)
+    // Get sets of attached tool IDs for filtering
+    const attachedToolDbIds = new Set(attachedTools.map(t => t.id))
+    const attachedToolExternalIds = new Set(
+      attachedTools
+        .map(t => t.external_tool_id)
+        .filter((id): id is string => id !== null)
     )
+    
+    // Filter available tools:
+    // 1. Tools with attach_to_agent = true that aren't already attached via VAPI
+    // 2. Tools with attach_to_agent = false AND execute_on_call_start = true that aren't in agent_tools
+    availableTools = allOrgTools.filter(tool => {
+      // Skip if already attached
+      if (attachedToolDbIds.has(tool.id)) {
+        return false
+      }
+
+      // For attach_to_agent = true tools: must have external_tool_id and not be in VAPI toolIds
+      if (tool.attach_to_agent !== false) {
+        return tool.external_tool_id !== null && !attachedToolExternalIds.has(tool.external_tool_id)
+      }
+
+      // For attach_to_agent = false tools: must have execute_on_call_start = true
+      if (tool.attach_to_agent === false) {
+        return tool.execute_on_call_start === true
+      }
+
+      return false
+    })
   } catch (e) {
     console.error('Error fetching tools:', e)
     error = e instanceof Error ? e.message : 'Failed to load tools'

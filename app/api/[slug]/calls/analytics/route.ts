@@ -124,12 +124,16 @@ function groupCallsByTimePeriod(
   agent: number
   team: number
   teamAnswered: number
+  totalMinutes: number
+  avgCallDuration: number
 }> {
   const groups = new Map<string, {
     total: number
     agent: number
     team: number
     teamAnswered: number
+    totalMinutes: number
+    totalDurationSeconds: number // Track total duration for averaging
   }>()
 
   // Process calls and group them
@@ -183,11 +187,23 @@ function groupCallsByTimePeriod(
         agent: 0,
         team: 0,
         teamAnswered: 0,
+        totalMinutes: 0,
+        totalDurationSeconds: 0,
       })
     }
 
     const group = groups.get(periodKey)!
     group.total++
+
+    // Track call duration for minutes and average calculation
+    const callData = call.data as any
+    const durationSeconds = callData?.roundedDurationSeconds !== undefined
+      ? callData.roundedDurationSeconds
+      : getCallDuration(call.data)
+    const durationMinutes = durationSeconds > 0 ? durationSeconds / 60 : 0
+    
+    group.totalMinutes += durationMinutes
+    group.totalDurationSeconds += durationSeconds
 
     // Check if call went to team
     const wentToTeam = getWentToTeam(call)
@@ -329,17 +345,31 @@ function groupCallsByTimePeriod(
           agent: 0,
           team: 0,
           teamAnswered: 0,
+          totalMinutes: 0,
+          totalDurationSeconds: 0,
         })
       }
     })
   }
 
-  // Convert to array and sort by period
+  // Convert to array, calculate averages, and sort by period
   return Array.from(groups.entries())
-    .map(([period, data]) => ({
-      period,
-      ...data,
-    }))
+    .map(([period, data]) => {
+      // Calculate average call duration in seconds
+      const avgCallDuration = data.total > 0
+        ? data.totalDurationSeconds / data.total
+        : 0
+      
+      return {
+        period,
+        total: data.total,
+        agent: data.agent,
+        team: data.team,
+        teamAnswered: data.teamAnswered,
+        totalMinutes: data.totalMinutes,
+        avgCallDuration,
+      }
+    })
     .sort((a, b) => a.period.localeCompare(b.period))
 }
 

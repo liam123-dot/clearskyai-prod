@@ -131,24 +131,56 @@ export async function PATCH(request: Request, context: RouteContext) {
       functionSchema: JSON.stringify(functionSchema, null, 2),
     })
 
-    // Update VAPI tool first
+    // Handle VAPI tool updates based on attach_to_agent setting
+    const attachToAgent = config.attach_to_agent !== false
+    const wasAttachable = existingTool.attach_to_agent !== false
+    const hasExternalId = existingTool.external_tool_id !== null
+
     try {
-      // Build VAPI tool data
-      const vapiToolData = convertToolConfigToVapiApiRequest(
-        id,
-        config,
-        functionSchema
-      )
-
-      // Remove 'type' field for updates - VAPI update API doesn't accept it
-      const { type, ...updateData } = vapiToolData
-
-      console.log('Updating VAPI tool:', existingTool.external_tool_id)
-
-      // Update the VAPI tool
-      await vapiClient.tools.update(existingTool.external_tool_id, updateData as any)
-
-      console.log('VAPI tool updated successfully')
+      if (attachToAgent && !wasAttachable) {
+        // Converting from preemptive-only to attachable: create VAPI tool
+        console.log('Creating VAPI tool for previously preemptive-only tool')
+        const vapiToolData = convertToolConfigToVapiApiRequest(
+          id,
+          config,
+          functionSchema
+        )
+        const vapiTool = await vapiClient.tools.create(vapiToolData as any)
+        existingTool.external_tool_id = vapiTool.id
+        console.log('VAPI tool created:', vapiTool.id)
+      } else if (!attachToAgent && wasAttachable && hasExternalId) {
+        // Converting from attachable to preemptive-only: delete VAPI tool
+        console.log('Deleting VAPI tool (converting to preemptive-only):', existingTool.external_tool_id)
+        await vapiClient.tools.delete(existingTool.external_tool_id)
+        existingTool.external_tool_id = null
+        console.log('VAPI tool deleted successfully')
+      } else if (attachToAgent && hasExternalId) {
+        // Still attachable: update VAPI tool
+        const vapiToolData = convertToolConfigToVapiApiRequest(
+          id,
+          config,
+          functionSchema
+        )
+        // Remove 'type' field for updates - VAPI update API doesn't accept it
+        const { type, ...updateData } = vapiToolData
+        console.log('Updating VAPI tool:', existingTool.external_tool_id)
+        await vapiClient.tools.update(existingTool.external_tool_id, updateData as any)
+        console.log('VAPI tool updated successfully')
+      } else if (attachToAgent && !hasExternalId) {
+        // Should be attachable but missing external_tool_id: create it
+        console.log('Creating missing VAPI tool for attachable tool')
+        const vapiToolData = convertToolConfigToVapiApiRequest(
+          id,
+          config,
+          functionSchema
+        )
+        const vapiTool = await vapiClient.tools.create(vapiToolData as any)
+        existingTool.external_tool_id = vapiTool.id
+        console.log('VAPI tool created:', vapiTool.id)
+      } else {
+        // Preemptive-only: no VAPI operations needed
+        console.log('Skipping VAPI operations (preemptive-only tool)')
+      }
     } catch (vapiError) {
       console.error('Error updating VAPI tool:', vapiError)
       return NextResponse.json(
@@ -169,6 +201,9 @@ export async function PATCH(request: Request, context: RouteContext) {
         static_config: staticConfig,
         config_metadata: config,
         async: config.async || false,
+        execute_on_call_start: config.execute_on_call_start || false,
+        attach_to_agent: attachToAgent,
+        external_tool_id: existingTool.external_tool_id, // May have been updated above
         updated_at: new Date().toISOString(),
       })
       .eq('id', id)
@@ -224,15 +259,19 @@ export async function DELETE(request: Request, context: RouteContext) {
       )
     }
 
-    // Delete from VAPI first
-    try {
-      console.log('Deleting VAPI tool:', tool.external_tool_id)
-      await vapiClient.tools.delete(tool.external_tool_id)
-      console.log('VAPI tool deleted successfully')
-    } catch (vapiError) {
-      console.error('Error deleting VAPI tool:', vapiError)
-      // Continue with DB deletion even if VAPI deletion fails
-      // This handles cases where the VAPI tool might already be deleted
+    // Delete from VAPI first (only if tool has external_tool_id)
+    if (tool.external_tool_id) {
+      try {
+        console.log('Deleting VAPI tool:', tool.external_tool_id)
+        await vapiClient.tools.delete(tool.external_tool_id)
+        console.log('VAPI tool deleted successfully')
+      } catch (vapiError) {
+        console.error('Error deleting VAPI tool:', vapiError)
+        // Continue with DB deletion even if VAPI deletion fails
+        // This handles cases where the VAPI tool might already be deleted
+      }
+    } else {
+      console.log('No VAPI tool to delete (preemptive-only tool)')
     }
 
     // Delete from DB

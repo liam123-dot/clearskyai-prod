@@ -189,6 +189,16 @@ export function buildFunctionSchema(config: ToolConfig): ToolFunctionSchema {
       break
   }
 
+  // If no properties exist (all parameters are fixed), add a dummy property
+  // This ensures VAPI validation passes (requires at least one property)
+  // The dummy property will be ignored during execution
+  if (Object.keys(properties).length === 0) {
+    properties._dummy = {
+      type: 'string',
+      description: 'Internal field - not used',
+    }
+  }
+
   console.log('Built properties:', JSON.stringify(properties, null, 2))
 
   return {

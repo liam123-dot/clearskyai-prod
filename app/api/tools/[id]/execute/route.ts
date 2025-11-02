@@ -2,6 +2,7 @@ import { createServiceClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { executeAction } from "@/lib/pipedream/actions"
 import type { PipedreamActionToolConfig, SmsToolConfig } from "@/lib/tools/types"
+import { substituteVariables, substituteVariablesInValue, type VariableContext } from "@/lib/tools/variables"
 import twilio from 'twilio'
 
 /**
@@ -50,6 +51,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // Extract parameters and keep them flat at the top level
     aiProvidedParams = { ...params }
   }
+  
+  // Remove dummy property if present (used to satisfy VAPI validation for tools with no AI parameters)
+  if ('_dummy' in aiProvidedParams) {
+    delete aiProvidedParams._dummy
+  }
 
   // ===================================================================
   // FETCH TOOL FROM DATABASE
@@ -89,11 +95,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   console.log(`✅ Found tool: ${tool.name} (type: ${tool.type})`)
 
   // ===================================================================
+  // BUILD VARIABLE CONTEXT
+  // ===================================================================
+  
+  const variableContext: VariableContext = {
+    caller_phone_number: callerPhoneNumber,
+    called_phone_number: calledPhoneNumber,
+  }
+
+  // ===================================================================
   // HANDLE PIPEDREAM ACTION TOOLS
   // ===================================================================
   
   if (tool.type === 'pipedream_action') {
-    return handlePipedreamAction(tool, aiProvidedParams)
+    return handlePipedreamAction(tool, aiProvidedParams, variableContext)
   }
 
   // ===================================================================
@@ -122,7 +137,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
  */
 async function handlePipedreamAction(
   tool: Record<string, unknown>,
-  aiProvidedParams: Record<string, unknown>
+  aiProvidedParams: Record<string, unknown>,
+  variableContext: VariableContext
 ): Promise<NextResponse> {
   // ===================================================================
   // EXTRACT CONFIGURATION
@@ -144,20 +160,23 @@ async function handlePipedreamAction(
   const { pipedreamMetadata } = configMetadata
   const staticConfig = (tool.static_config || {}) as Record<string, unknown>
   
+  // Apply variable substitution to static_config before extracting params
+  const substitutedStaticConfig = substituteVariablesInValue(staticConfig, variableContext) as Record<string, unknown>
+  
   // Extract actual parameter values from static_config
   // static_config may have structure: { params: {...}, preloadedParams: {...} }
   // We need to extract the values from the params object
   let staticParams: Record<string, unknown> = {}
   
-  const params = staticConfig.params as Record<string, unknown> | undefined
-  const preloadedParams = staticConfig.preloadedParams as Record<string, unknown> | undefined
+  const params = substitutedStaticConfig.params as Record<string, unknown> | undefined
+  const preloadedParams = substitutedStaticConfig.preloadedParams as Record<string, unknown> | undefined
   
   if (params && typeof params === 'object') {
     // If params is nested, extract it
     staticParams = { ...params }
   } else if (!params && !preloadedParams) {
     // If there's no params/preloadedParams structure, use staticConfig directly
-    staticParams = { ...staticConfig }
+    staticParams = { ...substitutedStaticConfig }
   }
 
   const toolName = String(tool.name)
@@ -169,7 +188,8 @@ async function handlePipedreamAction(
   console.log(`   Action: ${pipedreamMetadata.actionName} (${pipedreamMetadata.actionKey})`)
   console.log(`   Organization: ${organizationId}`)
   console.log(`   Account ID: ${pipedreamMetadata.accountId}`)
-  console.log(`   Static Config:`, JSON.stringify(staticConfig, null, 2))
+  console.log(`   Static Config (original):`, JSON.stringify(staticConfig, null, 2))
+  console.log(`   Static Config (substituted):`, JSON.stringify(substitutedStaticConfig, null, 2))
   console.log(`   Extracted Static Params:`, JSON.stringify(staticParams, null, 2))
 
   // ===================================================================
@@ -303,47 +323,53 @@ async function handleSmsAction(
   console.log(`📞 Context - Caller: ${callerPhoneNumber || ''}, Called: ${calledPhoneNumber || ''}`)
 
   // ===================================================================
-  // HELPER: Variable Substitution
-  // Replace {{variable_name}} with actual values
+  // BUILD VARIABLE CONTEXT
   // ===================================================================
   
-  const substituteVariables = (text: string): string => {
-    return text
-      .replace(/\{\{caller_phone_number\}\}/g, callerPhoneNumber || '')
-      .replace(/\{\{called_phone_number\}\}/g, calledPhoneNumber || '')
+  const variableContext: VariableContext = {
+    caller_phone_number: callerPhoneNumber,
+    called_phone_number: calledPhoneNumber,
   }
 
   // ===================================================================
+  // APPLY VARIABLE SUBSTITUTION TO STATIC CONFIG
+  // ===================================================================
+  
+  const substitutedStaticConfig = substituteVariablesInValue(staticConfig, variableContext) as Record<string, unknown>
+
+  // ===================================================================
   // MERGE PARAMETERS
-  // Static params take precedence for security, apply variable substitution
+  // Static params take precedence for security, variable substitution already applied
   // ===================================================================
 
-  const rawText = (staticConfig.text || aiProvidedParams.text || '') as string
+  const rawText = (substitutedStaticConfig.text || aiProvidedParams.text || '') as string
   
   // Handle recipients - could be from static config or AI
   let recipients: string[] = []
   
-  if (staticConfig.recipients && Array.isArray(staticConfig.recipients)) {
-    recipients = (staticConfig.recipients as string[]).map(substituteVariables)
-  } else if (staticConfig.recipientsBase && Array.isArray(staticConfig.recipientsBase)) {
+  if (substitutedStaticConfig.recipients && Array.isArray(substitutedStaticConfig.recipients)) {
+    recipients = [...(substitutedStaticConfig.recipients as string[])]
+  } else if (substitutedStaticConfig.recipientsBase && Array.isArray(substitutedStaticConfig.recipientsBase)) {
     // Base recipients from array_extendable mode
-    recipients = [...(staticConfig.recipientsBase as string[]).map(substituteVariables)]
+    recipients = [...(substitutedStaticConfig.recipientsBase as string[])]
   }
   
-  // Add AI-provided recipients if any
+  // Add AI-provided recipients if any (also apply substitution)
   if (aiProvidedParams.recipients) {
     if (Array.isArray(aiProvidedParams.recipients)) {
-      recipients = [...recipients, ...(aiProvidedParams.recipients as string[]).map(substituteVariables)]
+      const substitutedRecipients = substituteVariablesInValue(aiProvidedParams.recipients, variableContext) as string[]
+      recipients = [...recipients, ...substitutedRecipients]
     } else if (typeof aiProvidedParams.recipients === 'string') {
-      recipients.push(substituteVariables(aiProvidedParams.recipients))
+      const substitutedRecipient = substituteVariables(aiProvidedParams.recipients, variableContext)
+      recipients.push(substitutedRecipient)
     }
   }
 
   // Remove duplicates
   recipients = Array.from(new Set(recipients))
 
-  // Apply variable substitution to text
-  const substitutedText = substituteVariables(rawText)
+  // Text already has variables substituted
+  const substitutedText = rawText
 
   console.log(`📝 Message text (raw): ${rawText}`)
   console.log(`📝 Message text (substituted): ${substitutedText}`)
@@ -353,7 +379,7 @@ async function handleSmsAction(
   // DETERMINE SENDER PHONE NUMBER
   // ===================================================================
   
-  const fromConfig = staticConfig.from as { type: string; phone_number_id?: string } | undefined
+  const fromConfig = substitutedStaticConfig.from as { type: string; phone_number_id?: string } | undefined
   let fromPhoneNumber: string | null = null
   
   if (!fromConfig || !fromConfig.type) {

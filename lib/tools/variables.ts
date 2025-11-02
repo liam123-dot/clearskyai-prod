@@ -28,6 +28,12 @@ export const TOOL_VARIABLES: Record<string, ToolVariable> = {
     description: 'The phone number that was called (agent\'s number)',
     example: '+1987654321',
   },
+  now: {
+    name: 'now',
+    displayName: 'Current Time',
+    description: 'The current date and time in ISO 8601 format',
+    example: '2024-10-31T12:00:00.000Z',
+  },
 }
 
 /**
@@ -73,5 +79,76 @@ export function hasVariables(text: string): boolean {
  */
 export function getAllVariables(): ToolVariable[] {
   return Object.values(TOOL_VARIABLES)
+}
+
+/**
+ * Context object containing values for variable substitution
+ */
+export interface VariableContext {
+  caller_phone_number?: string
+  called_phone_number?: string
+  now?: string
+}
+
+/**
+ * Substitutes variables in a string with actual values from context
+ * @param text - The text containing {{variable}} placeholders
+ * @param context - Object containing variable values
+ * @returns String with all variables replaced
+ */
+export function substituteVariables(text: string, context: VariableContext): string {
+  let result = text
+  
+  // Replace each variable if it exists in context
+  if (context.caller_phone_number !== undefined) {
+    result = result.replace(/\{\{caller_phone_number\}\}/g, context.caller_phone_number || '')
+  }
+  
+  if (context.called_phone_number !== undefined) {
+    result = result.replace(/\{\{called_phone_number\}\}/g, context.called_phone_number || '')
+  }
+  
+  // Replace {{now}} with value from context if provided, otherwise use current ISO time
+  if (context.now !== undefined) {
+    result = result.replace(/\{\{now\}\}/g, context.now || '')
+  } else {
+    // Only compute automatically if not provided in context (for production use)
+    result = result.replace(/\{\{now\}\}/g, new Date().toISOString())
+  }
+  
+  return result
+}
+
+/**
+ * Recursively substitutes variables in an object or array
+ * @param value - The value to process (string, number, boolean, object, array)
+ * @param context - Object containing variable values
+ * @returns Processed value with all string values having variables substituted
+ */
+export function substituteVariablesInValue(
+  value: unknown,
+  context: VariableContext
+): unknown {
+  // If it's a string, substitute variables
+  if (typeof value === 'string') {
+    return substituteVariables(value, context)
+  }
+  
+  // If it's an array, process each element
+  if (Array.isArray(value)) {
+    return value.map(item => substituteVariablesInValue(item, context))
+  }
+  
+  // If it's an object, process each property
+  if (value !== null && typeof value === 'object') {
+    const result: Record<string, unknown> = {}
+    for (const [key, val] of Object.entries(value)) {
+      result[key] = substituteVariablesInValue(val, context)
+    }
+    return result
+  }
+  
+  // For primitives (number, boolean, null, undefined), return as-is
+  return value
 }
 

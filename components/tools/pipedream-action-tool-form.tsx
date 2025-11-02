@@ -35,6 +35,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { detectVariables, getAllVariables, type VariableContext, substituteVariablesInValue } from '@/lib/tools/variables'
 
 interface PipedreamApp {
   id: string
@@ -129,6 +130,7 @@ export function PipedreamActionToolForm({
   // Test dialog state
   const [showTestDialog, setShowTestDialog] = useState(false)
   const [testDialogAiValues, setTestDialogAiValues] = useState<Record<string, string | string[]>>({})
+  const [testDialogVariableValues, setTestDialogVariableValues] = useState<Record<string, string>>({})
   const [isExecutingTest, setIsExecutingTest] = useState(false)
   const [testResults, setTestResults] = useState<{
     success: boolean
@@ -641,6 +643,42 @@ export function PipedreamActionToolForm({
     
     return aiFields
   }
+
+  // Detect all variables used in propsConfig
+  const getVariablesUsedInProps = (): string[] => {
+    const variables = new Set<string>()
+    
+    Object.values(propsConfig).forEach((config) => {
+      // Check fixed value
+      if (config.mode === 'fixed' && typeof config.value === 'string') {
+        detectVariables(config.value).forEach(v => variables.add(v))
+      }
+      
+      // Check AI prompt
+      if (config.mode === 'ai' && typeof config.prompt === 'string') {
+        detectVariables(config.prompt).forEach(v => variables.add(v))
+      }
+      
+      // Check array items
+      if (config.arrayItems) {
+        config.arrayItems.forEach((item) => {
+          if (item.mode === 'fixed' && typeof item.value === 'string') {
+            detectVariables(item.value).forEach(v => variables.add(v))
+          }
+          if (item.mode === 'ai' && typeof item.prompt === 'string') {
+            detectVariables(item.prompt).forEach(v => variables.add(v))
+          }
+        })
+      }
+      
+      // Check array extendable: if arrayItems exists and aiCanAdd is enabled, check AI extension prompt
+      if (config.arrayItems && config.aiCanAdd && config.aiAddPrompt) {
+        detectVariables(config.aiAddPrompt).forEach(v => variables.add(v))
+      }
+    })
+    
+    return Array.from(variables)
+  }
   
   // Check if all required fields are configured
   const validateRequiredFields = (): { valid: boolean; missingFields: string[] } => {
@@ -691,6 +729,7 @@ export function PipedreamActionToolForm({
     }
 
     setTestDialogAiValues({})
+    setTestDialogVariableValues({})
     setTestResults(null)
     setShowTestResults(false)
     setShowTestDialog(true)
@@ -703,6 +742,13 @@ export function PipedreamActionToolForm({
     setIsExecutingTest(true)
     
     try {
+      // Build variable context from user-provided values
+      const variableContext: VariableContext = {
+        caller_phone_number: testDialogVariableValues.caller_phone_number,
+        called_phone_number: testDialogVariableValues.called_phone_number,
+        now: testDialogVariableValues.now,
+      }
+      
       // Build the params to send
       const testParams: Record<string, unknown> = {}
       
@@ -721,7 +767,11 @@ export function PipedreamActionToolForm({
           const arrayItems = config.arrayItems
           arrayItems.forEach((item, itemIndex) => {
             if (item.mode === 'fixed' && item.value) {
-              values.push(item.value)
+              // Substitute variables in fixed values
+              const substitutedValue = typeof item.value === 'string' 
+                ? substituteVariablesInValue(item.value, variableContext) as string
+                : item.value
+              values.push(substitutedValue)
             } else if (item.mode === 'ai') {
               // Use user-provided AI value from dialog
               const userProvidedValue = testDialogAiValues[`${prop.name}_${itemIndex}`]
@@ -734,7 +784,17 @@ export function PipedreamActionToolForm({
             testParams[prop.name] = values
           }
         } else if (config.mode === 'fixed' && config.value !== undefined) {
-          testParams[prop.name] = config.value
+          // Substitute variables in fixed values
+          testParams[prop.name] = substituteVariablesInValue(config.value, variableContext)
+        } else if (config.arrayItems && config.arrayItems.length > 0) {
+          // Array mode: extract fixed values from arrayItems
+          const fixedValues = config.arrayItems
+            .filter(item => item.mode === 'fixed' && item.value !== undefined)
+            .map(item => item.value!)
+          if (fixedValues.length > 0) {
+            const substitutedFixedValues = substituteVariablesInValue(fixedValues, variableContext) as string[] | number[] | boolean[]
+            testParams[prop.name] = substitutedFixedValues
+          }
         } else if (config.mode === 'ai') {
           // Use user-provided AI value from dialog
           const userProvidedValue = testDialogAiValues[prop.name]
@@ -1218,6 +1278,46 @@ export function PipedreamActionToolForm({
           <div className="flex-1 overflow-y-auto px-1">
             {!showTestResults ? (
               <div className="space-y-4">
+                {/* Variable Input Fields */}
+                {(() => {
+                  const variablesUsed = getVariablesUsedInProps()
+                  const allVariables = getAllVariables()
+                  const variablesToShow = allVariables.filter(v => variablesUsed.includes(v.name))
+                  
+                  if (variablesToShow.length === 0) return null
+                  
+                  return (
+                    <div className="space-y-4">
+                      <h4 className="text-sm font-medium">Provide values for variables:</h4>
+                      {variablesToShow.map((variable) => (
+                        <div key={variable.name} className="space-y-2">
+                          <Label className="text-sm">
+                            {variable.displayName}
+                            {variable.example && (
+                              <span className="text-muted-foreground ml-2 font-normal">
+                                (e.g., {variable.example})
+                              </span>
+                            )}
+                          </Label>
+                          {variable.description && (
+                            <p className="text-xs text-muted-foreground">{variable.description}</p>
+                          )}
+                          <Input
+                            placeholder={`Enter ${variable.displayName.toLowerCase()}`}
+                            value={testDialogVariableValues[variable.name] || ''}
+                            onChange={(e) =>
+                              setTestDialogVariableValues((prev) => ({
+                                ...prev,
+                                [variable.name]: e.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
+                
                 {getAiRequiredFields().length > 0 && (
                   <div className="space-y-4">
                     <h4 className="text-sm font-medium">Provide values for AI fields:</h4>
@@ -1424,7 +1524,7 @@ export function PipedreamActionToolForm({
                   onClick={() => {
                     setShowTestResults(false)
                     setTestResults(null)
-                    setTestDialogAiValues({})
+                    // Keep testDialogAiValues and testDialogVariableValues so they persist for "Test Again"
                   }}
                 >
                   Test Again

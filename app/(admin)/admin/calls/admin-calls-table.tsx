@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { IconPhone, IconPhoneCall } from "@tabler/icons-react"
-import { formatDuration, getCallDuration, getCallerNumber, getCalledNumber, getAssistantName, getRoutingJourney, type Call } from "@/lib/calls-helpers"
+import { formatDuration, getCallDuration, getCallerNumber, getCalledNumber, getAssistantName, getRoutingJourney, isWebCall, type Call } from "@/lib/calls-helpers"
 import { CallDetailsSidebar } from "@/app/(app)/[slug]/calls/call-details-sidebar"
 
 interface Organization {
@@ -35,6 +35,7 @@ export function AdminCallsTable({ calls, organizations }: AdminCallsTableProps) 
           const callDate = new Date(call.created_at)
           const routingJourney = getRoutingJourney(call)
           const organization = orgMap.get(call.organization_id)
+          const isWeb = isWebCall(call)
 
           return (
             <TableRow 
@@ -68,13 +69,23 @@ export function AdminCallsTable({ calls, organizations }: AdminCallsTableProps) 
               <TableCell>
                 <div className="flex items-center gap-2">
                   <IconPhone className="text-muted-foreground size-4" />
-                  <span className="text-sm">{callerNumber}</span>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-sm">{isWeb ? 'Web/Test Call' : callerNumber}</span>
+                    {isWeb && callerNumber !== 'Unknown' && (
+                      <span className="text-xs text-muted-foreground">{callerNumber}</span>
+                    )}
+                  </div>
                 </div>
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-2">
                   <IconPhone className="text-muted-foreground size-4" />
-                  <span className="text-sm">{calledNumber}</span>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-sm">{isWeb ? 'Web/Test Call' : calledNumber}</span>
+                    {isWeb && calledNumber !== 'Unknown' && (
+                      <span className="text-xs text-muted-foreground">{calledNumber}</span>
+                    )}
+                  </div>
                 </div>
               </TableCell>
               <TableCell>

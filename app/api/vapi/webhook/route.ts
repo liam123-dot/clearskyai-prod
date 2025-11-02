@@ -4,6 +4,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { Twilio } from "twilio";
 import { createMeterEvent } from "@/lib/stripe";
 import { syncOrganizationSubscriptions } from "@/lib/billing";
+import { after } from "next/server";
 
 export async function POST(request: NextRequest) {
 
@@ -125,10 +126,18 @@ async function handleEndOfCallReport(report: Vapi.ServerMessageEndOfCallReport) 
             console.log(`Call record created for agent ${agent.id}`);
         }
 
-        await getCallTwilioCost(report, callSid, existingCallRecord?.id);
-
-        // Send meter event for usage-based billing
-        await sendMeterEventForCall(report, agent.organization_id);
+        // Skip Twilio cost and Stripe billing for webCall type calls
+        const callType = (report.call as any)?.type;
+        if (callType !== 'webCall') {
+            // Use after() to run Twilio cost check asynchronously after response is sent
+            after(async () => {
+                await getCallTwilioCost(report, callSid, existingCallRecord?.id);
+            });
+            // Send meter event for usage-based billing
+            await sendMeterEventForCall(report, agent.organization_id);
+        } else {
+            console.log('Skipping Twilio cost and Stripe billing for webCall type');
+        }
         
     } catch (error) {
         console.error('Error handling end-of-call report:', error);
@@ -141,6 +150,13 @@ async function getCallTwilioCost(
     callRecordId: string | undefined
 ) {
     try {
+        // Skip Twilio cost for webCall type
+        const callType = (report.call as any)?.type;
+        if (callType === 'webCall') {
+            console.log('Skipping Twilio cost for webCall type');
+            return;
+        }
+
         const phoneCallProviderId = report.call?.phoneCallProviderId;
         const phoneNumber = report.call?.phoneNumberId;
 
@@ -255,6 +271,9 @@ async function getCallTwilioCost(
             updatedData.costs = existingCosts;
         }
 
+        // Calculate and store totalCost from all costs
+        updatedData.totalCost = existingCosts.reduce((sum: number, c: any) => sum + (c?.cost || 0), 0);
+
         // Update the call record with the cost
         const { error: updateError } = await supabase
             .from('calls')
@@ -277,6 +296,13 @@ async function getCallTwilioCost(
 
 async function sendMeterEventForCall(report: Vapi.ServerMessageEndOfCallReport, organizationId: string) {
     try {
+        // Skip Stripe billing for webCall type
+        const callType = (report.call as any)?.type;
+        if (callType === 'webCall') {
+            console.log('Skipping Stripe meter event for webCall type');
+            return;
+        }
+
         const supabase = await createServiceClient();
 
         // Sync subscriptions to ensure status is current

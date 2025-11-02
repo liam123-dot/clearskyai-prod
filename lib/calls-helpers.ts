@@ -145,3 +145,12 @@ export function getTeamAnswered(call: Call): boolean {
   return eventSequence.some(e => e.type === 'team_answered' || e.type === 'team_call_completed')
 }
 
+export function getCallType(call: Call): string | null {
+  const callData = call.data as any
+  return callData?.call?.type || null
+}
+
+export function isWebCall(call: Call): boolean {
+  return getCallType(call) === 'webCall'
+}
+

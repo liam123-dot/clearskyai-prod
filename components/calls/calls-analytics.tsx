@@ -7,7 +7,7 @@ import { DateRangePicker } from '@/components/ui/date-picker'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts'
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts'
 import {
   ChartContainer,
   ChartTooltip,
@@ -51,6 +51,10 @@ interface AnalyticsData {
     agent: number
     team: number
     teamAnswered: number
+    totalCost?: number
+    avgCostPerMinute?: number
+    totalMinutes?: number
+    avgCallDuration?: number
   }>
   totals: {
     total: number
@@ -508,6 +512,11 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
     return `${mins}m ${secs}s`
   }
 
+  // Format cost as currency
+  const formatCurrency = (cost: number): string => {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cost)
+  }
+
   // Chart config - only show total calls
   const chartConfig = useMemo(() => {
     return {
@@ -517,6 +526,73 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
       }
     } satisfies ChartConfig
   }, [])
+
+  // Chart config for cost (admin only)
+  const costChartConfig = useMemo(() => {
+    return {
+      cost: {
+        label: 'Total Cost',
+        color: 'hsl(142 76% 36%)', // green-600
+      }
+    } satisfies ChartConfig
+  }, [])
+
+  // Chart config for average cost per minute (admin only)
+  const avgCostPerMinuteChartConfig = useMemo(() => {
+    return {
+      avgCostPerMinute: {
+        label: 'Avg Cost Per Minute',
+        color: 'hsl(25 95% 53%)', // orange-500
+      }
+    } satisfies ChartConfig
+  }, [])
+
+  // Chart config for minutes used
+  const minutesChartConfig = useMemo(() => {
+    return {
+      totalMinutes: {
+        label: 'Minutes Used',
+        color: 'hsl(262 83% 58%)', // purple-500
+      }
+    } satisfies ChartConfig
+  }, [])
+
+  // Chart config for average call duration
+  const avgCallDurationChartConfig = useMemo(() => {
+    return {
+      avgCallDuration: {
+        label: 'Avg Call Duration',
+        color: 'hsl(199 89% 48%)', // blue-600
+      }
+    } satisfies ChartConfig
+  }, [])
+
+  // Format minutes for display (Y-axis)
+  const formatMinutes = (minutes: number): string => {
+    if (minutes < 1) {
+      return `${Math.round(minutes * 60)}s`
+    }
+    return `${Math.round(minutes)}m`
+  }
+
+  // Format minutes for tooltip as "wh xm ys" (skip zero higher order units)
+  const formatMinutesTooltip = (minutes: number): string => {
+    const totalSeconds = Math.round(minutes * 60)
+    const weeks = Math.floor(totalSeconds / (7 * 24 * 60 * 60))
+    const remainingAfterWeeks = totalSeconds % (7 * 24 * 60 * 60)
+    const hours = Math.floor(remainingAfterWeeks / (60 * 60))
+    const remainingAfterHours = remainingAfterWeeks % (60 * 60)
+    const mins = Math.floor(remainingAfterHours / 60)
+    const secs = remainingAfterHours % 60
+
+    const parts: string[] = []
+    if (weeks > 0) parts.push(`${weeks}w`)
+    if (hours > 0) parts.push(`${hours}h`)
+    if (mins > 0) parts.push(`${mins}m`)
+    if (secs > 0 || parts.length === 0) parts.push(`${secs}s`)
+
+    return parts.join(' ')
+  }
 
   // Handle organization change (admin mode only)
   const handleOrganizationChange = (value: string) => {
@@ -854,7 +930,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
         </Card>
       </div>
 
-      {/* Chart - Stacked Bar */}
+      {/* Chart - Calls Over Time Line */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold">Calls Over Time</CardTitle>
@@ -874,7 +950,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
             </div>
           ) : (
             <ChartContainer config={chartConfig} className="h-[300px] w-full">
-              <BarChart
+              <LineChart
                 accessibilityLayer
                 data={analyticsData.groupedData.map(d => ({
                   period: d.period,
@@ -961,16 +1037,515 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                   } 
                 />
                 <ChartLegend content={<ChartLegendContent />} />
-                <Bar
+                <Line
+                  type="monotone"
                   dataKey="total"
-                  fill="var(--color-total)"
-                  radius={[4, 4, 0, 0]}
+                  stroke="var(--color-total)"
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4 }}
                 />
-              </BarChart>
+              </LineChart>
             </ChartContainer>
           )}
         </CardContent>
       </Card>
+
+      {/* Minutes Used Chart - Line Chart */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">Minutes Used Over Time</CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4 px-2">
+          {analyticsLoading ? (
+            <div className="flex items-center justify-center h-[300px]">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : error ? (
+            <div className="flex items-center justify-center h-[300px] text-destructive text-sm">
+              Failed to load analytics data
+            </div>
+          ) : !analyticsData || analyticsData.groupedData.length === 0 ? (
+            <div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">
+              No data available for the selected filters
+            </div>
+          ) : (
+            <ChartContainer config={minutesChartConfig} className="h-[300px] w-full">
+              <LineChart
+                accessibilityLayer
+                data={analyticsData.groupedData.map(d => ({
+                  period: d.period,
+                  totalMinutes: d.totalMinutes || 0,
+                }))}
+                margin={{
+                  left: 0,
+                  right: 0,
+                  top: 5,
+                  bottom: 5,
+                }}
+              >
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="period"
+                  tickLine={false}
+                  tickMargin={8}
+                  axisLine={false}
+                  tickFormatter={formatPeriodLabel}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  tickFormatter={(value) => formatMinutes(value)}
+                />
+                <ChartTooltip 
+                  content={
+                    <ChartTooltipContent 
+                      labelFormatter={(label) => {
+                        // Format the period label with date/time
+                        let date: Date
+                        // Handle different period formats
+                        if (timeGrouping === 'month') {
+                          // Month format is YYYY-MM
+                          date = new Date(label + '-01')
+                        } else if (timeGrouping === 'day' || timeGrouping === 'week') {
+                          // Day/week format is YYYY-MM-DD
+                          date = new Date(label + 'T00:00:00Z')
+                        } else {
+                          // 15min/hour format is full ISO string
+                          date = new Date(label)
+                        }
+                        
+                        switch (timeGrouping) {
+                          case '15min':
+                            return date.toLocaleString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric', 
+                              year: 'numeric',
+                              hour: 'numeric', 
+                              minute: '2-digit',
+                              hour12: true
+                            })
+                          case 'hour':
+                            return date.toLocaleString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric', 
+                              year: 'numeric',
+                              hour: 'numeric',
+                              hour12: true
+                            })
+                          case 'day':
+                            return date.toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric',
+                              year: 'numeric'
+                            })
+                          case 'week':
+                            return `Week of ${date.toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric',
+                              year: 'numeric'
+                            })}`
+                          case 'month':
+                            return date.toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              year: 'numeric'
+                            })
+                          default:
+                            return label
+                        }
+                      }}
+                      formatter={(value) => formatMinutesTooltip(value as number)}
+                    />
+                  } 
+                />
+                <ChartLegend content={<ChartLegendContent />} />
+                <Line
+                  type="monotone"
+                  dataKey="totalMinutes"
+                  stroke="var(--color-totalMinutes)"
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                />
+              </LineChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+
+      {/* Average Call Duration Chart - Line Chart */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">Average Call Duration</CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4 px-2">
+          {analyticsLoading ? (
+            <div className="flex items-center justify-center h-[300px]">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : error ? (
+            <div className="flex items-center justify-center h-[300px] text-destructive text-sm">
+              Failed to load analytics data
+            </div>
+          ) : !analyticsData || analyticsData.groupedData.length === 0 ? (
+            <div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">
+              No data available for the selected filters
+            </div>
+          ) : (
+            <ChartContainer config={avgCallDurationChartConfig} className="h-[300px] w-full">
+              <LineChart
+                accessibilityLayer
+                data={analyticsData.groupedData.map(d => ({
+                  period: d.period,
+                  avgCallDuration: d.avgCallDuration ? d.avgCallDuration / 60 : 0, // Convert seconds to minutes
+                }))}
+                margin={{
+                  left: 0,
+                  right: 0,
+                  top: 5,
+                  bottom: 5,
+                }}
+              >
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="period"
+                  tickLine={false}
+                  tickMargin={8}
+                  axisLine={false}
+                  tickFormatter={formatPeriodLabel}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  tickFormatter={(value) => formatDuration(value * 60)} // Convert minutes to seconds for formatDuration
+                />
+                <ChartTooltip 
+                  content={
+                    <ChartTooltipContent 
+                      labelFormatter={(label) => {
+                        // Format the period label with date/time
+                        let date: Date
+                        // Handle different period formats
+                        if (timeGrouping === 'month') {
+                          // Month format is YYYY-MM
+                          date = new Date(label + '-01')
+                        } else if (timeGrouping === 'day' || timeGrouping === 'week') {
+                          // Day/week format is YYYY-MM-DD
+                          date = new Date(label + 'T00:00:00Z')
+                        } else {
+                          // 15min/hour format is full ISO string
+                          date = new Date(label)
+                        }
+                        
+                        switch (timeGrouping) {
+                          case '15min':
+                            return date.toLocaleString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric', 
+                              year: 'numeric',
+                              hour: 'numeric', 
+                              minute: '2-digit',
+                              hour12: true
+                            })
+                          case 'hour':
+                            return date.toLocaleString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric', 
+                              year: 'numeric',
+                              hour: 'numeric',
+                              hour12: true
+                            })
+                          case 'day':
+                            return date.toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric',
+                              year: 'numeric'
+                            })
+                          case 'week':
+                            return `Week of ${date.toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              day: 'numeric',
+                              year: 'numeric'
+                            })}`
+                          case 'month':
+                            return date.toLocaleDateString('en-US', { 
+                              month: 'short', 
+                              year: 'numeric'
+                            })
+                          default:
+                            return label
+                        }
+                      }}
+                      formatter={(value) => formatMinutesTooltip(value as number)} // value is already in minutes
+                    />
+                  } 
+                />
+                <ChartLegend content={<ChartLegendContent />} />
+                <Line
+                  type="monotone"
+                  dataKey="avgCallDuration"
+                  stroke="var(--color-avgCallDuration)"
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                />
+              </LineChart>
+            </ChartContainer>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Cost Chart - Line Chart (Admin Only) */}
+      {isAdmin && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold">Cost Over Time</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4 px-2">
+            {analyticsLoading ? (
+              <div className="flex items-center justify-center h-[300px]">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : error ? (
+              <div className="flex items-center justify-center h-[300px] text-destructive text-sm">
+                Failed to load analytics data
+              </div>
+            ) : !analyticsData || analyticsData.groupedData.length === 0 ? (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">
+                No data available for the selected filters
+              </div>
+            ) : (
+              <ChartContainer config={costChartConfig} className="h-[300px] w-full">
+                <LineChart
+                  accessibilityLayer
+                  data={analyticsData.groupedData.map(d => ({
+                    period: d.period,
+                    cost: d.totalCost || 0,
+                  }))}
+                  margin={{
+                    left: 0,
+                    right: 0,
+                    top: 5,
+                    bottom: 5,
+                  }}
+                >
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="period"
+                    tickLine={false}
+                    tickMargin={8}
+                    axisLine={false}
+                    tickFormatter={formatPeriodLabel}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    tickFormatter={(value) => formatCurrency(value)}
+                  />
+                  <ChartTooltip 
+                    content={
+                      <ChartTooltipContent 
+                        labelFormatter={(label) => {
+                          // Format the period label with date/time
+                          let date: Date
+                          // Handle different period formats
+                          if (timeGrouping === 'month') {
+                            // Month format is YYYY-MM
+                            date = new Date(label + '-01')
+                          } else if (timeGrouping === 'day' || timeGrouping === 'week') {
+                            // Day/week format is YYYY-MM-DD
+                            date = new Date(label + 'T00:00:00Z')
+                          } else {
+                            // 15min/hour format is full ISO string
+                            date = new Date(label)
+                          }
+                          
+                          switch (timeGrouping) {
+                            case '15min':
+                              return date.toLocaleString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric',
+                                hour: 'numeric', 
+                                minute: '2-digit',
+                                hour12: true
+                              })
+                            case 'hour':
+                              return date.toLocaleString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric',
+                                hour: 'numeric',
+                                hour12: true
+                              })
+                            case 'day':
+                              return date.toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric',
+                                year: 'numeric'
+                              })
+                            case 'week':
+                              return `Week of ${date.toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric',
+                                year: 'numeric'
+                              })}`
+                            case 'month':
+                              return date.toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                year: 'numeric'
+                              })
+                            default:
+                              return label
+                          }
+                        }}
+                        formatter={(value) => formatCurrency(value as number)}
+                      />
+                    } 
+                  />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Line
+                    type="monotone"
+                    dataKey="cost"
+                    stroke="var(--color-cost)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                </LineChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Average Cost Per Minute Chart - Line Chart (Admin Only) */}
+      {isAdmin && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold">Average Cost Per Minute</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4 px-2">
+            {analyticsLoading ? (
+              <div className="flex items-center justify-center h-[300px]">
+                <Loader2 className="h-6 w-6 animate-spin" />
+              </div>
+            ) : error ? (
+              <div className="flex items-center justify-center h-[300px] text-destructive text-sm">
+                Failed to load analytics data
+              </div>
+            ) : !analyticsData || analyticsData.groupedData.length === 0 ? (
+              <div className="flex items-center justify-center h-[300px] text-muted-foreground text-sm">
+                No data available for the selected filters
+              </div>
+            ) : (
+              <ChartContainer config={avgCostPerMinuteChartConfig} className="h-[300px] w-full">
+                <LineChart
+                  accessibilityLayer
+                  data={analyticsData.groupedData.map(d => ({
+                    period: d.period,
+                    avgCostPerMinute: d.avgCostPerMinute || 0,
+                  }))}
+                  margin={{
+                    left: 0,
+                    right: 0,
+                    top: 5,
+                    bottom: 5,
+                  }}
+                >
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="period"
+                    tickLine={false}
+                    tickMargin={8}
+                    axisLine={false}
+                    tickFormatter={formatPeriodLabel}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                    tickFormatter={(value) => formatCurrency(value)}
+                  />
+                  <ChartTooltip 
+                    content={
+                      <ChartTooltipContent 
+                        labelFormatter={(label) => {
+                          // Format the period label with date/time
+                          let date: Date
+                          // Handle different period formats
+                          if (timeGrouping === 'month') {
+                            // Month format is YYYY-MM
+                            date = new Date(label + '-01')
+                          } else if (timeGrouping === 'day' || timeGrouping === 'week') {
+                            // Day/week format is YYYY-MM-DD
+                            date = new Date(label + 'T00:00:00Z')
+                          } else {
+                            // 15min/hour format is full ISO string
+                            date = new Date(label)
+                          }
+                          
+                          switch (timeGrouping) {
+                            case '15min':
+                              return date.toLocaleString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric',
+                                hour: 'numeric', 
+                                minute: '2-digit',
+                                hour12: true
+                              })
+                            case 'hour':
+                              return date.toLocaleString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric', 
+                                year: 'numeric',
+                                hour: 'numeric',
+                                hour12: true
+                              })
+                            case 'day':
+                              return date.toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric',
+                                year: 'numeric'
+                              })
+                            case 'week':
+                              return `Week of ${date.toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                day: 'numeric',
+                                year: 'numeric'
+                              })}`
+                            case 'month':
+                              return date.toLocaleDateString('en-US', { 
+                                month: 'short', 
+                                year: 'numeric'
+                              })
+                            default:
+                              return label
+                          }
+                        }}
+                        formatter={(value) => formatCurrency(value as number)}
+                      />
+                    } 
+                  />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Line
+                    type="monotone"
+                    dataKey="avgCostPerMinute"
+                    stroke="var(--color-avgCostPerMinute)"
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                  />
+                </LineChart>
+              </ChartContainer>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
