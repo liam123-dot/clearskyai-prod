@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { PropertiesTable } from './properties-table'
 import { SyncButton } from './sync-button'
 import { PromptSheet } from './prompt-sheet'
+import { LocationDataSheet } from './location-data-sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import type { KnowledgeBase, Property } from '@/lib/knowledge-bases'
@@ -150,6 +151,11 @@ export function EstateAgentView({ knowledgeBase, organizationSlug }: EstateAgent
             knowledgeBaseId={knowledgeBase.id}
             knowledgeBaseName={knowledgeBase.name}
           />
+          <LocationDataSheet 
+            knowledgeBaseId={knowledgeBase.id}
+            knowledgeBaseName={knowledgeBase.name}
+            organizationSlug={organizationSlug}
+          />
           <SyncButton 
             knowledgeBaseId={knowledgeBase.id} 
             organizationSlug={organizationSlug}
@@ -181,6 +187,11 @@ export function EstateAgentView({ knowledgeBase, organizationSlug }: EstateAgent
         <PromptSheet 
           knowledgeBaseId={knowledgeBase.id}
           knowledgeBaseName={knowledgeBase.name}
+        />
+        <LocationDataSheet 
+          knowledgeBaseId={knowledgeBase.id}
+          knowledgeBaseName={knowledgeBase.name}
+          organizationSlug={organizationSlug}
         />
         <SyncButton 
           knowledgeBaseId={knowledgeBase.id} 

@@ -1,7 +1,9 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -25,6 +27,7 @@ export function AgentKnowledgeBases({
   agentId,
   knowledgeBases,
 }: AgentKnowledgeBasesProps) {
+  const router = useRouter()
   const [assignments, setAssignments] = useState<Record<string, boolean>>(
     knowledgeBases.reduce((acc, kb) => {
       acc[kb.id] = kb.is_assigned
@@ -32,28 +35,24 @@ export function AgentKnowledgeBases({
     }, {} as Record<string, boolean>)
   )
 
-  const [loading, setLoading] = useState<Record<string, boolean>>({})
+  const [loadingStates, setLoadingStates] = useState<
+    Record<string, "assigning" | "unassigning" | null>
+  >({})
 
   const handleToggleAssignment = async (
     knowledgeBaseId: string,
-    isAssigned: boolean,
+    currentlyAssigned: boolean,
     knowledgeBaseName: string
   ) => {
-    const previousValue = assignments[knowledgeBaseId]
-
-    // Optimistically update UI
-    setAssignments((prev) => ({
+    // Set loading state based on the action we're about to perform
+    const action = currentlyAssigned ? "unassigning" : "assigning"
+    setLoadingStates((prev) => ({
       ...prev,
-      [knowledgeBaseId]: !isAssigned,
-    }))
-
-    setLoading((prev) => ({
-      ...prev,
-      [knowledgeBaseId]: true,
+      [knowledgeBaseId]: action,
     }))
 
     try {
-      const method = isAssigned ? "DELETE" : "POST"
+      const method = currentlyAssigned ? "DELETE" : "POST"
       const response = await fetch(
         `/api/${slug}/agents/${agentId}/knowledge-bases`,
         {
@@ -69,105 +68,109 @@ export function AgentKnowledgeBases({
 
       if (!response.ok) {
         throw new Error(
-          `Failed to ${isAssigned ? "unassign" : "assign"} knowledge base`
+          `Failed to ${currentlyAssigned ? "unassign" : "assign"} knowledge base`
         )
       }
 
+      // Update state after successful API call
+      setAssignments((prev) => ({
+        ...prev,
+        [knowledgeBaseId]: !currentlyAssigned,
+      }))
+
       toast.success(
-        isAssigned
-          ? `${knowledgeBaseName} unassigned from agent`
+        currentlyAssigned
+          ? `${knowledgeBaseName} removed from agent`
           : `${knowledgeBaseName} assigned to agent`
       )
     } catch (error) {
       console.error("Error toggling knowledge base assignment:", error)
-      // Revert on error
-      setAssignments((prev) => ({
-        ...prev,
-        [knowledgeBaseId]: previousValue,
-      }))
       toast.error(
-        `Failed to ${isAssigned ? "unassign" : "assign"} knowledge base`
+        `Failed to ${currentlyAssigned ? "remove" : "assign"} knowledge base`
       )
     } finally {
-      setLoading((prev) => ({
+      setLoadingStates((prev) => ({
         ...prev,
-        [knowledgeBaseId]: false,
+        [knowledgeBaseId]: null,
       }))
     }
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold">Knowledge Bases</h2>
-        <p className="text-sm text-muted-foreground">
-          Manage which knowledge bases are assigned to this agent
+        <h2 className="text-2xl font-semibold tracking-tight">Knowledge Bases</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Assign knowledge bases to make their information available to this agent
         </p>
       </div>
       
-      <div className="rounded-lg border">
+      <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="w-[40%]">Name</TableHead>
+              <TableHead className="w-[20%]">Type</TableHead>
+              <TableHead className="w-[20%]">Status</TableHead>
+              <TableHead className="w-[20%] text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {knowledgeBases.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={4} className="h-24 text-center">
-                  <div className="text-muted-foreground">
-                    No knowledge bases found for this organization
+                <TableCell colSpan={4} className="h-32 text-center">
+                  <div className="flex flex-col items-center justify-center text-muted-foreground">
+                    <p className="text-sm">No knowledge bases found</p>
+                    <p className="text-xs mt-1">Create a knowledge base to get started</p>
                   </div>
                 </TableCell>
               </TableRow>
             ) : (
               knowledgeBases.map((kb) => {
                 const isAssigned = assignments[kb.id]
-                const isLoading = loading[kb.id]
+                const loadingState = loadingStates[kb.id]
+                const isLoading = loadingState !== null && loadingState !== undefined
 
                 return (
-                  <TableRow key={kb.id}>
+                  <TableRow
+                    key={kb.id}
+                    className="cursor-pointer"
+                    onClick={() => router.push(`/${slug}/knowledge-base/${kb.id}`)}
+                  >
                     <TableCell className="font-medium">{kb.name}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className="capitalize">
-                        {kb.type.replace("_", " ")}
+                        {kb.type.replace(/_/g, " ")}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       {isAssigned ? (
-                        <Badge variant="default">Assigned</Badge>
+                        <Badge variant="default" className="bg-green-600 hover:bg-green-700">
+                          Assigned
+                        </Badge>
                       ) : (
                         <Badge variant="secondary">Not Assigned</Badge>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {isAssigned ? (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() =>
-                            handleToggleAssignment(kb.id, isAssigned, kb.name)
-                          }
-                          disabled={isLoading}
-                        >
-                          {isLoading ? "Unassigning..." : "De-assign"}
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={() =>
-                            handleToggleAssignment(kb.id, isAssigned, kb.name)
-                          }
-                          disabled={isLoading}
-                        >
-                          {isLoading ? "Assigning..." : "Assign"}
-                        </Button>
-                      )}
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant={isAssigned ? "outline" : "default"}
+                        size="sm"
+                        onClick={() =>
+                          handleToggleAssignment(kb.id, isAssigned, kb.name)
+                        }
+                        disabled={isLoading}
+                        className="min-w-[100px]"
+                      >
+                        {isLoading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            {loadingState === "assigning" ? "Assigning..." : "Removing..."}
+                          </>
+                        ) : (
+                          isAssigned ? "Remove" : "Assign"
+                        )}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 )

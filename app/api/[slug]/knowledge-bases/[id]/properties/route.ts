@@ -35,14 +35,38 @@ export async function GET(
       )
     }
 
-    // Get pagination parameters
+    // Get pagination parameters and filters
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1', 10)
     const pageSize = parseInt(searchParams.get('pageSize') || '24', 10)
     const offset = (page - 1) * pageSize
 
+    // Get location filters
+    const cities = searchParams.get('cities')?.split(',').filter(Boolean) || []
+    const districts = searchParams.get('districts')?.split(',').filter(Boolean) || []
+    const subDistricts = searchParams.get('subDistricts')?.split(',').filter(Boolean) || []
+    const postcodeDistricts = searchParams.get('postcodeDistricts')?.split(',').filter(Boolean) || []
+    const streets = searchParams.get('streets')?.split(',').filter(Boolean) || []
+
     // Fetch all properties
-    const allProperties = await getProperties(id)
+    let allProperties = await getProperties(id)
+    
+    // Apply location filters
+    if (cities.length > 0 || districts.length > 0 || subDistricts.length > 0 || postcodeDistricts.length > 0 || streets.length > 0) {
+      allProperties = allProperties.filter(prop => {
+        const matchesCity = cities.length === 0 || (prop.city && cities.some(c => prop.city?.toLowerCase().includes(c.toLowerCase())))
+        const matchesDistrict = districts.length === 0 || (prop.district && districts.some(d => prop.district?.toLowerCase().includes(d.toLowerCase())))
+        // Sub-districts are typically in the district field or can be matched via full address
+        const matchesSubDistrict = subDistricts.length === 0 || (prop.district && subDistricts.some(sd => prop.district?.toLowerCase().includes(sd.toLowerCase())) ||
+          (prop.full_address && subDistricts.some(sd => prop.full_address.toLowerCase().includes(sd.toLowerCase()))))
+        const matchesPostcode = postcodeDistricts.length === 0 || (prop.postcode_district && postcodeDistricts.includes(prop.postcode_district))
+        const matchesStreet = streets.length === 0 || (prop.street_address && streets.some(s => prop.street_address?.toLowerCase().includes(s.toLowerCase())) || 
+          (prop.full_address && streets.some(s => prop.full_address.toLowerCase().includes(s.toLowerCase()))))
+        
+        return matchesCity && matchesDistrict && matchesSubDistrict && matchesPostcode && matchesStreet
+      })
+    }
+    
     const totalCount = allProperties.length
     
     // Paginate
