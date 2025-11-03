@@ -35,10 +35,8 @@ export async function generateMetadata({ params }: KnowledgeBaseDetailPageProps)
 
 export default async function KnowledgeBaseDetailPage({
   params,
-  searchParams,
 }: KnowledgeBaseDetailPageProps) {
   const { slug, id } = await params
-  const { page: pageParam } = await searchParams
   const { organizationId, organisation } = await getAuthSession(slug)
 
   if (!organizationId || !organisation) {
@@ -50,9 +48,6 @@ export default async function KnowledgeBaseDetailPage({
   if (!knowledgeBase || knowledgeBase.organization_id !== organizationId) {
     return notFound()
   }
-
-  // Pagination
-  const page = parseInt(pageParam || '1', 10)
 
   return (
     <div className="space-y-6">
@@ -74,7 +69,6 @@ export default async function KnowledgeBaseDetailPage({
       {knowledgeBase.type === 'estate_agent' && (
         <EstateAgentView 
           knowledgeBase={knowledgeBase} 
-          currentPage={page}
           organizationSlug={slug}
         />
       )}

@@ -1,6 +1,10 @@
+'use client'
+
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { IconBuilding } from '@tabler/icons-react'
 import Image from 'next/image'
 import type { Property } from '@/lib/knowledge-bases'
@@ -10,6 +14,8 @@ interface PropertiesTableProps {
   totalCount: number
   currentPage: number
   pageSize: number
+  onPageChange: (page: number) => void
+  loading?: boolean
 }
 
 export function PropertiesTable({
@@ -17,6 +23,8 @@ export function PropertiesTable({
   totalCount,
   currentPage,
   pageSize,
+  onPageChange,
+  loading = false,
 }: PropertiesTableProps) {
   const offset = (currentPage - 1) * pageSize
   const showingFrom = totalCount > 0 ? offset + 1 : 0
@@ -59,7 +67,7 @@ export function PropertiesTable({
     }
   }
 
-  if (totalCount === 0) {
+  if (!loading && totalCount === 0) {
     return (
       <Empty>
         <EmptyHeader>
@@ -79,7 +87,11 @@ export function PropertiesTable({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Showing {showingFrom} to {showingTo} of {totalCount} {totalCount === 1 ? 'property' : 'properties'}
+          {loading ? (
+            <Skeleton className="h-4 w-48" />
+          ) : (
+            `Showing ${showingFrom} to ${showingTo} of ${totalCount} ${totalCount === 1 ? 'property' : 'properties'}`
+          )}
         </p>
       </div>
 
@@ -95,7 +107,33 @@ export function PropertiesTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {properties.map((property) => {
+            {loading ? (
+              // Show skeleton rows while loading
+              Array.from({ length: pageSize }).map((_, index) => (
+                <TableRow key={`skeleton-${index}`}>
+                  <TableCell className="p-2">
+                    <Skeleton className="w-10 h-10 rounded" />
+                  </TableCell>
+                  <TableCell className="p-2">
+                    <div className="space-y-2">
+                      <Skeleton className="h-4 w-48" />
+                      <Skeleton className="h-3 w-32" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                  </TableCell>
+                  <TableCell className="p-2 text-center">
+                    <Skeleton className="h-5 w-16 mx-auto" />
+                  </TableCell>
+                  <TableCell className="p-2 text-right">
+                    <Skeleton className="h-4 w-20 ml-auto" />
+                  </TableCell>
+                  <TableCell className="p-2 text-right">
+                    <Skeleton className="h-3 w-16 ml-auto" />
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              properties.map((property) => {
               const imageUrl = property.original_data && 
                              typeof property.original_data === 'object' && 
                              'images' in property.original_data && 
@@ -157,36 +195,35 @@ export function PropertiesTable({
                   </TableCell>
                 </TableRow>
               )
-            })}
+            })
+            )}
           </TableBody>
         </Table>
       </div>
 
-      {totalPages > 1 && (
+      {!loading && totalPages > 1 && (
         <div className="flex items-center justify-center gap-2">
-          <a
-            href={currentPage > 1 ? `?page=${currentPage - 1}` : '#'}
-            className={`px-3 py-1 rounded border ${
-              currentPage > 1
-                ? 'hover:bg-accent cursor-pointer'
-                : 'opacity-50 cursor-not-allowed'
-            }`}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(currentPage - 1)}
+            disabled={currentPage === 1 || loading}
+            className="cursor-pointer disabled:cursor-not-allowed"
           >
             Previous
-          </a>
+          </Button>
           <span className="text-sm text-muted-foreground">
             Page {currentPage} of {totalPages}
           </span>
-          <a
-            href={currentPage < totalPages ? `?page=${currentPage + 1}` : '#'}
-            className={`px-3 py-1 rounded border ${
-              currentPage < totalPages
-                ? 'hover:bg-accent cursor-pointer'
-                : 'opacity-50 cursor-not-allowed'
-            }`}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(currentPage + 1)}
+            disabled={currentPage === totalPages || loading}
+            className="cursor-pointer disabled:cursor-not-allowed"
           >
             Next
-          </a>
+          </Button>
         </div>
       )}
     </div>
