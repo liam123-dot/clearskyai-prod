@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { after } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { findMatchingSchedule } from '@/lib/call-routing';
 import { getPhoneNumberById } from '@/lib/phone-numbers';
@@ -79,9 +80,11 @@ export async function POST(
           })
           .eq('id', callRecord.id);
 
-        // If call completed, fetch and add Twilio cost
+        // If call completed, fetch and add Twilio cost asynchronously after response
         if (dialCallStatus === 'completed') {
-          await addTwilioCostToCall(callSid, callRecord.id, phoneNumber);
+          after(async () => {
+            await addTwilioCostToCall(callSid, callRecord.id, phoneNumber);
+          });
         }
       }
 

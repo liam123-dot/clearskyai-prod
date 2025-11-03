@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { formatDistanceToNow } from "date-fns"
 import Image from "next/image"
 import { PipedreamActionToolConfig } from "@/lib/tools/types"
@@ -70,9 +71,11 @@ function getToolImageSrc(tool: Tool): string | null {
 }
 
 export function AvailableToolsTable({ tools, slug, agentId }: AvailableToolsTableProps) {
+  const router = useRouter()
   const [attaching, setAttaching] = useState<Record<string, boolean>>({})
 
-  const handleAttach = async (toolId: string) => {
+  const handleAttach = async (toolId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
     setAttaching(prev => ({ ...prev, [toolId]: true }))
 
     try {
@@ -116,7 +119,11 @@ export function AvailableToolsTable({ tools, slug, agentId }: AvailableToolsTabl
             const typeLabel = getToolTypeLabel(tool.type, tool)
             
             return (
-              <TableRow key={tool.id}>
+              <TableRow 
+                key={tool.id}
+                className="cursor-pointer"
+                onClick={() => router.push(`/${slug}/tools/${tool.id}`)}
+              >
                 <TableCell className="font-medium">
                   <div className="flex items-center gap-3">
                     {imageSrc ? (
@@ -146,10 +153,10 @@ export function AvailableToolsTable({ tools, slug, agentId }: AvailableToolsTabl
                 <TableCell className="text-muted-foreground text-sm">
                   {formatDistanceToNow(new Date(tool.created_at), { addSuffix: true })}
                 </TableCell>
-                <TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
                   <Button
                     size="sm"
-                    onClick={() => handleAttach(tool.id)}
+                    onClick={(e) => handleAttach(tool.id, e)}
                     disabled={attaching[tool.id]}
                   >
                     {attaching[tool.id] ? 'Attaching...' : 'Attach'}

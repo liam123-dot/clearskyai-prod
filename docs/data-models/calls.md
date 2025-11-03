@@ -11,6 +11,9 @@ The `calls` table stores call records from VAPI end-of-call reports, linking the
 | `agent_id` | UUID | NOT NULL, REFERENCES agents(id) ON DELETE CASCADE | Agent that handled this call |
 | `phone_number_id` | UUID | REFERENCES phone_numbers(id) ON DELETE SET NULL | Phone number that received this call |
 | `call_sid` | TEXT | NULL | Twilio Call SID for matching call records across endpoints |
+| `caller_number` | TEXT | NULL | Phone number of the caller |
+| `called_number` | TEXT | NULL | Phone number that was called |
+| `control_url` | TEXT | NULL | VAPI control URL for live call injection (derived from Stream URL in TwiML response) |
 | `event_sequence` | JSONB | NOT NULL, DEFAULT '[]'::jsonb | Array of call events: `[{type: string, timestamp: string, details: object}]` |
 | `routing_status` | TEXT | NULL | Call routing status: 'transferred_to_team', 'team_no_answer', 'direct_to_agent', 'completed' |
 | `created_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Timestamp when the call was created |

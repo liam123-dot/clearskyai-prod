@@ -37,6 +37,8 @@ export interface BaseToolConfig {
   description: string
   name?: string // Optional - will be generated from label if not provided
   async?: boolean // If true, agent won't wait for response
+  execute_on_call_start?: boolean // If true, tool executes automatically when call starts
+  attach_to_agent?: boolean // If false, tool cannot be attached to agents and only runs preemptively
 }
 
 // ==================== SMS Tool Configuration ====================
@@ -118,10 +120,13 @@ export interface ToolDatabaseRecord {
   label: string | null
   description: string | null
   type: ToolConfig['type'] | null
+  external_tool_id: string | null // VAPI tool ID, NULL for preemptive-only tools
   function_schema: Record<string, unknown> | null // JSON schema for AI
   static_config: Record<string, unknown> | null // Pre-configured values
   config_metadata: ToolConfig | null // Full configuration for UI reconstruction
   async: boolean | null // If true, agent won't wait for response
+  execute_on_call_start: boolean | null // If true, tool executes automatically when call starts
+  attach_to_agent: boolean | null // If false, tool cannot be attached to agents and only runs preemptively
   created_at: string
   updated_at: string
 }

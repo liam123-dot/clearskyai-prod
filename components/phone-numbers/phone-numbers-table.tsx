@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
-import { IconPhone, IconClock } from "@tabler/icons-react"
+import { IconPhone, IconClock, IconChevronRight } from "@tabler/icons-react"
 import type { PhoneNumberWithDetails } from "@/lib/phone-numbers"
 import { TimeBasedRoutingDrawer } from "./time-based-routing-drawer"
 
@@ -166,12 +166,13 @@ export function PhoneNumbersTable({
           <TableHead>Agent</TableHead>
           {isAdmin && <TableHead>Organization</TableHead>}
           {isAdmin && <TableHead>Ownership</TableHead>}
+          <TableHead className="w-12"></TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {phoneNumbers.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={isAdmin ? 6 : 4} className="text-center text-muted-foreground h-24">
+            <TableCell colSpan={isAdmin ? 7 : 5} className="text-center text-muted-foreground h-24">
               No phone numbers found
             </TableCell>
           </TableRow>
@@ -188,9 +189,9 @@ export function PhoneNumbersTable({
               : null
 
             return (
-              <TableRow 
+              <TableRow
                 key={phoneNumber.id}
-                className="cursor-pointer hover:bg-muted/50"
+                className="cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => handleRowClick(phoneNumber.id)}
               >
                 <TableCell className="w-12">
@@ -204,15 +205,20 @@ export function PhoneNumbersTable({
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{formatPhoneNumber(phoneNumber.phone_number)}</span>
-                      {phoneNumber.schedules_count && phoneNumber.schedules_count > 0 && (
+                      {phoneNumber.schedules_count && phoneNumber.schedules_count > 0 ? (
                         <Badge variant="secondary" className="gap-1 text-xs">
                           <IconClock className="size-3" />
                           {phoneNumber.schedules_count} schedule{phoneNumber.schedules_count !== 1 ? 's' : ''}
                         </Badge>
+                      ) : (
+                        <Badge variant="outline" className="gap-1 text-xs text-muted-foreground border-dashed">
+                          <IconClock className="size-3" />
+                          No schedule
+                        </Badge>
                       )}
                     </div>
                     <div className="text-muted-foreground text-xs">
-                      {phoneNumber.phone_number}
+                      Click to configure time-based routing
                     </div>
                   </div>
                 </TableCell>
@@ -302,6 +308,11 @@ export function PhoneNumbersTable({
                     </TableCell>
                   </>
                 )}
+                <TableCell className="w-12">
+                  <div className="flex items-center justify-center">
+                    <IconChevronRight className="text-muted-foreground size-4" />
+                  </div>
+                </TableCell>
               </TableRow>
             )
           })

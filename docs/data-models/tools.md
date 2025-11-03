@@ -13,12 +13,14 @@ CREATE TABLE tools (
   label TEXT NOT NULL,
   description TEXT,
   organization_id UUID NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
-  external_tool_id TEXT UNIQUE NOT NULL,
+  external_tool_id TEXT UNIQUE, -- NULL for preemptive-only tools
   type TEXT NOT NULL CHECK (type IN ('query', 'sms', 'apiRequest', 'transferCall', 'externalApp', 'pipedream_action', 'transfer_call')),
   function_schema JSONB NOT NULL,
   static_config JSONB,
   config_metadata JSONB,
   async BOOLEAN DEFAULT false,
+  execute_on_call_start BOOLEAN DEFAULT false,
+  attach_to_agent BOOLEAN DEFAULT true,
   data JSONB NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -34,7 +36,7 @@ CREATE TABLE tools (
 - **label**: User-friendly display name
 - **description**: Description of when and how the AI should use this tool
 - **organization_id**: The organization that owns this tool
-- **external_tool_id**: The VAPI tool ID (returned from VAPI API)
+- **external_tool_id**: The VAPI tool ID (returned from VAPI API). NULL for preemptive-only tools that cannot be attached to agents.
 
 ### Tool Type
 
@@ -103,7 +105,11 @@ CREATE TABLE tools (
 
 - **async**: Whether the tool runs asynchronously (agent continues without waiting for result)
 
-- **data**: Full VAPI tool object (for reference/debugging)
+- **execute_on_call_start**: If true, tool executes automatically when a call starts (before agent speaks). Ideal for CRM lookups that inject customer context into the conversation. Results are injected via VAPI Call Control API.
+
+- **attach_to_agent**: If false, tool cannot be attached to agents and only runs preemptively (on-call-start). If true, tool can be attached to agents and used during conversations. Preemptive-only tools do not create VAPI tools.
+
+- **data**: Full VAPI tool object (for reference/debugging). Empty object for preemptive-only tools.
 
 ### Timestamps
 
@@ -183,16 +189,22 @@ Specialized tool for querying knowledge bases (e.g., estate agent properties).
 ## Tool Attachment Flow
 
 1. **User navigates to agent tools page** (`/[slug]/agents/[id]/tools`)
-   - Sees available tools and currently attached tools
+   - Sees available tools and currently attached tools (from both VAPI and agent_tools table)
 
 2. **User clicks "Attach" button**
 
 3. **POST /api/[slug]/agents/[id]/tools/attach**
-   - Fetches agent's VAPI assistant
-   - Adds tool's `external_tool_id` to assistant's `toolIds`
-   - Updates VAPI assistant
+   - Checks if tool is already attached (via VAPI or agent_tools)
+   - **If `attach_to_agent = true`:**
+     - Adds tool's `external_tool_id` to VAPI assistant's `toolIds`
+     - Updates VAPI assistant
+     - Tool is available during conversations AND on call start (if `execute_on_call_start = true`)
+   - **If `attach_to_agent = false`:**
+     - Requires `execute_on_call_start = true`
+     - Inserts record into `agent_tools` table
+     - Tool only executes on call start (not available during conversation)
 
-4. **Tool is now available to agent during calls**
+4. **Tool is now attached to the agent** (via VAPI or agent_tools table)
 
 ## Tool Execution Flow
 
@@ -207,13 +219,32 @@ Specialized tool for querying knowledge bases (e.g., estate agent properties).
 3. **Execution endpoint processes request**
    - Fetches tool from DB using `id`
    - Extracts `config_metadata` and `static_config`
-   - Merges AI params with static config (static takes precedence)
+   - Applies variable substitution to `static_config` (replaces `{{caller_phone_number}}` and `{{called_phone_number}}`)
+   - Merges AI params with substituted static config (static takes precedence)
    - Routes to appropriate handler based on `type`
    - Executes the tool action
    - Returns result to VAPI
 
 4. **VAPI returns result to AI agent**
    - Agent uses result in conversation
+
+## On-Call-Start Tool Execution Flow
+
+1. **Call starts** → Forwarded to VAPI via `/api/phone-number/[id]/incoming`
+2. **VAPI returns TwiML** → Contains `<Stream url='wss://.../transport' />` tag
+3. **Extract control URL** → Replace `/transport` with `/control` in Stream URL
+4. **Store control URL** → Update call record with `control_url` field
+5. **Query on-call-start tools** → Find tools with `execute_on_call_start = true` attached to this specific agent:
+   - Tools attached via VAPI (in assistant's `toolIds`)
+   - Tools attached via `agent_tools` table (`attach_to_agent = false`)
+6. **Execute tools** → For each tool, call execution endpoint with caller/called numbers in metadata
+7. **Collect results** → Gather successful tool execution results
+8. **Inject context** → Use VAPI Call Control API to inject results as system message
+9. **Agent sees context** → Context is available in conversation history before agent speaks
+
+This enables CRM lookups and other pre-call data gathering that enriches the conversation.
+
+**Note:** Tools with `attach_to_agent = false` must be explicitly attached to an agent via the `agent_tools` table. They no longer run organization-wide.
 
 ## Tool Editing Flow
 
@@ -279,6 +310,32 @@ AI extracts value from conversation. Appears in function_schema.
 ```
 Combines fixed base values with AI-provided additional values.
 
+## Variable Substitution
+
+Tools support dynamic variables in fixed values and AI prompts. Variables are replaced with actual call context during execution.
+
+### Available Variables
+
+- `{{caller_phone_number}}`: The phone number of the person calling
+- `{{called_phone_number}}`: The phone number that was called (agent's number)
+
+### Usage
+
+Variables can be used in:
+- Fixed parameter values: `"value": "Hello from {{called_phone_number}}"`
+- AI prompts: `"prompt": "Look up customer with phone {{caller_phone_number}}"`
+- Array values: `["{{caller_phone_number}}", "+1234567890"]`
+
+**Example:**
+```json
+{
+  "mode": "fixed",
+  "value": "https://api.example.com/customers?phone={{caller_phone_number}}"
+}
+```
+
+During execution, `{{caller_phone_number}}` is replaced with the actual caller's phone number (e.g., `+1234567890`).
+
 ## Security Notes
 
 - Static config values are never exposed to AI
@@ -295,5 +352,8 @@ Combines fixed base values with AI-provided additional values.
 ## Relationships
 
 - **organizations**: Tools belong to an organization (CASCADE DELETE)
-- **agents**: Tools attached to agents via VAPI assistant toolIds (indirect relationship)
+- **agents**: Tools attached to agents via:
+  - VAPI assistant `toolIds` (for `attach_to_agent = true` tools)
+  - `agent_tools` table (for `attach_to_agent = false` tools)
+- **agent_tools**: Join table tracking preemptive-only tool attachments (see `agent-tools.md`)
 

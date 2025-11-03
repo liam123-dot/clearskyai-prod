@@ -29,6 +29,16 @@ export function CreateToolForm({ slug }: CreateToolFormProps) {
   const [label, setLabel] = useState('')
   const [description, setDescription] = useState('')
   const [async, setAsync] = useState(false)
+  const [executeOnCallStart, setExecuteOnCallStart] = useState(false)
+  const [attachToAgent, setAttachToAgent] = useState(true)
+
+  // If executeOnCallStart is disabled, force attachToAgent to true
+  const handleExecuteOnCallStartChange = (checked: boolean) => {
+    setExecuteOnCallStart(checked)
+    if (!checked) {
+      setAttachToAgent(true)
+    }
+  }
 
   // Type-specific configuration
   const [toolConfig, setToolConfig] = useState<ToolConfig | null>(null)
@@ -65,12 +75,15 @@ export function CreateToolForm({ slug }: CreateToolFormProps) {
     setIsSubmitting(true)
 
     try {
-      // Final config with updated label, description, and async
+      // Final config with updated label, description, async, execute_on_call_start, and attach_to_agent
+      // Ensure attach_to_agent is true if execute_on_call_start is false
       const finalConfig: ToolConfig = {
         ...toolConfig,
         label: label.trim(),
         description: description.trim(),
         async,
+        execute_on_call_start: executeOnCallStart,
+        attach_to_agent: executeOnCallStart ? attachToAgent : true,
       }
 
       const response = await fetch(`/api/${slug}/tools`, {
@@ -185,6 +198,43 @@ export function CreateToolForm({ slug }: CreateToolFormProps) {
               id="async"
               checked={async}
               onCheckedChange={setAsync}
+            />
+          </div>
+
+          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+            <div className="space-y-0.5">
+              <Label htmlFor="execute-on-call-start" className="text-sm font-medium cursor-pointer">
+                Execute on Call Start
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Run this tool automatically when a call starts (ideal for CRM lookups that inject customer context)
+              </p>
+            </div>
+            <Switch
+              id="execute-on-call-start"
+              checked={executeOnCallStart}
+              onCheckedChange={handleExecuteOnCallStartChange}
+            />
+          </div>
+
+          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+            <div className="space-y-0.5">
+              <Label htmlFor="attach-to-agent" className="text-sm font-medium cursor-pointer">
+                Allow Agent Attachment
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                {!executeOnCallStart
+                  ? "Tool can be attached to agents and used during conversations (always enabled when 'Execute on Call Start' is disabled)"
+                  : attachToAgent 
+                    ? "Tool can be attached to agents and used during conversations"
+                    : "Tool only runs preemptively (on call start), cannot be attached to agents"}
+              </p>
+            </div>
+            <Switch
+              id="attach-to-agent"
+              checked={attachToAgent}
+              onCheckedChange={setAttachToAgent}
+              disabled={!executeOnCallStart}
             />
           </div>
 

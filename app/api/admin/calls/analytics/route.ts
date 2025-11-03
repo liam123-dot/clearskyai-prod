@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/app/(admin)/lib/admin-auth'
 import { createServiceClient } from '@/lib/supabase/server'
 import type { Call } from '@/lib/calls-helpers'
-import { getWentToTeam, getTeamAnswered } from '@/lib/calls-helpers'
+import { getWentToTeam, getTeamAnswered, getCallDuration } from '@/lib/calls-helpers'
 
 export async function GET(request: NextRequest) {
   try {
@@ -92,8 +92,8 @@ export async function GET(request: NextRequest) {
     // Group calls by time period and fill in missing periods
     const groupedData = groupCallsByTimePeriod(callsData, groupBy, dateFrom, dateTo)
 
-    // Calculate totals
-    const totals = calculateTotals(callsData)
+    // Calculate totals (async now to handle updates)
+    const totals = await calculateTotals(callsData, supabase)
 
     return NextResponse.json({
       groupedData,
@@ -108,6 +108,20 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Helper function to extract total cost from a call
+function getCallTotalCost(call: Call): number {
+  const callData = call.data as any
+  // First try to use totalCost if it exists
+  if (callData?.totalCost !== undefined && typeof callData.totalCost === 'number') {
+    return callData.totalCost
+  }
+  // Otherwise calculate from costs array
+  if (Array.isArray(callData?.costs)) {
+    return callData.costs.reduce((sum: number, c: any) => sum + (c?.cost || 0), 0)
+  }
+  return 0
+}
+
 function groupCallsByTimePeriod(
   calls: Call[],
   groupBy: string,
@@ -119,12 +133,20 @@ function groupCallsByTimePeriod(
   agent: number
   team: number
   teamAnswered: number
+  totalCost: number
+  avgCostPerMinute: number
+  totalMinutes: number
+  avgCallDuration: number
 }> {
   const groups = new Map<string, {
     total: number
     agent: number
     team: number
     teamAnswered: number
+    totalCost: number
+    perMinuteCosts: number[] // Track per-minute costs for averaging
+    totalMinutes: number // Track total minutes per period
+    totalDurationSeconds: number // Track total duration for averaging
   }>()
 
   // Process calls and group them
@@ -178,11 +200,35 @@ function groupCallsByTimePeriod(
         agent: 0,
         team: 0,
         teamAnswered: 0,
+        totalCost: 0,
+        perMinuteCosts: [],
+        totalMinutes: 0,
+        totalDurationSeconds: 0,
       })
     }
 
     const group = groups.get(periodKey)!
     group.total++
+
+    // Add cost for this call
+    const callCost = getCallTotalCost(call)
+    group.totalCost += callCost
+
+    // Calculate per-minute cost for this call and track total minutes
+    const callData = call.data as any
+    const durationSeconds = callData?.roundedDurationSeconds !== undefined
+      ? callData.roundedDurationSeconds
+      : getCallDuration(call.data)
+    const durationMinutes = durationSeconds > 0 ? durationSeconds / 60 : 0
+    
+    // Add to total minutes and duration seconds
+    group.totalMinutes += durationMinutes
+    group.totalDurationSeconds += durationSeconds
+    
+    if (callCost > 0 && durationMinutes > 0) {
+      const perMinuteCost = callCost / durationMinutes
+      group.perMinuteCosts.push(perMinuteCost)
+    }
 
     // Check if call went to team
     const wentToTeam = getWentToTeam(call)
@@ -324,34 +370,62 @@ function groupCallsByTimePeriod(
           agent: 0,
           team: 0,
           teamAnswered: 0,
+          totalCost: 0,
+          perMinuteCosts: [],
+          totalMinutes: 0,
+          totalDurationSeconds: 0,
         })
       }
     })
   }
 
-  // Convert to array and sort by period
+  // Convert to array, calculate averages, and sort by period
   return Array.from(groups.entries())
-    .map(([period, data]) => ({
-      period,
-      ...data,
-    }))
+    .map(([period, data]) => {
+      // Calculate average per-minute cost
+      const avgCostPerMinute = data.perMinuteCosts.length > 0
+        ? data.perMinuteCosts.reduce((sum, cost) => sum + cost, 0) / data.perMinuteCosts.length
+        : 0
+      
+      // Calculate average call duration in seconds
+      const avgCallDuration = data.total > 0
+        ? data.totalDurationSeconds / data.total
+        : 0
+      
+      return {
+        period,
+        total: data.total,
+        agent: data.agent,
+        team: data.team,
+        teamAnswered: data.teamAnswered,
+        totalCost: data.totalCost,
+        avgCostPerMinute,
+        totalMinutes: data.totalMinutes,
+        avgCallDuration,
+      }
+    })
     .sort((a, b) => a.period.localeCompare(b.period))
 }
 
-function calculateTotals(calls: Call[]): {
+async function calculateTotals(calls: Call[], supabase: Awaited<ReturnType<typeof createServiceClient>>): Promise<{
   total: number
   agent: number
   team: number
   teamAnswered: number
-} {
+  totalDurationSeconds: number
+}> {
   const totals = {
     total: calls.length,
     agent: 0,
     team: 0,
     teamAnswered: 0,
+    totalDurationSeconds: 0,
   }
 
-  calls.forEach((call) => {
+  // Track calls that need to be updated with roundedDurationSeconds
+  const callsToUpdate: Array<{ id: string; roundedDurationSeconds: number; data: any }> = []
+
+  for (const call of calls) {
     const wentToTeam = getWentToTeam(call)
     const teamAnswered = getTeamAnswered(call)
 
@@ -363,7 +437,48 @@ function calculateTotals(calls: Call[]): {
     } else {
       totals.agent++
     }
-  })
+
+    // Check for roundedDurationSeconds first, otherwise calculate and save it
+    let roundedDurationSeconds: number
+    const callData = call.data as any
+    if (callData?.roundedDurationSeconds !== undefined) {
+      roundedDurationSeconds = callData.roundedDurationSeconds
+    } else {
+      // Calculate by rounding UP durationSeconds
+      const durationSeconds = getCallDuration(call.data)
+      roundedDurationSeconds = durationSeconds > 0 ? Math.ceil(durationSeconds) : 0
+      
+      // Mark this call for update
+      if (roundedDurationSeconds > 0) {
+        callsToUpdate.push({
+          id: call.id,
+          roundedDurationSeconds,
+          data: {
+            ...callData,
+            roundedDurationSeconds,
+          },
+        })
+      }
+    }
+
+    totals.totalDurationSeconds += roundedDurationSeconds
+  }
+
+  // Batch update calls that need roundedDurationSeconds
+  if (callsToUpdate.length > 0) {
+    // Update calls in parallel (batched)
+    await Promise.all(
+      callsToUpdate.map(async ({ id, data }) => {
+        const { error } = await supabase
+          .from('calls')
+          .update({ data })
+          .eq('id', id)
+        if (error) {
+          console.error(`Error updating call ${id} with roundedDurationSeconds:`, error)
+        }
+      })
+    )
+  }
 
   return totals
 }

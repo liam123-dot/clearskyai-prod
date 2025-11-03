@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { AgentNav } from "./agent-nav"
 import { getAuthSession } from "@/lib/auth"
+import { TestAgentButtonWrapper } from "@/components/vapi/test-agent-button-wrapper"
 
 interface AgentLayoutProps {
   params: Promise<{ slug: string; id: string }>
@@ -31,18 +32,21 @@ export default async function AgentLayout({ params, children }: AgentLayoutProps
             <h1 className="text-3xl font-bold tracking-tight">
               {agent.vapiAssistant.name || "Unnamed Agent"}
             </h1>
-            <p className="text-muted-foreground mt-2">
+            {/* <p className="text-muted-foreground mt-2">
               Agent ID: {id}
-            </p>
+            </p> */}
           </div>
-          {isAdmin && (
-            <Button asChild variant="outline">
-              <Link href={vapiDashboardUrl} target="_blank" rel="noopener noreferrer">
-                View in Vapi
-                <ExternalLink className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            <TestAgentButtonWrapper slug={slug} agentId={id} assistantId={agent.vapi_assistant_id} />
+            {isAdmin && (
+              <Button asChild variant="outline">
+                <Link href={vapiDashboardUrl} target="_blank" rel="noopener noreferrer">
+                  View in Vapi
+                  <ExternalLink className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            )}
+          </div>
         </div>
         
         <AgentNav slug={slug} agentId={id} />

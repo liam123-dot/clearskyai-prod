@@ -81,18 +81,25 @@ export async function POST(request: Request, context: RouteContext) {
       // We'll use a UUID that we'll assign to the DB record
       const tempDbId = crypto.randomUUID()
       
-      const vapiToolData = convertToolConfigToVapiApiRequest(
-        tempDbId,
-        config,
-        functionSchema
-      )
+      // Only create VAPI tool if tool can be attached to agents
+      const attachToAgent = config.attach_to_agent !== false
+      
+      if (attachToAgent) {
+        const vapiToolData = convertToolConfigToVapiApiRequest(
+          tempDbId,
+          config,
+          functionSchema
+        )
 
-      console.log('Creating VAPI tool:', JSON.stringify(vapiToolData, null, 2))
+        console.log('Creating VAPI tool:', JSON.stringify(vapiToolData, null, 2))
 
-      // Create the tool in VAPI first
-      vapiTool = await vapiClient.tools.create(vapiToolData as any)
+        // Create the tool in VAPI
+        vapiTool = await vapiClient.tools.create(vapiToolData as any)
 
-      console.log('VAPI tool created:', vapiTool.id)
+        console.log('VAPI tool created:', vapiTool.id)
+      } else {
+        console.log('Skipping VAPI tool creation (preemptive-only tool)')
+      }
 
       // Step 2: Create DB record with the VAPI tool data
       const { data: tool, error: createError } = await supabase
@@ -107,9 +114,11 @@ export async function POST(request: Request, context: RouteContext) {
           static_config: staticConfig,
           config_metadata: config,
           async: config.async || false,
+          execute_on_call_start: config.execute_on_call_start || false,
+          attach_to_agent: config.attach_to_agent !== false,
           organization_id: organizationId,
-          external_tool_id: vapiTool.id,
-          data: vapiTool, // Store the full VAPI tool object
+          external_tool_id: vapiTool?.id || null, // Can be null for preemptive-only tools
+          data: vapiTool || {}, // Store VAPI tool object if created, empty object otherwise
         })
         .select()
         .single()
@@ -117,12 +126,14 @@ export async function POST(request: Request, context: RouteContext) {
       if (createError || !tool) {
         console.error('Error creating tool in DB:', createError)
         
-        // Rollback: Delete the VAPI tool
-        try {
-          await vapiClient.tools.delete(vapiTool.id)
-          console.log('Rolled back VAPI tool:', vapiTool.id)
-        } catch (rollbackError) {
-          console.error('Error rolling back VAPI tool:', rollbackError)
+        // Rollback: Delete the VAPI tool if we created one
+        if (vapiTool?.id) {
+          try {
+            await vapiClient.tools.delete(vapiTool.id)
+            console.log('Rolled back VAPI tool:', vapiTool.id)
+          } catch (rollbackError) {
+            console.error('Error rolling back VAPI tool:', rollbackError)
+          }
         }
 
         return NextResponse.json(

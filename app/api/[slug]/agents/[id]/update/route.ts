@@ -12,12 +12,28 @@ export async function PATCH(
     const { organizationId } = await getAuthSession(slug)
 
     const body = await request.json()
-    const { prompt, voiceId } = body
+    const { 
+      firstMessage, 
+      prompt, 
+      voiceId, 
+      transcriber, 
+      serverMessages, 
+      startSpeakingPlan, 
+      stopSpeakingPlan 
+    } = body
 
     // Validate that at least one field is being updated
-    if (prompt === undefined && voiceId === undefined) {
+    if (
+      firstMessage === undefined && 
+      prompt === undefined && 
+      voiceId === undefined &&
+      transcriber === undefined &&
+      serverMessages === undefined &&
+      startSpeakingPlan === undefined &&
+      stopSpeakingPlan === undefined
+    ) {
       return NextResponse.json(
-        { error: 'At least one of prompt or voiceId must be provided' },
+        { error: 'At least one field must be provided for update' },
         { status: 400 }
       )
     }
@@ -52,6 +68,11 @@ export async function PATCH(
     // Prepare update object
     const updateData: any = {}
 
+    // Update firstMessage if provided
+    if (firstMessage !== undefined) {
+      updateData.firstMessage = firstMessage
+    }
+
     // Update prompt if provided
     if (prompt !== undefined) {
       updateData.model = {
@@ -71,6 +92,36 @@ export async function PATCH(
       updateData.voice = {
         ...(assistant.voice as any),
         voiceId: voiceId,
+        provider: '11labs',
+      }
+    }
+
+    // Update transcriber if provided
+    if (transcriber !== undefined) {
+      updateData.transcriber = {
+        ...(assistant.transcriber as any),
+        ...transcriber,
+      }
+    }
+
+    // Update serverMessages if provided
+    if (serverMessages !== undefined) {
+      updateData.serverMessages = serverMessages
+    }
+
+    // Update startSpeakingPlan if provided
+    if (startSpeakingPlan !== undefined) {
+      updateData.startSpeakingPlan = {
+        ...(assistant.startSpeakingPlan as any),
+        ...startSpeakingPlan,
+      }
+    }
+
+    // Update stopSpeakingPlan if provided
+    if (stopSpeakingPlan !== undefined) {
+      updateData.stopSpeakingPlan = {
+        ...(assistant.stopSpeakingPlan as any),
+        ...stopSpeakingPlan,
       }
     }
 

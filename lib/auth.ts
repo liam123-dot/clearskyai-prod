@@ -1,5 +1,5 @@
 'use server'
-import { withAuth } from '@workos-inc/authkit-nextjs';
+import { getSignInUrl, withAuth } from '@workos-inc/authkit-nextjs';
 import { WorkOS } from '@workos-inc/node';
 import { createServiceClient } from '@/lib/supabase/server';
 import { Organisation, DEFAULT_PERMISSIONS } from '@/types/organisation';
@@ -183,17 +183,22 @@ export async function getAuthSession(requestedSlug?: string) {
       effectiveOrgId = undefined;
       organisation = userOrganisation;
       slug = userSlug;
+      
     }
   } else {
     // No slug requested, use user's org
     organisation = userOrganisation;
     slug = userSlug;
+    effectiveOrgId = userOrganisation?.id;
   }
 
   if (!effectiveOrgId || !organisation) {
-    redirect('/');
+    const signInUrl = await getSignInUrl()
+    redirect(signInUrl)
   }
 
+  // Don't redirect here - let the calling code handle the case where no org exists
+  // This prevents infinite loops when called from the base route
   return { 
     user, 
     organizationId: effectiveOrgId, // Always the DB ID, never WorkOS ID

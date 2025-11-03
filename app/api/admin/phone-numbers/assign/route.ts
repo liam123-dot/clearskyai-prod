@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { assignPhoneNumberToAgent, assignPhoneNumberToOrganization, getPhoneNumberById } from '@/lib/phone-numbers';
 import { requireAdmin } from '@/app/(admin)/lib/admin-auth';
-import { ensureSipPhoneNumber } from '@/lib/vapi/sip-phone-numbers';
-import { createServiceClient } from '@/lib/supabase/server';
 import { updatePhoneNumberWebhook } from '@/lib/twilio/phone-numbers';
 
 export async function POST(request: NextRequest) {
@@ -22,24 +20,6 @@ export async function POST(request: NextRequest) {
     // Handle agent assignment if provided
     if (agent_id !== undefined) {
       if (agent_id) {
-        // Get the agent's VAPI assistant ID
-        const supabase = await createServiceClient();
-        const { data: agent, error: agentError } = await supabase
-          .from('agents')
-          .select('id, vapi_assistant_id, sip_uri, vapi_phone_number_id')
-          .eq('id', agent_id)
-          .single();
-        
-        if (agentError || !agent) {
-          return NextResponse.json(
-            { error: 'Agent not found' },
-            { status: 404 }
-          );
-        }
-        
-        // Ensure the agent has SIP configuration
-        await ensureSipPhoneNumber(agent_id, agent.vapi_assistant_id);
-        
         // Get phone number details
         const phoneNumber = await getPhoneNumberById(phone_number_id);
         if (!phoneNumber) {

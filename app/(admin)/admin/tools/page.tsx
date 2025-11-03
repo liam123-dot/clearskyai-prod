@@ -55,8 +55,11 @@ export default async function AdminToolsPage() {
   const unassignedVapiTools = vapiToolsList.filter((tool) => !dbToolIds.has(tool.id))
 
   // Create a map of external tool IDs to DB tool info for displaying assignments
+  // Only include tools with external_tool_id (preemptive-only tools without VAPI IDs are excluded)
   const toolAssignments = new Map(
-    dbTools.map(tool => [tool.external_tool_id, tool])
+    dbTools
+      .filter(tool => tool.external_tool_id !== null)
+      .map(tool => [tool.external_tool_id!, tool])
   )
 
   if (dbTools.length === 0 && unassignedVapiTools.length === 0) {

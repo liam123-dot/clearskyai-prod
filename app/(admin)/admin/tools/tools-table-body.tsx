@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -79,6 +80,7 @@ function getToolImageSrc(tool: Tool): string | null {
 }
 
 export function ToolsTableBody({ vapiTools, dbTools, toolAssignments, organizations, showOnlyAssigned }: ToolsTableBodyProps) {
+  const router = useRouter()
   const [selectedOrg, setSelectedOrg] = useState<Record<string, string>>({})
   const [assigning, setAssigning] = useState<Record<string, boolean>>({})
 
@@ -132,8 +134,15 @@ export function ToolsTableBody({ vapiTools, dbTools, toolAssignments, organizati
           const typeLabel = getToolTypeLabel(dbTool.type || '', dbTool)
           const displayName = dbTool.label || dbTool.name
 
+          const orgSlug = assignedOrg?.slug
+          const canNavigate = !!orgSlug
+
           return (
-            <TableRow key={dbTool.id}>
+            <TableRow 
+              key={dbTool.id}
+              className={canNavigate ? "cursor-pointer" : ""}
+              onClick={canNavigate ? () => router.push(`/${orgSlug}/tools/${dbTool.id}`) : undefined}
+            >
               <TableCell>
                 <div className="w-2 h-2 rounded-full bg-green-500" />
               </TableCell>

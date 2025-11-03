@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 // Hardcoded list of admin email addresses
 const ADMIN_EMAILS = [
   'liam@buchananautomations.com',
+  'joshua@clearskyai.co'
   // Add more admin emails here
 ];
 

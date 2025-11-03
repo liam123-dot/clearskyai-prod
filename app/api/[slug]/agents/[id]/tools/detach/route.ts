@@ -76,11 +76,60 @@ export async function POST(
     // For non-query tools or query tools not associated with a knowledge base,
     // proceed with normal detach
     
+    // Check if tool is attached via agent_tools table (for attach_to_agent = false tools)
+    if (tool.attach_to_agent === false) {
+      const { data: agentTool, error: agentToolError } = await supabase
+        .from('agent_tools')
+        .select('id')
+        .eq('agent_id', agentId)
+        .eq('tool_id', toolId)
+        .maybeSingle()
+
+      if (agentToolError) {
+        console.error('Error checking agent_tools:', agentToolError)
+        return NextResponse.json(
+          { error: 'Failed to check tool attachment' },
+          { status: 500 }
+        )
+      }
+
+      if (!agentTool) {
+        return NextResponse.json(
+          { error: 'Tool is not attached to this agent' },
+          { status: 400 }
+        )
+      }
+
+      // Remove from agent_tools table
+      const { error: deleteError } = await supabase
+        .from('agent_tools')
+        .delete()
+        .eq('id', agentTool.id)
+
+      if (deleteError) {
+        console.error('Error removing from agent_tools:', deleteError)
+        return NextResponse.json(
+          { error: 'Failed to detach tool' },
+          { status: 500 }
+        )
+      }
+
+      return NextResponse.json({ success: true })
+    }
+
+    // Handle VAPI-attached tools (attach_to_agent = true)
+    if (!tool.external_tool_id) {
+      return NextResponse.json(
+        { error: 'Tool does not have a VAPI tool ID and cannot be detached from VAPI' },
+        { status: 400 }
+      )
+    }
+
     // Fetch assistant from VAPI
     const assistant = await vapiClient.assistants.get(agent.vapi_assistant_id)
     const currentToolIds = assistant.model?.toolIds || []
 
-    // Check if tool is attached
+    // Check if tool is attached via VAPI
     if (!currentToolIds.includes(tool.external_tool_id)) {
       return NextResponse.json(
         { error: 'Tool is not attached to this agent' },

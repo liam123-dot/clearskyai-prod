@@ -14,6 +14,28 @@ export function convertToolConfigToVapiApiRequest(
 ): CreateApiRequestToolDto {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
   
+  // Build properties for body - VAPI requires at least one property
+  const bodyProperties = Object.fromEntries(
+    Object.entries(functionSchema.parameters.properties || {}).map(([key, prop]) => [
+      key,
+      {
+        ...prop,
+        default: prop.default !== undefined ? String(prop.default) : undefined,
+      }
+    ])
+  )
+
+  // If no properties exist (all parameters are fixed), add a dummy property
+  // This is needed because VAPI requires at least one property in body.properties
+  // Tools with execute_on_call_start may have no AI parameters
+  if (Object.keys(bodyProperties).length === 0) {
+    bodyProperties._dummy = {
+      type: 'string',
+      description: 'Internal field - not used',
+      default: '',
+    }
+  }
+
   // Build the VAPI tool structure
   const vapiTool: CreateApiRequestToolDto = {
     type: 'apiRequest',
@@ -29,15 +51,7 @@ export function convertToolConfigToVapiApiRequest(
     body: {
       type: 'object',
       required: functionSchema.parameters.required || [],
-      properties: Object.fromEntries(
-        Object.entries(functionSchema.parameters.properties || {}).map(([key, prop]) => [
-          key,
-          {
-            ...prop,
-            default: prop.default !== undefined ? String(prop.default) : undefined,
-          }
-        ])
-      ),
+      properties: bodyProperties,
     },
     variableExtractionPlan: {
       schema: {

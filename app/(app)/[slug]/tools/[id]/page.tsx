@@ -152,8 +152,37 @@ export default async function ToolPage({ params }: ToolPageProps) {
   }
 
   // Now fetch from VAPI using the external tool ID
+  // Skip VAPI fetch for preemptive-only tools (attach_to_agent = false) that don't have external_tool_id
   let vapiTool
   let error: string | null = null
+
+  if (!dbTool.external_tool_id) {
+    // Preemptive-only tool without VAPI tool ID - show edit form directly
+    return (
+      <div className="space-y-6">
+        <Link
+          href={`/${slug}/tools`}
+          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+        >
+          <IconArrowLeft className="w-4 h-4 mr-1" />
+          Back to Tools
+        </Link>
+
+        <div className="flex items-start justify-between">
+          <div>
+          </div>
+          <Badge
+            variant="secondary"
+            className={getToolTypeBadgeColor(dbTool.type)}
+          >
+            {getToolTypeLabel(dbTool.type)}
+          </Badge>
+        </div>
+
+        <EditToolForm tool={dbTool as ToolDatabaseRecord} slug={slug} />
+      </div>
+    )
+  }
 
   try {
     // Fetch live data from VAPI using the external tool ID from our DB

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPhoneNumberById } from '@/lib/phone-numbers';
 import { findMatchingSchedule, generateTransferTwiML } from '@/lib/call-routing';
 import { createServiceClient } from '@/lib/supabase/server';
+import { executeOnCallStartTools } from '@/lib/tools/on-call-start';
 
 export async function POST(
   request: NextRequest,
@@ -188,7 +189,48 @@ export async function POST(
 
       // Get the TwiML response from Vapi and return it to Twilio
       const vapiTwiml = await vapiResponse.text();
+      console.log('Vapi Twiml response:', vapiTwiml);
       console.log(`Call ${callSid} routed directly to agent ${phoneNumber.agent_id}`);
+      
+      // Extract control URL from TwiML if we have a call record
+      if (callRecord) {
+        try {
+          // Parse TwiML to extract Stream URL
+          // Format: <Stream url='wss://.../transport' />
+          const streamUrlMatch = vapiTwiml.match(/url=['"]([^'"]+)['"]/);
+          if (streamUrlMatch) {
+            const streamUrl = streamUrlMatch[1];
+            // Replace /transport with /control to get control URL
+            const controlUrl = streamUrl.replace('/transport', '/control');
+            
+            console.log(`📞 Extracted control URL: ${controlUrl}`);
+            
+            // Update call record with control URL
+            await supabase
+              .from('calls')
+              .update({ control_url: controlUrl })
+              .eq('id', callRecord.id);
+            
+            // Trigger on-call-start tool execution asynchronously
+            // Don't await - let it run in background
+            executeOnCallStartTools(
+              phoneNumber.agent_id,
+              callRecord.id,
+              from,
+              to,
+              controlUrl
+            ).catch(err => {
+              console.error('Error executing on-call-start tools:', err);
+              // Don't fail the call if tool execution fails
+            });
+          } else {
+            console.warn('Could not extract Stream URL from VAPI TwiML response');
+          }
+        } catch (error) {
+          console.error('Error extracting control URL:', error);
+          // Don't fail the call if URL extraction fails
+        }
+      }
       
       return new NextResponse(vapiTwiml, {
         status: 200,

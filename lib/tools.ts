@@ -11,12 +11,14 @@ export interface Tool {
   label: string | null
   description: string | null
   organization_id: string
-  external_tool_id: string
+  external_tool_id: string | null // VAPI tool ID, NULL for preemptive-only tools
   type: ToolType
   function_schema: Record<string, unknown> | null
   static_config: Record<string, unknown> | null
   config_metadata: Record<string, unknown> | null
   async: boolean | null
+  execute_on_call_start: boolean | null
+  attach_to_agent: boolean | null // If false, tool cannot be attached to agents and only runs preemptively
   data: any
   created_at: string
   updated_at: string
@@ -321,6 +323,139 @@ export async function getOrCreateAgentTools(
     }
     
     tools.push(tool)
+  }
+
+  return tools
+}
+
+/**
+ * Gets all tools attached to an agent (from both VAPI toolIds and agent_tools table)
+ */
+export async function getAgentTools(agentId: string): Promise<Tool[]> {
+  const supabase = await createServiceClient()
+  
+  // Get VAPI-attached tools
+  const { data: agent } = await supabase
+    .from('agents')
+    .select('vapi_assistant_id')
+    .eq('id', agentId)
+    .single()
+
+  let vapiTools: Tool[] = []
+  if (agent?.vapi_assistant_id) {
+    try {
+      const assistant = await vapiClient.assistants.get(agent.vapi_assistant_id)
+      const toolIds = assistant.model?.toolIds || []
+      vapiTools = await getOrCreateAgentTools(agentId, toolIds)
+    } catch (error) {
+      console.error('Error fetching VAPI tools:', error)
+    }
+  }
+
+  // Get agent_tools-attached tools
+  const { data: agentToolsRecords, error: agentToolsError } = await supabase
+    .from('agent_tools')
+    .select('tool_id')
+    .eq('agent_id', agentId)
+
+  if (agentToolsError) {
+    console.error('Error fetching agent_tools:', agentToolsError)
+    return vapiTools
+  }
+
+  const agentToolIds = (agentToolsRecords || []).map(record => record.tool_id)
+  const agentTools: Tool[] = []
+
+  for (const toolId of agentToolIds) {
+    const tool = await getTool(toolId)
+    if (tool) {
+      agentTools.push(tool)
+    }
+  }
+
+  // Combine and deduplicate by tool ID
+  const allTools = [...vapiTools, ...agentTools]
+  const uniqueTools = new Map<string, Tool>()
+  for (const tool of allTools) {
+    uniqueTools.set(tool.id, tool)
+  }
+
+  return Array.from(uniqueTools.values())
+}
+
+/**
+ * Checks if a tool is attached to an agent (via VAPI or agent_tools table)
+ */
+export async function isToolAttachedToAgent(
+  agentId: string,
+  toolId: string
+): Promise<boolean> {
+  const supabase = await createServiceClient()
+
+  // Check agent_tools table
+  const { data: agentTool, error: agentToolError } = await supabase
+    .from('agent_tools')
+    .select('id')
+    .eq('agent_id', agentId)
+    .eq('tool_id', toolId)
+    .maybeSingle()
+
+  if (agentToolError) {
+    console.error('Error checking agent_tools:', agentToolError)
+  }
+
+  if (agentTool) {
+    return true
+  }
+
+  // Check VAPI toolIds
+  const tool = await getTool(toolId)
+  if (!tool?.external_tool_id) {
+    return false
+  }
+
+  const { data: agent } = await supabase
+    .from('agents')
+    .select('vapi_assistant_id')
+    .eq('id', agentId)
+    .single()
+
+  if (!agent?.vapi_assistant_id) {
+    return false
+  }
+
+  try {
+    const assistant = await vapiClient.assistants.get(agent.vapi_assistant_id)
+    const toolIds = assistant.model?.toolIds || []
+    return toolIds.includes(tool.external_tool_id)
+  } catch (error) {
+    console.error('Error checking VAPI tools:', error)
+    return false
+  }
+}
+
+/**
+ * Gets tools attached via agent_tools table (non-VAPI attached)
+ */
+export async function getAgentToolsFromTable(agentId: string): Promise<Tool[]> {
+  const supabase = await createServiceClient()
+
+  const { data: agentToolsRecords, error } = await supabase
+    .from('agent_tools')
+    .select('tool_id')
+    .eq('agent_id', agentId)
+
+  if (error) {
+    console.error('Error fetching agent_tools:', error)
+    return []
+  }
+
+  const tools: Tool[] = []
+  for (const record of agentToolsRecords || []) {
+    const tool = await getTool(record.tool_id)
+    if (tool) {
+      tools.push(tool)
+    }
   }
 
   return tools
