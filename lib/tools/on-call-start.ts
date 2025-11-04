@@ -25,7 +25,6 @@ export async function executeOnCallStartTools(
   calledNumber: string,
   controlUrl: string
 ): Promise<void> {
-  'use step';
   console.log(`🚀 Executing on-call-start tools for agent ${agentId}, call ${callRecordId}`)
   console.log(`📞 Caller: ${callerNumber}, Called: ${calledNumber}`)
   console.log(`🔗 Control URL: ${controlUrl}`)
@@ -81,8 +80,7 @@ export async function executeOnCallStartTools(
       try {
         // Execute tool directly using shared function
         // Empty parameters - tools should use fixed values with variables
-        // Pass supabase client to avoid cookie-based auth in Trigger.dev
-        const executionResult = await executeToolById(tool.id, {}, variableContext, supabase)
+        const executionResult = await executeToolById(tool.id, {}, variableContext)
         
         if (executionResult.success) {
           console.log(`✅ Tool ${toolName} executed successfully`)

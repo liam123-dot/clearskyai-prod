@@ -1,9 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { getPhoneNumberById } from '@/lib/phone-numbers';
 import { findMatchingSchedule, generateTransferTwiML } from '@/lib/call-routing';
 import { createServiceClient } from '@/lib/supabase/server';
-import { start } from 'workflow/api';
-import { executeCallStartToolsWorkflow } from '@/workflows/execute-call-start-tools';
+import { executeOnCallStartTools } from '@/lib/tools/on-call-start';
 
 export async function POST(
   request: NextRequest,
@@ -214,16 +213,18 @@ export async function POST(
               .update({ control_url: controlUrl })
               .eq('id', callRecord.id);
             
-            // Trigger on-call-start tool execution via Vercel Workflow
-            // Fire-and-forget: start() returns immediately after queuing
-            console.log(`🚀 Starting workflow for call ${callRecord.id}`);
-            await start(executeCallStartToolsWorkflow, [{
-              agentId: phoneNumber.agent_id!,
-              callRecordId: callRecord.id,
-              callerNumber: from,
-              calledNumber: to,
-              controlUrl,
-            }]);
+            // Trigger on-call-start tool execution asynchronously
+            // Don't await - let it run in background
+            
+            after(async () => {
+              executeOnCallStartTools(
+                phoneNumber.agent_id!,
+                callRecord.id,
+                from,
+                to,
+                controlUrl
+              )
+            })
 
           } else {
             console.warn('Could not extract Stream URL from VAPI TwiML response');

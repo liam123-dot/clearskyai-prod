@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import { withWorkflow} from 'workflow/next'
 
 const nextConfig: NextConfig = {
   images: {
@@ -14,7 +13,6 @@ const nextConfig: NextConfig = {
       }
     ],
   },
-  serverExternalPackages: ['twilio'],
 };
 
-export default withWorkflow(nextConfig);
+export default nextConfig;
