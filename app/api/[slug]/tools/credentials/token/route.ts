@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthSession } from '@/lib/auth'
-import { getPipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
+import { pipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
 
 type RouteContext = {
   params: Promise<{ slug: string }>
@@ -35,7 +35,7 @@ export async function GET(request: Request, context: RouteContext) {
     // Create a token for the organization (using organization ID as external user ID)
     console.log('Creating Pipedream token for organization:', organizationId)
     
-    const { token, expiresAt, connectLinkUrl } = await getPipedreamClient().tokens.create({
+    const { token, expiresAt, connectLinkUrl } = await pipedreamClient.tokens.create({
       externalUserId: organizationId,
     })
 

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthSession } from '@/lib/auth'
-import { getPipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
+import { pipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
 
 type RouteContext = {
   params: Promise<{ slug: string }>
@@ -36,7 +36,7 @@ export async function GET(request: Request, context: RouteContext) {
     const query = searchParams.get('q') || ''
 
     // Search for apps using the Pipedream API
-    const results = await getPipedreamClient().apps.list({
+    const results = await pipedreamClient.apps.list({
       q: query,
       limit: 50, // Get more results for better search experience
     })

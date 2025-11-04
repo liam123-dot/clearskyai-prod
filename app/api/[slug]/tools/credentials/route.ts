@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthSession } from '@/lib/auth'
-import { getPipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
+import { pipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
 
 type RouteContext = {
   params: Promise<{ slug: string }>
@@ -32,7 +32,7 @@ export async function GET(request: Request, context: RouteContext) {
     }
 
     // List all accounts for this organization
-    const results = await getPipedreamClient().accounts.list({
+    const results = await pipedreamClient.accounts.list({
       externalUserId: organizationId,
       includeCredentials: false, // We don't expose credentials to the client
     })

@@ -1,38 +1,35 @@
 import { PipedreamClient } from "@pipedream/sdk"
 
-// Lazy singleton pattern - client is only created when first needed
-let pipedreamClientInstance: PipedreamClient | null = null
-let isInitialized = false
-
-/**
- * Get or create the Pipedream client instance (singleton pattern)
- * This ensures the client is only created when actually needed and reused across requests
- */
-export function getPipedreamClient(): PipedreamClient {
-  if (!pipedreamClientInstance) {
-    const projectEnvironment = (
-      process.env.PIPEDREAM_ENVIRONMENT || 
-      process.env.NEXT_PUBLIC_PIPEDREAM_ENVIRONMENT || 
-      "development"
-    ) as "development" | "production"
-    
-    // Only log once when actually creating the client
-    if (!isInitialized) {
-      console.log('Initializing Pipedream client:', projectEnvironment)
-      isInitialized = true
-    }
-    
-    pipedreamClientInstance = new PipedreamClient({
-      projectEnvironment,
-      clientId: process.env.PIPEDREAM_CLIENT_ID,
-      clientSecret: process.env.PIPEDREAM_CLIENT_SECRET,
-      projectId: process.env.PIPEDREAM_PROJECT_ID,
-    })
-  }
-  
-  return pipedreamClientInstance
+// Validate environment variables
+if (!process.env.PIPEDREAM_CLIENT_ID) {
+  console.warn('Missing PIPEDREAM_CLIENT_ID environment variable')
 }
 
+if (!process.env.PIPEDREAM_CLIENT_SECRET) {
+  console.warn('Missing PIPEDREAM_CLIENT_SECRET environment variable')
+}
+
+if (!process.env.PIPEDREAM_PROJECT_ID) {
+  console.warn('Missing PIPEDREAM_PROJECT_ID environment variable')
+}
+
+// Initialize the Pipedream client
+const projectEnvironment = (process.env.PIPEDREAM_ENVIRONMENT || process.env.NEXT_PUBLIC_PIPEDREAM_ENVIRONMENT || "development") as "development" | "production"
+
+console.log('Initializing Pipedream client with:', {
+  environment: projectEnvironment,
+  hasClientId: !!process.env.PIPEDREAM_CLIENT_ID,
+  hasClientSecret: !!process.env.PIPEDREAM_CLIENT_SECRET,
+  hasProjectId: !!process.env.PIPEDREAM_PROJECT_ID,
+  projectIdPreview: process.env.PIPEDREAM_PROJECT_ID?.substring(0, 10) + '...',
+})
+
+export const pipedreamClient = new PipedreamClient({
+  projectEnvironment,
+  clientId: process.env.PIPEDREAM_CLIENT_ID,
+  clientSecret: process.env.PIPEDREAM_CLIENT_SECRET,
+  projectId: process.env.PIPEDREAM_PROJECT_ID,
+})
 
 /**
  * Check if Pipedream is properly configured

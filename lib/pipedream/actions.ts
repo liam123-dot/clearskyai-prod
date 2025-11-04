@@ -1,4 +1,4 @@
-import { getPipedreamClient, isPipedreamConfigured } from './client'
+import { pipedreamClient, isPipedreamConfigured } from './client'
 
 /**
  * Result from executing a Pipedream action
@@ -41,7 +41,7 @@ export async function executeAction(
     })
 
     // Execute the action using the Pipedream SDK
-    const response = await getPipedreamClient().actions.run({
+    const response = await pipedreamClient.actions.run({
       id: actionComponentId,
       externalUserId: clientId,
       configuredProps: configuredProps,

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthSession } from '@/lib/auth'
-import { getPipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
+import { pipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
 
 type RouteContext = {
   params: Promise<{ slug: string; accountId: string }>
@@ -33,7 +33,7 @@ export async function DELETE(request: Request, context: RouteContext) {
 
     // Verify the account exists and belongs to this organization
     // We'll do this by listing accounts and checking if the accountId exists
-    const results = await getPipedreamClient().accounts.list({
+    const results = await pipedreamClient.accounts.list({
       externalUserId: organizationId,
       includeCredentials: false,
     })
@@ -54,7 +54,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     }
 
     // Delete the account
-    await getPipedreamClient().accounts.delete(accountId)
+    await pipedreamClient.accounts.delete(accountId)
 
     console.log('Account deleted:', {
       accountId,

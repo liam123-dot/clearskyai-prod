@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthSession } from '@/lib/auth'
-import { getPipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
+import { pipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
 
 type RouteContext = {
   params: Promise<{ slug: string; actionKey: string }>
@@ -47,7 +47,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     // Call Pipedream's reloadProps API endpoint
     // This returns updated configurableProps based on the configured props
-    const reloadResponse = await getPipedreamClient().actions.reloadProps({
+    const reloadResponse = await pipedreamClient.actions.reloadProps({
       id: actionKey,
       externalUserId: organizationId,
       configuredProps: configuredProps || {},
