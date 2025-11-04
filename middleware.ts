@@ -12,6 +12,7 @@ export default authkitMiddleware({
       '/api/stripe/webhook',
       '/api/number',
       'api/tools/:id/execute',
+      '/api/call/:id/execute-start-tools',
       '/api/phone-number/:id/incoming',
       '/api/phone-number/:id/incoming/fallback',
     ],
