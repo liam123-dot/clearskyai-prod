@@ -10,6 +10,7 @@ import { executeAction } from '@/lib/pipedream/actions'
 import type { PipedreamActionToolConfig, SmsToolConfig } from '@/lib/tools/types'
 import { substituteVariables, substituteVariablesInValue, type VariableContext } from '@/lib/tools/variables'
 import twilio from 'twilio'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 /**
  * Result from executing a tool
@@ -28,12 +29,14 @@ export interface ToolExecutionResult {
  * @param toolId - The tool ID to execute
  * @param aiProvidedParams - Parameters provided by AI (can be empty for on-call-start tools)
  * @param variableContext - Context for variable substitution (caller/called numbers)
+ * @param supabaseClient - Optional Supabase client (for environments without cookies like Trigger.dev)
  * @returns Result with success flag and data or error
  */
 export async function executeToolById(
   toolId: string,
   aiProvidedParams: Record<string, unknown>,
-  variableContext: VariableContext
+  variableContext: VariableContext,
+  supabaseClient?: SupabaseClient
 ): Promise<ToolExecutionResult> {
   console.log('🔧 Tool execution request for tool ID:', toolId)
   console.log('🤖 AI-provided parameters:', JSON.stringify(aiProvidedParams, null, 2))
@@ -44,7 +47,7 @@ export async function executeToolById(
   // ===================================================================
   
   console.log(`🔍 Fetching tool from database (ID: ${toolId})...`)
-  const supabase = await createServiceClient()
+  const supabase = supabaseClient || await createServiceClient()
   
   const { data: tool, error: toolError } = await supabase
     .from('tools')
@@ -92,7 +95,7 @@ export async function executeToolById(
   
   if (tool.type === 'sms') {
     console.log(`🔀 Routing to SMS handler`)
-    return handleSmsAction(tool, aiProvidedParams, variableContext)
+    return handleSmsAction(tool, aiProvidedParams, variableContext, supabase)
   }
 
   // ===================================================================
@@ -258,7 +261,8 @@ async function handlePipedreamAction(
 async function handleSmsAction(
   tool: Record<string, unknown>,
   aiProvidedParams: Record<string, unknown>,
-  variableContext: VariableContext
+  variableContext: VariableContext,
+  supabaseClient?: SupabaseClient
 ): Promise<ToolExecutionResult> {
   // ===================================================================
   // EXTRACT CONFIGURATION
@@ -344,7 +348,7 @@ async function handleSmsAction(
     }
   }
 
-  const supabase = await createServiceClient()
+  const supabase = supabaseClient || await createServiceClient()
   let phoneNumberRecord: Record<string, unknown> | null = null
   
   const calledPhoneNumber = variableContext.called_phone_number

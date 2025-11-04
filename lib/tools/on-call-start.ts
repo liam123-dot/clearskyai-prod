@@ -80,7 +80,8 @@ export async function executeOnCallStartTools(
       try {
         // Execute tool directly using shared function
         // Empty parameters - tools should use fixed values with variables
-        const executionResult = await executeToolById(tool.id, {}, variableContext)
+        // Pass supabase client to avoid cookie-based auth in Trigger.dev
+        const executionResult = await executeToolById(tool.id, {}, variableContext, supabase)
         
         if (executionResult.success) {
           console.log(`✅ Tool ${toolName} executed successfully`)
