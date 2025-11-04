@@ -43,6 +43,7 @@ export async function executeToolById(
   // FETCH TOOL FROM DATABASE
   // ===================================================================
   
+  console.log(`🔍 Fetching tool from database (ID: ${toolId})...`)
   const supabase = await createServiceClient()
   
   const { data: tool, error: toolError } = await supabase
@@ -52,7 +53,11 @@ export async function executeToolById(
     .single()
 
   if (toolError) {
-    console.error('❌ Database error fetching tool:', toolError)
+    console.error('❌ Database error fetching tool')
+    console.error(`   Tool ID: ${toolId}`)
+    console.error(`   Error code: ${toolError.code || 'N/A'}`)
+    console.error(`   Error message: ${toolError.message || 'N/A'}`)
+    console.error(`   Full error:`, JSON.stringify(toolError, null, 2))
     return {
       success: false,
       error: 'Database error',
@@ -60,7 +65,8 @@ export async function executeToolById(
   }
 
   if (!tool) {
-    console.error('❌ Tool not found:', toolId)
+    console.error('❌ Tool not found')
+    console.error(`   Tool ID: ${toolId}`)
     return {
       success: false,
       error: 'Tool not found',
@@ -68,12 +74,15 @@ export async function executeToolById(
   }
 
   console.log(`✅ Found tool: ${tool.name} (type: ${tool.type})`)
+  console.log(`   Tool ID: ${tool.id}`)
+  console.log(`   Organization ID: ${tool.organization_id || 'N/A'}`)
 
   // ===================================================================
   // HANDLE PIPEDREAM ACTION TOOLS
   // ===================================================================
   
   if (tool.type === 'pipedream_action') {
+    console.log(`🔀 Routing to Pipedream action handler`)
     return handlePipedreamAction(tool, aiProvidedParams, variableContext)
   }
 
@@ -82,6 +91,7 @@ export async function executeToolById(
   // ===================================================================
   
   if (tool.type === 'sms') {
+    console.log(`🔀 Routing to SMS handler`)
     return handleSmsAction(tool, aiProvidedParams, variableContext)
   }
 
@@ -89,6 +99,7 @@ export async function executeToolById(
   // HANDLE OTHER TOOL TYPES (TODO)
   // ===================================================================
   
+  console.error(`❌ Unsupported tool type: ${tool.type}`)
   return {
     success: false,
     error: `Tool type '${tool.type}' not yet implemented`,
@@ -214,7 +225,9 @@ async function handlePipedreamAction(
   )
 
   if (!executionResult.success) {
-    console.error('❌ Action execution failed:', executionResult.error)
+    console.error('❌ Action execution failed')
+    console.error(`   Error: ${executionResult.error || 'Unknown error'}`)
+    console.error(`   Full execution result:`, JSON.stringify(executionResult, null, 2))
     return {
       success: false,
       error: 'Action execution failed',
@@ -222,6 +235,10 @@ async function handlePipedreamAction(
   }
 
   console.log('✅ Action executed successfully')
+  console.log(`   Return value type: ${typeof executionResult.returnValue}`)
+  if (executionResult.returnValue) {
+    console.log(`   Return value preview: ${JSON.stringify(executionResult.returnValue).substring(0, 200)}${JSON.stringify(executionResult.returnValue).length > 200 ? '...' : ''}`)
+  }
 
   // ===================================================================
   // RETURN RESULT
@@ -476,7 +493,13 @@ async function handleSmsAction(
       error: allSuccessful ? undefined : `Failed to send to ${errors.length} recipient(s)`,
     }
   } catch (error) {
-    console.error('❌ SMS sending error:', error)
+    console.error('❌ SMS sending error')
+    console.error(`   Error type: ${error instanceof Error ? error.constructor.name : typeof error}`)
+    console.error(`   Error message: ${error instanceof Error ? error.message : String(error)}`)
+    if (error instanceof Error && error.stack) {
+      console.error(`   Stack trace:`, error.stack)
+    }
+    console.error(`   Full error object:`, JSON.stringify(error, Object.getOwnPropertyNames(error), 2))
     return {
       success: false,
       error: 'Failed to send SMS',
