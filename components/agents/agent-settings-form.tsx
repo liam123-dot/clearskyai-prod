@@ -188,8 +188,16 @@ export function AgentSettingsForm({
 
   const handleAddKeyword = () => {
     const trimmed = newKeyword.trim()
-    if (trimmed && !keyterms.includes(trimmed)) {
-      setKeyterms([...keyterms, trimmed])
+    if (!trimmed) return
+
+    // Split by comma and process each keyword
+    const keywordsToAdd = trimmed
+      .split(',')
+      .map(k => k.trim())
+      .filter(k => k.length > 0 && !keyterms.includes(k))
+
+    if (keywordsToAdd.length > 0) {
+      setKeyterms([...keyterms, ...keywordsToAdd])
       setNewKeyword('')
     }
   }
@@ -515,7 +523,7 @@ export function AgentSettingsForm({
         <CardContent className="space-y-4">
           <div className="flex gap-2">
             <Input
-              placeholder="Enter a keyword..."
+              placeholder="Enter a keyword or comma-separated keywords..."
               value={newKeyword}
               onChange={(e) => setNewKeyword(e.target.value)}
               onKeyPress={handleKeyPress}
@@ -524,7 +532,7 @@ export function AgentSettingsForm({
             <Button
               type="button"
               onClick={handleAddKeyword}
-              disabled={!newKeyword.trim() || keyterms.includes(newKeyword.trim())}
+              disabled={!newKeyword.trim()}
             >
               <Plus className="h-4 w-4 mr-2" />
               Add
