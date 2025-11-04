@@ -26,6 +26,7 @@ export function SiteHeader({ isAdmin = false, showAdminButton = true }: SiteHead
   const pathname = usePathname()
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItemData[]>([])
   const [nameCache, setNameCache] = useState<Record<string, string>>({})
+  const [loadingTrigger, setLoadingTrigger] = useState(0)
   const loadingIdsRef = React.useRef<Set<string>>(new Set())
   
   useEffect(() => {
@@ -59,15 +60,11 @@ export function SiteHeader({ isAdmin = false, showAdminButton = true }: SiteHead
           const cachedName = nameCache[segment]
           const isLoading = loadingIdsRef.current.has(segment)
           
-          items.push({ 
-            label: cachedName || segment,
-            href: currentPath,
-            isLoading: isLoading && !cachedName
-          })
-          
-          // Fetch name if not cached and not already loading
+          // If no cached name, mark as loading immediately and start fetch
           if (!cachedName && !isLoading && segments[0]) {
             loadingIdsRef.current.add(segment)
+            // Trigger re-render to show skeleton immediately
+            setLoadingTrigger(prev => prev + 1)
             
             const resourceType = prevSegment === 'knowledge-base' ? 'knowledge-base' : prevSegment
             fetch(`/api/${segments[0]}/${resourceType}/${segment}/name`)
@@ -80,10 +77,20 @@ export function SiteHeader({ isAdmin = false, showAdminButton = true }: SiteHead
               .catch(() => {})
               .finally(() => {
                 loadingIdsRef.current.delete(segment)
-                // Force re-render to update breadcrumbs
-                setBreadcrumbs(prev => [...prev])
+                // Trigger re-render to update breadcrumbs
+                setLoadingTrigger(prev => prev + 1)
               })
           }
+          
+          // Only show label if we have a cached name, never show the ID
+          // If loading, isLoading will be true and skeleton will be shown
+          const isCurrentlyLoading = loadingIdsRef.current.has(segment) && !cachedName
+          
+          items.push({ 
+            label: cachedName || '',
+            href: currentPath,
+            isLoading: isCurrentlyLoading
+          })
         } else {
           // Regular segment - capitalize and format
           const label = segment
@@ -102,7 +109,7 @@ export function SiteHeader({ isAdmin = false, showAdminButton = true }: SiteHead
     }
     
     generateBreadcrumbs()
-  }, [pathname, nameCache])
+  }, [pathname, nameCache, loadingTrigger])
   
   // Get the current page title (last breadcrumb)
   const currentTitle = breadcrumbs.length > 0 

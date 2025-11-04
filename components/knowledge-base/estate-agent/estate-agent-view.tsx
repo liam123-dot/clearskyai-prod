@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { PropertiesTable } from './properties-table'
 import { SyncButton } from './sync-button'
 import { PromptSheet } from './prompt-sheet'
 import { LocationDataSheet } from './location-data-sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
+import { Copy, Check } from 'lucide-react'
+import { toast } from 'sonner'
 import type { KnowledgeBase, Property } from '@/lib/knowledge-bases'
 
 interface EstateAgentViewProps {
@@ -48,6 +51,7 @@ export function EstateAgentView({ knowledgeBase, organizationSlug }: EstateAgent
   const [summaryLoading, setSummaryLoading] = useState(true)
   const [propertiesLoading, setPropertiesLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [copiedUrl, setCopiedUrl] = useState<'forSale' | 'rental' | null>(null)
 
   // Fetch summary once on mount
   useEffect(() => {
@@ -141,6 +145,19 @@ export function EstateAgentView({ knowledgeBase, organizationSlug }: EstateAgent
       dateStyle: 'medium',
       timeStyle: 'short',
     }).format(date)
+  }
+
+  // Handle copying URLs
+  const handleCopyUrl = async (url: string, type: 'forSale' | 'rental') => {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopiedUrl(type)
+      toast.success(`${type === 'forSale' ? 'For Sale' : 'Rental'} URL copied to clipboard`)
+      setTimeout(() => setCopiedUrl(null), 2000)
+    } catch (error) {
+      toast.error(`Failed to copy ${type === 'forSale' ? 'For Sale' : 'Rental'} URL`)
+      console.error(error)
+    }
   }
 
   if (error) {
@@ -300,17 +317,45 @@ export function EstateAgentView({ knowledgeBase, organizationSlug }: EstateAgent
                 {forSaleUrl && (
                   <div>
                     <p className="text-sm font-medium">For Sale URL</p>
-                    <p className="text-sm text-muted-foreground break-all">
-                      {forSaleUrl}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-sm text-muted-foreground break-all flex-1">
+                        {forSaleUrl}
+                      </p>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => handleCopyUrl(forSaleUrl, 'forSale')}
+                        className="shrink-0"
+                      >
+                        {copiedUrl === 'forSale' ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 )}
                 {rentalUrl && (
                   <div>
                     <p className="text-sm font-medium">Rental URL</p>
-                    <p className="text-sm text-muted-foreground break-all">
-                      {rentalUrl}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <p className="text-sm text-muted-foreground break-all flex-1">
+                        {rentalUrl}
+                      </p>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => handleCopyUrl(rentalUrl, 'rental')}
+                        className="shrink-0"
+                      >
+                        {copiedUrl === 'rental' ? (
+                          <Check className="h-4 w-4" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 )}
                 {resyncSchedule && (
