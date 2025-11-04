@@ -266,12 +266,19 @@ This enables CRM lookups and other pre-call data gathering that enriches the con
    - Confirms deletion in UI
 
 2. **DELETE /api/[slug]/tools/[id]**
-   - Checks if tool is attached to any agents
-   - Deletes from VAPI first
-   - Deletes from DB
-   - Continues with DB deletion even if VAPI fails
+   - Queries `agent_tools` to find all agents with this tool attached
+   - For each agent with `is_vapi_attached = true`:
+     - Fetches VAPI assistant
+     - Removes tool from assistant's `toolIds`
+     - Updates assistant in VAPI
+     - Handles 404 errors gracefully (tool/assistant already deleted)
+     - Fails deletion on other VAPI errors
+   - Deletes tool from VAPI (handles 404 gracefully)
+   - Deletes from database (CASCADE deletes `agent_tools` records)
 
-3. **Tool is removed from all agents and database**
+3. **Tool is removed from all agents in VAPI and database**
+
+This ensures that when a tool is deleted, it's properly removed from all agents in VAPI before being deleted from our database, preventing orphaned tool references.
 
 ## Parameter Modes
 

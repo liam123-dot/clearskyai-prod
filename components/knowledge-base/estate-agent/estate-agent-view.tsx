@@ -1,39 +1,128 @@
+'use client'
+
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PropertiesTable } from './properties-table'
 import { SyncButton } from './sync-button'
 import { PromptSheet } from './prompt-sheet'
-import { getProperties } from '@/lib/knowledge-bases'
-import type { KnowledgeBase } from '@/lib/knowledge-bases'
+import { LocationDataSheet } from './location-data-sheet'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
+import type { KnowledgeBase, Property } from '@/lib/knowledge-bases'
 
 interface EstateAgentViewProps {
   knowledgeBase: KnowledgeBase
-  currentPage: number
   organizationSlug: string
 }
 
-export async function EstateAgentView({ knowledgeBase, currentPage, organizationSlug }: EstateAgentViewProps) {
-  // Pagination
+interface SummaryData {
+  rentalCount: number
+  saleCount: number
+  rentalMinPrice: number | null
+  rentalMaxPrice: number | null
+  saleMinPrice: number | null
+  saleMaxPrice: number | null
+  lastSynced: string | null
+  totalCount: number
+}
+
+interface PropertiesData {
+  properties: Property[]
+  pagination: {
+    page: number
+    pageSize: number
+    totalCount: number
+    totalPages: number
+  }
+}
+
+export function EstateAgentView({ knowledgeBase, organizationSlug }: EstateAgentViewProps) {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
   const pageSize = 24
-  const offset = (currentPage - 1) * pageSize
+  const currentPage = parseInt(searchParams.get('page') || '1', 10)
+  
+  const [summary, setSummary] = useState<SummaryData | null>(null)
+  const [propertiesData, setPropertiesData] = useState<PropertiesData | null>(null)
+  const [summaryLoading, setSummaryLoading] = useState(true)
+  const [propertiesLoading, setPropertiesLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  // Fetch properties
-  const allProperties = await getProperties(knowledgeBase.id)
-  const totalCount = allProperties.length
-  const paginatedProperties = allProperties.slice(offset, offset + pageSize)
+  // Fetch summary once on mount
+  useEffect(() => {
+    const fetchSummary = async () => {
+      setSummaryLoading(true)
+      try {
+        const response = await fetch(
+          `/api/${organizationSlug}/knowledge-bases/${knowledgeBase.id}/properties?page=1&pageSize=1`
+        )
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch summary')
+        }
+        
+        const result = await response.json()
+        setSummary({
+          rentalCount: result.summary.rentalCount,
+          saleCount: result.summary.saleCount,
+          rentalMinPrice: result.summary.rentalMinPrice,
+          rentalMaxPrice: result.summary.rentalMaxPrice,
+          saleMinPrice: result.summary.saleMinPrice,
+          saleMaxPrice: result.summary.saleMaxPrice,
+          lastSynced: result.summary.lastSynced,
+          totalCount: result.pagination.totalCount,
+        })
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load summary')
+      } finally {
+        setSummaryLoading(false)
+      }
+    }
 
-  // Calculate summary statistics
-  const rentalCount = allProperties.filter(p => p.transaction_type === 'rent').length
-  const saleCount = allProperties.filter(p => p.transaction_type === 'sale').length
-  const prices = allProperties.map(p => p.price).filter((p): p is number => p !== null && p !== undefined)
-  const minPrice = prices.length > 0 ? Math.min(...prices) : null
-  const maxPrice = prices.length > 0 ? Math.max(...prices) : null
-  const lastSynced = allProperties.length > 0 
-    ? allProperties.reduce((latest, prop) => {
-        const scrapedAt = new Date(prop.scraped_at).getTime()
-        const latestTime = new Date(latest.scraped_at).getTime()
-        return scrapedAt > latestTime ? prop : latest
-      }).scraped_at
-    : null
+    fetchSummary()
+  }, [knowledgeBase.id, organizationSlug])
+
+  // Fetch properties when page changes
+  useEffect(() => {
+    const fetchProperties = async () => {
+      setPropertiesLoading(true)
+      setError(null)
+      try {
+        const response = await fetch(
+          `/api/${organizationSlug}/knowledge-bases/${knowledgeBase.id}/properties?page=${currentPage}&pageSize=${pageSize}`
+        )
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch properties')
+        }
+        
+        const result = await response.json()
+        setPropertiesData({
+          properties: result.properties,
+          pagination: result.pagination,
+        })
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load properties')
+      } finally {
+        setPropertiesLoading(false)
+      }
+    }
+
+    fetchProperties()
+  }, [knowledgeBase.id, organizationSlug, currentPage, pageSize])
+
+  // Update URL when page changes (for browser history)
+  const handlePageChange = (page: number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (page === 1) {
+      params.delete('page')
+    } else {
+      params.set('page', page.toString())
+    }
+    const queryString = params.toString()
+    router.push(`${pathname}${queryString ? `?${queryString}` : ''}`, { scroll: false })
+  }
 
   // Format price
   const formatPrice = (price: number, transactionType: string) => {
@@ -54,6 +143,43 @@ export async function EstateAgentView({ knowledgeBase, currentPage, organization
     }).format(date)
   }
 
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-end gap-2">
+          <PromptSheet 
+            knowledgeBaseId={knowledgeBase.id}
+            knowledgeBaseName={knowledgeBase.name}
+          />
+          <LocationDataSheet 
+            knowledgeBaseId={knowledgeBase.id}
+            knowledgeBaseName={knowledgeBase.name}
+            organizationSlug={organizationSlug}
+          />
+          <SyncButton 
+            knowledgeBaseId={knowledgeBase.id} 
+            organizationSlug={organizationSlug}
+          />
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-destructive">{error}</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  const totalCount = summary?.totalCount || propertiesData?.pagination.totalCount || 0
+  const rentalCount = summary?.rentalCount || 0
+  const saleCount = summary?.saleCount || 0
+  const rentalMinPrice = summary?.rentalMinPrice || null
+  const rentalMaxPrice = summary?.rentalMaxPrice || null
+  const saleMinPrice = summary?.saleMinPrice || null
+  const saleMaxPrice = summary?.saleMaxPrice || null
+  const lastSynced = summary?.lastSynced || null
+  const paginatedProperties = propertiesData?.properties || []
+
   return (
     <div className="space-y-6">
       {/* Sync Button */}
@@ -62,6 +188,11 @@ export async function EstateAgentView({ knowledgeBase, currentPage, organization
           knowledgeBaseId={knowledgeBase.id}
           knowledgeBaseName={knowledgeBase.name}
         />
+        <LocationDataSheet 
+          knowledgeBaseId={knowledgeBase.id}
+          knowledgeBaseName={knowledgeBase.name}
+          organizationSlug={organizationSlug}
+        />
         <SyncButton 
           knowledgeBaseId={knowledgeBase.id} 
           organizationSlug={organizationSlug}
@@ -69,7 +200,21 @@ export async function EstateAgentView({ knowledgeBase, currentPage, organization
       </div>
 
       {/* Properties Summary Card */}
-      {totalCount > 0 && (
+      {summaryLoading ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Properties Summary</CardTitle>
+            <CardDescription>Overview of synced properties</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Skeleton className="h-16" />
+              <Skeleton className="h-16" />
+              <Skeleton className="h-16" />
+            </div>
+          </CardContent>
+        </Card>
+      ) : summary && totalCount > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Properties Summary</CardTitle>
@@ -98,33 +243,24 @@ export async function EstateAgentView({ knowledgeBase, currentPage, organization
               </div>
 
               {/* Price Range */}
-              {minPrice !== null && maxPrice !== null && (
+              {(rentalMinPrice !== null || saleMinPrice !== null) && (
                 <div>
                   <p className="text-sm font-medium">Price Range</p>
                   <p className="text-sm text-muted-foreground">
                     {(() => {
-                      const rentalProps = allProperties.filter(p => p.transaction_type === 'rent')
-                      const saleProps = allProperties.filter(p => p.transaction_type === 'sale')
-                      const rentalPrices = rentalProps.map(p => p.price).filter((p): p is number => p !== null && p !== undefined)
-                      const salePrices = saleProps.map(p => p.price).filter((p): p is number => p !== null && p !== undefined)
-                      
                       const parts: string[] = []
-                      if (rentalPrices.length > 0) {
-                        const rentalMin = Math.min(...rentalPrices)
-                        const rentalMax = Math.max(...rentalPrices)
-                        if (rentalMin === rentalMax) {
-                          parts.push(formatPrice(rentalMin, 'rent'))
+                      if (rentalMinPrice !== null && rentalMaxPrice !== null) {
+                        if (rentalMinPrice === rentalMaxPrice) {
+                          parts.push(formatPrice(rentalMinPrice, 'rent'))
                         } else {
-                          parts.push(`${formatPrice(rentalMin, 'rent')} - ${formatPrice(rentalMax, 'rent')}`)
+                          parts.push(`${formatPrice(rentalMinPrice, 'rent')} - ${formatPrice(rentalMaxPrice, 'rent')}`)
                         }
                       }
-                      if (salePrices.length > 0) {
-                        const saleMin = Math.min(...salePrices)
-                        const saleMax = Math.max(...salePrices)
-                        if (saleMin === saleMax) {
-                          parts.push(formatPrice(saleMin, 'sale'))
+                      if (saleMinPrice !== null && saleMaxPrice !== null) {
+                        if (saleMinPrice === saleMaxPrice) {
+                          parts.push(formatPrice(saleMinPrice, 'sale'))
                         } else {
-                          parts.push(`${formatPrice(saleMin, 'sale')} - ${formatPrice(saleMax, 'sale')}`)
+                          parts.push(`${formatPrice(saleMinPrice, 'sale')} - ${formatPrice(saleMaxPrice, 'sale')}`)
                         }
                       }
                       return parts.join(' | ')
@@ -199,6 +335,8 @@ export async function EstateAgentView({ knowledgeBase, currentPage, organization
         totalCount={totalCount}
         currentPage={currentPage}
         pageSize={pageSize}
+        onPageChange={handlePageChange}
+        loading={propertiesLoading}
       />
     </div>
   )

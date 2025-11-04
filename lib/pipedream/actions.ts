@@ -37,7 +37,7 @@ export async function executeAction(
     console.log('🚀 Executing Pipedream action:', {
       clientId,
       actionComponentId,
-      configuredProps: JSON.stringify(configuredProps, null, 2),
+      configuredProps: configuredProps,
     })
 
     // Execute the action using the Pipedream SDK

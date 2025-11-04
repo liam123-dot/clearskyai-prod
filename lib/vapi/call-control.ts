@@ -17,9 +17,6 @@ export async function addMessageToConversation(
   triggerResponse: boolean = false
 ): Promise<void> {
   try {
-    // Convert wss:// to https:// if needed (VAPI control URLs use HTTPS, not WebSocket)
-    const httpsUrl = controlUrl.replace(/^wss:\/\//, 'https://')
-    
     const requestBody = {
       type: 'add-message',
       message,
@@ -27,11 +24,11 @@ export async function addMessageToConversation(
     }
     
     console.log('📤 Call Control Request:')
-    console.log(`   URL: ${httpsUrl}`)
+    console.log(`   URL: ${controlUrl}`)
     console.log(`   Method: POST`)
     console.log(`   Body:`, JSON.stringify(requestBody, null, 2))
     
-    const response = await fetch(httpsUrl, {
+    const response = await fetch(controlUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -39,12 +36,28 @@ export async function addMessageToConversation(
       body: JSON.stringify(requestBody),
     })
 
+    console.log(`📥 Call Control Response:`)
+    console.log(`   Status: ${response.status} ${response.statusText}`)
+    console.log(`   Headers:`, JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2))
+
     if (!response.ok) {
       const errorText = await response.text()
+      console.error(`❌ Call Control API error response:`)
+      console.error(`   Status: ${response.status} ${response.statusText}`)
+      console.error(`   Response body: ${errorText}`)
       throw new Error(`Call Control API error: ${response.status} ${errorText}`)
+    } else {
+      const responseText = await response.text()
+      console.log(`   Response body: ${responseText || '(empty)'}`)
     }
   } catch (error) {
-    console.error('Error adding message to conversation:', error)
+    console.error('❌ Error adding message to conversation')
+    console.error(`   Error type: ${error instanceof Error ? error.constructor.name : typeof error}`)
+    console.error(`   Error message: ${error instanceof Error ? error.message : String(error)}`)
+    if (error instanceof Error && error.stack) {
+      console.error(`   Stack trace:`, error.stack)
+    }
+    console.error(`   Full error object:`, JSON.stringify(error, Object.getOwnPropertyNames(error), 2))
     throw error
   }
 }
@@ -61,9 +74,6 @@ export async function sayMessage(
   endCallAfterSpoken: boolean = false
 ): Promise<void> {
   try {
-    // Convert wss:// to https:// if needed
-    const httpsUrl = controlUrl.replace(/^wss:\/\//, 'https://')
-    
     const requestBody = {
       type: 'say',
       content,
@@ -71,10 +81,10 @@ export async function sayMessage(
     }
     
     console.log('📤 Call Control Request (say):')
-    console.log(`   URL: ${httpsUrl}`)
+    console.log(`   URL: ${controlUrl}`)
     console.log(`   Body:`, JSON.stringify(requestBody, null, 2))
     
-    const response = await fetch(httpsUrl, {
+    const response = await fetch(controlUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -82,12 +92,28 @@ export async function sayMessage(
       body: JSON.stringify(requestBody),
     })
 
+    console.log(`📥 Call Control Response (say):`)
+    console.log(`   Status: ${response.status} ${response.statusText}`)
+    console.log(`   Headers:`, JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2))
+
     if (!response.ok) {
       const errorText = await response.text()
+      console.error(`❌ Call Control API error response:`)
+      console.error(`   Status: ${response.status} ${response.statusText}`)
+      console.error(`   Response body: ${errorText}`)
       throw new Error(`Call Control API error: ${response.status} ${errorText}`)
+    } else {
+      const responseText = await response.text()
+      console.log(`   Response body: ${responseText || '(empty)'}`)
     }
   } catch (error) {
-    console.error('Error saying message:', error)
+    console.error('❌ Error saying message')
+    console.error(`   Error type: ${error instanceof Error ? error.constructor.name : typeof error}`)
+    console.error(`   Error message: ${error instanceof Error ? error.message : String(error)}`)
+    if (error instanceof Error && error.stack) {
+      console.error(`   Stack trace:`, error.stack)
+    }
+    console.error(`   Full error object:`, JSON.stringify(error, Object.getOwnPropertyNames(error), 2))
     throw error
   }
 }

@@ -72,7 +72,7 @@ export function PromptSheet({ knowledgeBaseId, knowledgeBaseName }: PromptSheetP
           View Agent Prompt
         </Button>
       </SheetTrigger>
-      <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
+      <SheetContent className="w-full sm:max-w-2xl overflow-y-auto p-4">
         <SheetHeader>
           <SheetTitle>Voice Agent Prompt</SheetTitle>
           <SheetDescription>
@@ -80,7 +80,7 @@ export function PromptSheet({ knowledgeBaseId, knowledgeBaseName }: PromptSheetP
           </SheetDescription>
         </SheetHeader>
         <div className="mt-6 space-y-4">
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
             <Button
               variant="outline"
               size="sm"

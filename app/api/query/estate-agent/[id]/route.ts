@@ -1,6 +1,67 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { queryProperties, PropertyQueryFilters } from "@/lib/properties";
+import { queryProperties, PropertyQueryFilters, PropertyQueryResponse } from "@/lib/properties";
+
+/**
+ * Format property query results as plain text
+ */
+function formatPropertiesAsText(result: PropertyQueryResponse): string {
+  const lines: string[] = [];
+  
+  // Header with total count
+  lines.push(`PROPERTIES (Total: ${result.totalCount})`);
+  lines.push('---');
+  lines.push('');
+  
+  // Format each property
+  result.properties.forEach((prop, index) => {
+    lines.push(`Property ${index + 1}:`);
+    lines.push(`Baths: ${prop.baths ?? 'Not specified'}`);
+    lines.push(`Price: £${prop.price ?? 'Not specified'}`);
+    lines.push(`Property Type: ${prop.property_type ?? 'Not specified'}`);
+    lines.push(`Property Subtype: ${prop.property_subtype ?? 'Not specified'}`);
+    lines.push(`Title: ${prop.title ?? 'Not specified'}`);
+    lines.push(`Transaction Type: ${prop.transaction_type ?? 'Not specified'}`);
+    lines.push(`Full Address: ${prop.full_address ?? 'Not specified'}`);
+    lines.push(`City: ${prop.city ?? 'Not specified'}`);
+    lines.push(`Furnished Type: ${prop.furnished_type ?? 'Not specified'}`);
+    lines.push(`Has Nearby Station: ${prop.has_nearby_station ? 'Yes' : 'No'}`);
+    lines.push(`Has Online Viewing: ${prop.has_online_viewing ? 'Yes' : 'No'}`);
+    lines.push(`Pets Allowed: ${prop.pets_allowed === null ? 'Not specified' : prop.pets_allowed ? 'Yes' : 'No'}`);
+    lines.push(`Description: ${prop.description ?? 'Not specified'}`);
+    
+    // Only include distance if it exists (location-based search)
+    if (prop.distance_km !== undefined) {
+      lines.push(`Distance: ${prop.distance_km} km`);
+    }
+    
+    lines.push('');
+  });
+  
+  // Format refinements
+  lines.push('REFINEMENTS');
+  lines.push('---');
+  
+  if (result.refinements.length === 0) {
+    lines.push('No refinements available');
+  } else {
+    result.refinements.forEach(refinement => {
+      const filterLabel = refinement.filterName
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+      
+      const valueStr = typeof refinement.filterValue === 'string' 
+        ? `"${refinement.filterValue}"` 
+        : refinement.filterValue;
+      
+      const resultStr = refinement.resultCount === 1 ? 'result' : 'results';
+      lines.push(`${filterLabel} ${valueStr}: ${refinement.resultCount} ${resultStr}`);
+    });
+  }
+  
+  return lines.join('\n');
+}
 
 export async function POST(
   request: NextRequest,
@@ -59,7 +120,10 @@ export async function POST(
     // Query properties with filters
     const result = await queryProperties(id, filters);
 
-    return NextResponse.json(result, { status: 200 });
+    // Format as plain text and wrap in JSON response
+    const textResponse = formatPropertiesAsText(result);
+
+    return NextResponse.json({ response: textResponse }, { status: 200 });
   } catch (error) {
     console.error("Error querying properties:", error);
     return NextResponse.json(

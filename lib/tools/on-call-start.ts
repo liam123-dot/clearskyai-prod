@@ -5,9 +5,9 @@
  * Results are injected into the conversation as system context using VAPI Call Control API.
  */
 
-import { createServiceClient } from '@/lib/supabase/server'
-import { vapiClient } from '@/lib/vapi/VapiClients'
+import { createNoCookieClient } from '@/lib/supabase/trigger'
 import { injectSystemContext } from '@/lib/vapi/call-control'
+import { executeToolById } from '@/lib/tools/execute'
 import type { VariableContext } from '@/lib/tools/variables'
 
 /**
@@ -26,90 +26,39 @@ export async function executeOnCallStartTools(
   controlUrl: string
 ): Promise<void> {
   console.log(`🚀 Executing on-call-start tools for agent ${agentId}, call ${callRecordId}`)
+  console.log(`📞 Caller: ${callerNumber}, Called: ${calledNumber}`)
+  console.log(`🔗 Control URL: ${controlUrl}`)
   
   try {
-    const supabase = await createServiceClient()
-    
-    // Get the agent's VAPI assistant ID
-    const { data: agent, error: agentError } = await supabase
-      .from('agents')
-      .select('vapi_assistant_id')
-      .eq('id', agentId)
-      .single()
-    
-    if (agentError || !agent) {
-      console.error(`❌ Agent not found: ${agentId}`, agentError)
-      return
-    }
-    
-    if (!agent.vapi_assistant_id) {
-      console.warn(`⚠️ Agent ${agentId} has no VAPI assistant ID`)
-      return
-    }
-    
-    // Get the assistant's tool IDs from VAPI (for attached tools)
-    let toolIds: string[] = []
-    try {
-      const assistant = await vapiClient.assistants.get(agent.vapi_assistant_id)
-      toolIds = assistant.model?.toolIds || []
-    } catch (error) {
-      console.error(`❌ Failed to fetch assistant ${agent.vapi_assistant_id}:`, error)
-      return
-    }
+    const supabase = createNoCookieClient()
     
     // Query tools with execute_on_call_start = true that are attached to this agent
-    // Two cases:
-    // 1. Tools attached via VAPI (have external_tool_id in agent's toolIds)
-    // 2. Tools attached via agent_tools table (attach_to_agent = false)
-    
-    // Get tools attached via agent_tools table
+    // All agent-tool relationships are now tracked in agent_tools table
+    console.log(`🔍 Querying database for on-call-start tools for agent ${agentId}...`)
     const { data: agentToolsRecords, error: agentToolsError } = await supabase
       .from('agent_tools')
-      .select('tool_id')
+      .select('tools!inner(*)')
       .eq('agent_id', agentId)
+      .eq('tools.execute_on_call_start', true)
     
     if (agentToolsError) {
-      console.error(`❌ Error fetching agent_tools:`, agentToolsError)
+      console.error(`❌ Error fetching agent tools:`, agentToolsError)
+      console.error(`   Error details:`, JSON.stringify(agentToolsError, null, 2))
+      console.error(`   Error code: ${agentToolsError.code || 'N/A'}`)
+      console.error(`   Error message: ${agentToolsError.message || 'N/A'}`)
+      return
     }
     
-    const agentToolIds = (agentToolsRecords || []).map(record => record.tool_id)
-    
-    // Query tools: VAPI-attached OR agent_tools-attached, both with execute_on_call_start = true
-    const conditions: string[] = []
-    
-    // Condition 1: Tools attached via VAPI
-    if (toolIds.length > 0) {
-      conditions.push(`external_tool_id.in.(${toolIds.join(',')})`)
-    }
-    
-    // Condition 2: Tools attached via agent_tools table
-    if (agentToolIds.length > 0) {
-      conditions.push(`id.in.(${agentToolIds.join(',')})`)
-    }
-    
-    if (conditions.length === 0) {
+    if (!agentToolsRecords || agentToolsRecords.length === 0) {
       console.log(`ℹ️ No on-call-start tools found for agent ${agentId}`)
       return
     }
     
-    // Query tools with execute_on_call_start = true that match either condition
-    const { data: tools, error: toolsError } = await supabase
-      .from('tools')
-      .select('*')
-      .eq('execute_on_call_start', true)
-      .or(conditions.join(','))
-    
-    if (toolsError) {
-      console.error(`❌ Error querying on-call-start tools:`, toolsError)
-      return
-    }
-    
-    if (!tools || tools.length === 0) {
-      console.log(`ℹ️ No on-call-start tools found for agent ${agentId}`)
-      return
-    }
+    // Extract tools from the join result
+    const tools = agentToolsRecords.map((record: any) => record.tools)
     
     console.log(`📋 Found ${tools.length} on-call-start tool(s) to execute`)
+    console.log(`   Tool IDs: ${tools.map((t: any) => `${t.id} (${t.name || t.label || 'unnamed'})`).join(', ')}`)
     
     // Build variable context
     const variableContext: VariableContext = {
@@ -117,55 +66,55 @@ export async function executeOnCallStartTools(
       called_phone_number: calledNumber,
     }
     
+    console.log(`📋 Variable context:`, JSON.stringify(variableContext, null, 2))
+    
     // Execute each tool and collect results
     const results: Array<{ toolName: string; success: boolean; result?: unknown; error?: string }> = []
     
     for (const tool of tools) {
       const toolName = tool.label || tool.name || tool.id
-      console.log(`🔧 Executing tool: ${toolName} (${tool.id})`)
+      const toolType = tool.type || 'unknown'
+      console.log(`🔧 Starting execution of tool: ${toolName} (ID: ${tool.id}, Type: ${toolType})`)
+      console.log(`   Variable context: caller=${variableContext.caller_phone_number}, called=${variableContext.called_phone_number}`)
       
       try {
-        // Build execution request with metadata
-        const executionRequest = {
-          metadata: {
-            callerPhoneNumber: callerNumber,
-            calledPhoneNumber: calledNumber,
-          },
-          // Empty parameters - tools should use fixed values with variables
-          parameters: {},
-        }
+        // Execute tool directly using shared function
+        // Empty parameters - tools should use fixed values with variables
+        const executionResult = await executeToolById(tool.id, {}, variableContext)
         
-        // Make internal fetch to tool execution endpoint
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-        const executeUrl = `${baseUrl}/api/tools/${tool.id}/execute`
-        
-        const response = await fetch(executeUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(executionRequest),
-        })
-        
-        const data = await response.json()
-        
-        if (response.ok && data.success) {
+        if (executionResult.success) {
           console.log(`✅ Tool ${toolName} executed successfully`)
+          console.log(`   Result type: ${typeof executionResult.result}`)
+          console.log(`   Result preview: ${JSON.stringify(executionResult.result).substring(0, 200)}${JSON.stringify(executionResult.result).length > 200 ? '...' : ''}`)
+          if (executionResult.exports) {
+            console.log(`   Exports: ${JSON.stringify(executionResult.exports).substring(0, 200)}`)
+          }
+          if (executionResult.logs) {
+            console.log(`   Logs: ${JSON.stringify(executionResult.logs).substring(0, 200)}`)
+          }
           results.push({
             toolName,
             success: true,
-            result: data.result,
+            result: executionResult.result,
           })
         } else {
-          console.error(`❌ Tool ${toolName} execution failed:`, data.error || 'Unknown error')
+          console.error(`❌ Tool ${toolName} execution failed`)
+          console.error(`   Error: ${executionResult.error || 'Unknown error'}`)
+          console.error(`   Full execution result:`, JSON.stringify(executionResult, null, 2))
           results.push({
             toolName,
             success: false,
-            error: data.error || 'Unknown error',
+            error: executionResult.error || 'Unknown error',
           })
         }
       } catch (error) {
-        console.error(`❌ Error executing tool ${toolName}:`, error)
+        console.error(`❌ Exception while executing tool ${toolName}:`, error)
+        console.error(`   Error type: ${error instanceof Error ? error.constructor.name : typeof error}`)
+        console.error(`   Error message: ${error instanceof Error ? error.message : String(error)}`)
+        if (error instanceof Error && error.stack) {
+          console.error(`   Stack trace:`, error.stack)
+        }
+        console.error(`   Full error object:`, JSON.stringify(error, Object.getOwnPropertyNames(error), 2))
         results.push({
           toolName,
           success: false,
@@ -176,6 +125,16 @@ export async function executeOnCallStartTools(
     
     // If we have any successful results, format and inject them
     const successfulResults = results.filter(r => r.success && r.result)
+    const failedResults = results.filter(r => !r.success)
+    
+    console.log(`📊 Execution summary:`)
+    console.log(`   Total tools: ${results.length}`)
+    console.log(`   Successful: ${successfulResults.length}`)
+    console.log(`   Failed: ${failedResults.length}`)
+    
+    if (failedResults.length > 0) {
+      console.log(`   Failed tools: ${failedResults.map(r => `${r.toolName} (${r.error})`).join(', ')}`)
+    }
     
     if (successfulResults.length > 0) {
       // Format results as a system message
@@ -187,20 +146,44 @@ export async function executeOnCallStartTools(
       
       const systemContext = `Customer context from CRM lookup:\n${contextParts.join('\n')}`
       
-      console.log(`💬 Injecting system context: ${systemContext.substring(0, 200)}...`)
+      console.log(`💬 Preparing to inject system context`)
+      console.log(`   Control URL: ${controlUrl}`)
+      console.log(`   Context length: ${systemContext.length} characters`)
+      console.log(`   Context preview: ${systemContext.substring(0, 300)}${systemContext.length > 300 ? '...' : ''}`)
+      console.log(`   Full context:`, systemContext)
       
       try {
+        console.log(`📤 Calling injectSystemContext...`)
         await injectSystemContext(controlUrl, systemContext)
         console.log(`✅ Successfully injected context into conversation`)
       } catch (error) {
-        console.error(`❌ Failed to inject context:`, error)
+        console.error(`❌ Failed to inject context`)
+        console.error(`   Error type: ${error instanceof Error ? error.constructor.name : typeof error}`)
+        console.error(`   Error message: ${error instanceof Error ? error.message : String(error)}`)
+        if (error instanceof Error && error.stack) {
+          console.error(`   Stack trace:`, error.stack)
+        }
+        console.error(`   Full error object:`, JSON.stringify(error, Object.getOwnPropertyNames(error), 2))
         // Don't throw - we don't want to fail the call if injection fails
       }
     } else {
       console.log(`ℹ️ No successful results to inject`)
+      if (results.length > 0) {
+        console.log(`   All ${results.length} tool(s) failed or returned no results`)
+      }
     }
   } catch (error) {
-    console.error(`❌ Error in executeOnCallStartTools:`, error)
+    console.error(`❌ Fatal error in executeOnCallStartTools`)
+    console.error(`   Error type: ${error instanceof Error ? error.constructor.name : typeof error}`)
+    console.error(`   Error message: ${error instanceof Error ? error.message : String(error)}`)
+    if (error instanceof Error && error.stack) {
+      console.error(`   Stack trace:`, error.stack)
+    }
+    console.error(`   Full error object:`, JSON.stringify(error, Object.getOwnPropertyNames(error), 2))
+    console.error(`   Agent ID: ${agentId}`)
+    console.error(`   Call Record ID: ${callRecordId}`)
+    console.error(`   Caller: ${callerNumber}, Called: ${calledNumber}`)
+    console.error(`   Control URL: ${controlUrl}`)
     // Don't throw - we don't want to fail the call if tool execution fails
   }
 }

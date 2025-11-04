@@ -1,13 +1,168 @@
 import { createClient } from '@/lib/supabase/server'
-import { getKnowledgeBase } from '@/lib/knowledge-bases'
+import { getKnowledgeBase, type Property } from '@/lib/knowledge-bases'
+import { reverseGeocodeLocation, type LocationComponents } from '@/lib/geocoding'
+
+export interface LocationKeywords {
+  cities: string[]
+  districts: string[]
+  subDistricts: string[]
+  postcodeDistricts: string[]
+  streets: string[]
+  allKeywords: string[] // Flattened sorted list
+}
+
+/**
+ * Extract high-entropy location keywords from properties using reverse geocoding
+ * Returns keywords sorted hierarchically: cities → districts → sub-districts → postcode districts → streets
+ */
+export async function extractLocationKeywords(
+  properties: Property[]
+): Promise<LocationKeywords> {
+  if (properties.length === 0) {
+    return {
+      cities: [],
+      districts: [],
+      subDistricts: [],
+      postcodeDistricts: [],
+      streets: [],
+      allKeywords: [],
+    }
+  }
+
+  // Filter properties with valid coordinates
+  const propertiesWithCoords = properties.filter(
+    (p) => p.latitude !== null && p.longitude !== null
+  )
+
+  if (propertiesWithCoords.length === 0) {
+    return {
+      cities: [],
+      districts: [],
+      subDistricts: [],
+      postcodeDistricts: [],
+      streets: [],
+      allKeywords: [],
+    }
+  }
+
+  const totalProperties = propertiesWithCoords.length
+
+  // Cache geocoding results by rounded coordinates to avoid duplicate API calls
+  // Geocoding helps deduplicate by providing standardized location names
+  const geocodeCache = new Map<string, LocationComponents | null>()
+  const roundCoord = (coord: number, precision = 4) =>
+    Math.round(coord * Math.pow(10, precision)) / Math.pow(10, precision)
+
+  // Use Sets for cities, districts, sub-districts, and streets to ensure uniqueness (geocoding helps deduplicate)
+  const cities = new Set<string>()
+  const districts = new Set<string>()
+  const subDistricts = new Set<string>()
+  const streets = new Set<string>()
+  
+  // Count frequency for postcode districts (we'll filter these by threshold)
+  const postcodeDistrictCounts = new Map<string, number>()
+
+  // Process properties in batches with throttling to respect API rate limits
+  const BATCH_SIZE = 10
+  const DELAY_MS = 100 // Delay between batches
+
+  for (let i = 0; i < propertiesWithCoords.length; i += BATCH_SIZE) {
+    const batch = propertiesWithCoords.slice(i, i + BATCH_SIZE)
+
+    await Promise.all(
+      batch.map(async (property) => {
+        const lat = property.latitude!
+        const lng = property.longitude!
+        const cacheKey = `${roundCoord(lat)},${roundCoord(lng)}`
+
+        let components: LocationComponents | null = geocodeCache.get(cacheKey) ?? null
+
+        if (components === undefined || components === null) {
+          try {
+            components = await reverseGeocodeLocation(lat, lng)
+            geocodeCache.set(cacheKey, components)
+          } catch (error) {
+            console.warn(
+              `Failed to reverse geocode property ${property.id}:`,
+              error
+            )
+            components = null
+            geocodeCache.set(cacheKey, null)
+          }
+        }
+
+        if (components) {
+          // Add all cities, districts, sub-districts, and streets to Sets (geocoding ensures standardized names)
+          if (components.city) {
+            cities.add(components.city)
+          }
+          if (components.district) {
+            districts.add(components.district)
+          }
+          if (components.subDistrict) {
+            subDistricts.add(components.subDistrict)
+          }
+          if (components.street) {
+            streets.add(components.street)
+          }
+          // Count postcode districts for threshold filtering
+          if (components.postcodeDistrict) {
+            postcodeDistrictCounts.set(
+              components.postcodeDistrict,
+              (postcodeDistrictCounts.get(components.postcodeDistrict) || 0) + 1
+            )
+          }
+        }
+      })
+    )
+
+    // Add delay between batches to respect rate limits
+    if (i + BATCH_SIZE < propertiesWithCoords.length) {
+      await new Promise((resolve) => setTimeout(resolve, DELAY_MS))
+    }
+  }
+
+  // Calculate threshold for postcode districts
+  const postcodeDistrictThreshold = Math.ceil(totalProperties * 0.05) // 5%
+
+  // Convert Sets to sorted arrays (all cities, districts, sub-districts, and streets included)
+  const citiesArray = Array.from(cities).sort()
+  const districtsArray = Array.from(districts).sort()
+  const subDistrictsArray = Array.from(subDistricts).sort()
+  const streetsArray = Array.from(streets).sort()
+  
+  // Filter postcode districts by threshold and sort
+  const postcodeDistricts = Array.from(postcodeDistrictCounts.keys())
+    .filter((p) => (postcodeDistrictCounts.get(p) || 0) >= postcodeDistrictThreshold)
+    .sort()
+
+  // Combine all keywords in hierarchical order: cities → districts → sub-districts → postcode districts → streets
+  const allKeywords = [
+    ...citiesArray,
+    ...districtsArray,
+    ...subDistrictsArray,
+    ...postcodeDistricts,
+    ...streetsArray,
+  ]
+
+  return {
+    cities: citiesArray,
+    districts: districtsArray,
+    subDistricts: subDistrictsArray,
+    postcodeDistricts,
+    streets: streetsArray,
+    allKeywords,
+  }
+}
 
 /**
  * Generate a voice agent prompt describing available property filters and options
  * for a specific estate agent knowledge base
+ * Returns both the prompt text and structured location keywords
  */
 export async function generatePropertyQueryPrompt(
   knowledgeBaseId: string
-): Promise<string> {
+): Promise<{ prompt: string; keywords: LocationKeywords }> {
   const supabase = await createClient()
 
   // Get knowledge base details
@@ -16,10 +171,40 @@ export async function generatePropertyQueryPrompt(
     throw new Error('Knowledge base not found or not an estate agent type')
   }
 
+  // Check for cached location data first
+  let locationKeywords: LocationKeywords
+  if (knowledgeBase.location_data) {
+    // Use cached location data
+    locationKeywords = knowledgeBase.location_data
+  } else {
+    // Extract location keywords from properties if not cached
+    const { data: properties, error: propsError } = await supabase
+      .from('properties')
+      .select('*')
+      .eq('knowledge_base_id', knowledgeBaseId)
+
+    if (propsError) {
+      throw new Error(`Failed to fetch properties: ${propsError.message}`)
+    }
+
+    if (!properties || properties.length === 0) {
+      locationKeywords = {
+        cities: [],
+        districts: [],
+        subDistricts: [],
+        postcodeDistricts: [],
+        streets: [],
+        allKeywords: [],
+      }
+    } else {
+      locationKeywords = await extractLocationKeywords(properties as Property[])
+    }
+  }
+
   // Fetch all properties to analyze available options
   const { data: properties, error } = await supabase
     .from('properties')
-    .select('beds, baths, property_type, transaction_type, furnished_type, price, has_nearby_station')
+    .select('beds, baths, property_type, transaction_type, furnished_type, price, has_nearby_station, latitude, longitude')
     .eq('knowledge_base_id', knowledgeBaseId)
 
   if (error) {
@@ -27,7 +212,11 @@ export async function generatePropertyQueryPrompt(
   }
 
   if (!properties || properties.length === 0) {
-    return `No properties available for ${knowledgeBase.name}. Please sync properties first.`
+    const emptyPrompt = `No properties available for ${knowledgeBase.name}. Please sync properties first.`
+    return {
+      prompt: emptyPrompt,
+      keywords: locationKeywords,
+    }
   }
 
   // Extract unique values
@@ -178,6 +367,58 @@ export async function generatePropertyQueryPrompt(
   promptParts.push('2. **Gather criteria**: Ask about bedrooms, bathrooms, location preferences, and budget')
   promptParts.push('3. **Use filters strategically**: Start with filters that reduce results the most (transaction type, location, beds)')
   promptParts.push('4. **Combine filters**: Multiple filters can be combined for precise results')
+  promptParts.push('')
+  promptParts.push('## Understanding Refinements (IMPORTANT)')
+  promptParts.push('')
+  promptParts.push('**The tool returns up to 3 properties along with a `refinements` array and `totalCount`.**')
+  promptParts.push('')
+  promptParts.push('### When to Use Refinements:')
+  promptParts.push('')
+  promptParts.push('- **If totalCount > 10**: You MUST narrow down the search using refinements before presenting properties to the customer')
+  promptParts.push('- **If totalCount between 4-10**: Suggest the customer narrow down further, but you can present the results if they prefer')
+  promptParts.push('- **If totalCount ≤ 3**: Present the properties directly - no refinement needed')
+  promptParts.push('')
+  promptParts.push('### How Refinements Work:')
+  promptParts.push('')
+  promptParts.push('Each refinement suggestion includes:')
+  promptParts.push('- `filterName`: The filter to apply (e.g., "beds", "transaction_type", "property_type")')
+  promptParts.push('- `filterValue`: The value for that filter')
+  promptParts.push('- `resultCount`: How many properties match if this refinement is added')
+  promptParts.push('')
+  promptParts.push('### Example Refinements Response:')
+  promptParts.push('```json')
+  promptParts.push('{')
+  promptParts.push('  "properties": [/* 3 properties */],')
+  promptParts.push('  "totalCount": 45,')
+  promptParts.push('  "refinements": [')
+  promptParts.push('    { "filterName": "beds", "filterValue": 2, "resultCount": 15 },')
+  promptParts.push('    { "filterName": "beds", "filterValue": 3, "resultCount": 20 },')
+  promptParts.push('    { "filterName": "property_type", "filterValue": "Flats", "resultCount": 30 },')
+  promptParts.push('    { "filterName": "furnished_type", "filterValue": "Furnished", "resultCount": 12 }')
+  promptParts.push('  ]')
+  promptParts.push('}')
+  promptParts.push('```')
+  promptParts.push('')
+  promptParts.push('### How to Present Refinements to Users:')
+  promptParts.push('')
+  promptParts.push('When totalCount is high (>10), say something like:')
+  promptParts.push('')
+  promptParts.push('*"I found 45 properties matching your criteria. To help narrow this down, I can filter by:*')
+  promptParts.push('- *Number of bedrooms: 2 beds (15 properties) or 3 beds (20 properties)*')
+  promptParts.push('- *Property type: Flats (30 properties)*')
+  promptParts.push('- *Furnished: Furnished properties (12 properties)*')
+  promptParts.push('')
+  promptParts.push('*Which would you prefer, or would you like to add another criteria like location or price range?"*')
+  promptParts.push('')
+  promptParts.push('### Key Refinement Rules:')
+  promptParts.push('')
+  promptParts.push('1. **Always check totalCount first** - Don\'t present properties if totalCount > 10')
+  promptParts.push('2. **Present refinements conversationally** - Don\'t just dump JSON, make it natural')
+  promptParts.push('3. **Group similar refinements** - e.g., "2, 3, or 4 bedrooms" instead of listing separately')
+  promptParts.push('4. **Prioritize the most useful refinements** - transaction_type, beds, property_type, location are usually most helpful')
+  promptParts.push('5. **Keep narrowing until totalCount ≤ 10** - Once narrowed down enough, present the properties')
+  promptParts.push('6. **If user says "show me what you have" with high count** - Explain you\'re only showing 3 of the total and suggest specific refinements')
+  promptParts.push('')
   promptParts.push('## Response Format')
   promptParts.push('')
   promptParts.push('When you use the location filter, each property in the response will include:')
@@ -211,6 +452,9 @@ export async function generatePropertyQueryPrompt(
   promptParts.push('The tool will return up to 3 matching properties sorted by relevance. Use the filters above to construct your query.')
   promptParts.push('')
 
-  return promptParts.join('\n')
+  return {
+    prompt: promptParts.join('\n'),
+    keywords: locationKeywords,
+  }
 }
 

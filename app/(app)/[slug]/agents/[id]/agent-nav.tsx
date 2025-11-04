@@ -11,7 +11,11 @@ export function AgentNav({ agentId, slug }: AgentNavProps) {
   const tabs = [
     {
       href: `/${slug}/agents/${agentId}`,
-      label: "Overview"
+      label: "Prompts"
+    },
+    {
+      href: `/${slug}/agents/${agentId}/settings`,
+      label: "Settings"
     },
     {
       href: `/${slug}/agents/${agentId}/tools`,
@@ -20,6 +24,10 @@ export function AgentNav({ agentId, slug }: AgentNavProps) {
     {
       href: `/${slug}/agents/${agentId}/knowledge-base`,
       label: "Knowledge Base"
+    },
+    {
+      href: `/${slug}/agents/${agentId}/success-eval`,
+      label: "Success & Eval"
     }
   ]
 

@@ -31,10 +31,10 @@ export async function GET(
       );
     }
 
-    // Generate the prompt
-    const prompt = await generatePropertyQueryPrompt(id);
+    // Generate the prompt and keywords
+    const { prompt, keywords } = await generatePropertyQueryPrompt(id);
 
-    return NextResponse.json({ prompt }, { status: 200 });
+    return NextResponse.json({ prompt, keywords }, { status: 200 });
   } catch (error) {
     console.error("Error generating property query prompt:", error);
     return NextResponse.json(

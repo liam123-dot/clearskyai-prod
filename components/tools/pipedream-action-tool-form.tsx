@@ -74,6 +74,7 @@ interface ConfigurableProp {
   useQuery?: boolean
   options?: string[]
   default?: string
+  reloadProps?: boolean
   // Alert-specific properties
   alertType?: 'info' | 'neutral' | 'warning' | 'error'
   content?: string
@@ -126,6 +127,7 @@ export function PipedreamActionToolForm({
   >({})
   const [loadingRemoteOptionsFor, setLoadingRemoteOptionsFor] = useState<string | null>(null)
   const [remoteOptionsQueries, setRemoteOptionsQueries] = useState<Record<string, string>>({})
+  const [isReloadingProps, setIsReloadingProps] = useState(false)
   
   // Test dialog state
   const [showTestDialog, setShowTestDialog] = useState(false)
@@ -143,6 +145,10 @@ export function PipedreamActionToolForm({
   
   // Ref to store debounce timeouts
   const searchTimeoutsRef = useRef<Record<string, NodeJS.Timeout>>({})
+  // Ref to track previous propsConfig values for reloadProps detection
+  const prevPropsConfigRef = useRef<Record<string, PropConfig>>({})
+  // Ref to store debounce timeout for reloadProps
+  const reloadPropsTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   
   // Initialize from initialData when editing
   useEffect(() => {
@@ -225,6 +231,62 @@ export function PipedreamActionToolForm({
             })
             
             setPropsConfig(convertedPropsConfig)
+            // Initialize prevPropsConfigRef for reloadProps detection
+            prevPropsConfigRef.current = { ...convertedPropsConfig }
+            
+            // Reload props with current configured values to get correct visibility flags
+            // This is important for props with reloadProps: true (e.g., addType in Google Calendar)
+            // We need to do this after setting propsConfig so the reload uses the correct values
+            const accountId = initialData.pipedreamMetadata.accountId
+            setTimeout(async () => {
+              try {
+                // Build configured props from the converted propsConfig
+                const configuredProps: Record<string, string | number | boolean | { authProvisionId: string }> = {}
+                
+                // Add app/credential field
+                const appField = savedAction.configurableProps?.find((p: ConfigurableProp) => p.type === 'app')
+                if (appField && accountId) {
+                  configuredProps[appField.name] = {
+                    authProvisionId: accountId,
+                  }
+                }
+                
+                // Add other configured props (only fixed values for reloadProps)
+                Object.entries(convertedPropsConfig).forEach(([key, config]) => {
+                  if (config.mode === 'fixed' && config.value !== undefined) {
+                    configuredProps[key] = config.value
+                  }
+                })
+                
+                // Only reload if we have configured props and a prop with reloadProps exists
+                const hasReloadProps = savedAction.configurableProps?.some((p: ConfigurableProp) => p.reloadProps)
+                if (hasReloadProps && Object.keys(configuredProps).length > 0) {
+                  const reloadResponse = await fetch(`/api/${slug}/tools/actions/${savedAction.key}/reload-props`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      configuredProps,
+                    }),
+                  })
+                  
+                  const reloadData = await reloadResponse.json()
+                  
+                  if (reloadData.success && reloadData.configurableProps) {
+                    // Update selectedAction with reloaded props
+                    setSelectedAction((prev) => {
+                      if (!prev) return prev
+                      return {
+                        ...prev,
+                        configurableProps: reloadData.configurableProps,
+                      }
+                    })
+                  }
+                }
+              } catch (reloadError) {
+                console.warn('Error reloading props during initialization:', reloadError)
+                // Don't fail initialization if reload fails - continue with base props
+              }
+            }, 100) // Small delay to ensure state is set
           }
         }
       } catch (error) {
@@ -383,6 +445,8 @@ export function PipedreamActionToolForm({
 
     setPropsConfig(initialConfig)
     setRemoteOptionsData({})
+    // Initialize prevPropsConfigRef for reloadProps detection
+    prevPropsConfigRef.current = { ...initialConfig }
   }
 
   // Load remote options for a prop
@@ -479,6 +543,65 @@ export function PipedreamActionToolForm({
     }))
   }
 
+  // Reload action props when a prop with reloadProps changes
+  const reloadActionProps = useCallback(async () => {
+    if (!selectedAction || !selectedCredentialId || !selectedApp) return
+
+    setIsReloadingProps(true)
+
+    try {
+      // Build configured props from current propsConfig state
+      const configuredProps: Record<string, string | number | boolean | { authProvisionId: string }> = {}
+
+      // Add app/credential field
+      const appField = selectedAction.configurableProps?.find((p) => p.type === 'app')
+      if (appField) {
+        configuredProps[appField.name] = {
+          authProvisionId: selectedCredentialId,
+        }
+      }
+
+      // Add other configured props (only fixed values for reloadProps)
+      Object.entries(propsConfig).forEach(([key, config]) => {
+        if (config.mode === 'fixed' && config.value !== undefined) {
+          configuredProps[key] = config.value
+        }
+      })
+
+      const response = await fetch(`/api/${slug}/tools/actions/${selectedAction.key}/reload-props`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          configuredProps,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success && data.configurableProps) {
+        // Update selectedAction with new configurableProps
+        // Preserve existing propsConfig values (only visibility changes)
+        setSelectedAction((prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            configurableProps: data.configurableProps,
+          }
+        })
+
+        // Remove configs for props that become hidden (only if they weren't previously configured)
+        // Actually, we should preserve all configs - user might want to keep them even if hidden
+        // The form will filter them out anyway based on hidden flag
+      } else {
+        console.warn('Failed to reload action props:', data.error)
+      }
+    } catch (error) {
+      console.error('Error reloading action props:', error)
+    } finally {
+      setIsReloadingProps(false)
+    }
+  }, [selectedAction, selectedCredentialId, selectedApp, propsConfig, slug])
+
   // Auto-load remote options when a field becomes ready
   useEffect(() => {
     if (!selectedAction || !selectedCredentialId) return
@@ -506,6 +629,58 @@ export function PipedreamActionToolForm({
       }
     })
   }, [selectedAction, selectedCredentialId, propsConfig, loadingRemoteOptionsFor, remoteOptionsData, loadRemoteOptions])
+
+  // Detect changes to props with reloadProps: true and trigger reload
+  useEffect(() => {
+    if (!selectedAction || !selectedCredentialId || isReloadingProps) return
+
+    // Find props that have reloadProps: true
+    const reloadPropsFields = selectedAction.configurableProps?.filter((p) => p.reloadProps) || []
+
+    if (reloadPropsFields.length === 0) {
+      // No reloadProps fields, update ref and return
+      prevPropsConfigRef.current = { ...propsConfig }
+      return
+    }
+
+    // Check if any reloadProps field value has changed
+    let hasChanged = false
+    for (const prop of reloadPropsFields) {
+      const currentValue = propsConfig[prop.name]
+      const prevValue = prevPropsConfigRef.current[prop.name]
+
+      // Check if value changed (compare stringified values for deep comparison)
+      const currentValueStr = currentValue ? JSON.stringify(currentValue) : undefined
+      const prevValueStr = prevValue ? JSON.stringify(prevValue) : undefined
+
+      if (currentValueStr !== prevValueStr) {
+        hasChanged = true
+        break
+      }
+    }
+
+    if (hasChanged) {
+      // Clear existing timeout
+      if (reloadPropsTimeoutRef.current) {
+        clearTimeout(reloadPropsTimeoutRef.current)
+      }
+
+      // Debounce the reload to avoid excessive API calls
+      reloadPropsTimeoutRef.current = setTimeout(() => {
+        reloadActionProps()
+      }, 300) // 300ms debounce
+    }
+
+    // Update ref with current values
+    prevPropsConfigRef.current = { ...propsConfig }
+
+    // Cleanup timeout on unmount
+    return () => {
+      if (reloadPropsTimeoutRef.current) {
+        clearTimeout(reloadPropsTimeoutRef.current)
+      }
+    }
+  }, [selectedAction, selectedCredentialId, propsConfig, isReloadingProps, reloadActionProps])
 
   // Update parent whenever configuration changes
   useEffect(() => {

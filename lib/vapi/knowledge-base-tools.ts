@@ -23,7 +23,7 @@ export function createEstateAgentToolData(
     type: "apiRequest",
     function: {
       name: `query_${sanitizedName}_props`,
-      description: `Search and filter properties from ${knowledgeBaseName}. Returns up to 3 matching properties with refinement suggestions to narrow down the search.`,
+      description: `Search and filter properties from ${knowledgeBaseName}. Returns up to 3 matching properties in plain text format with essential details (baths, price, property type, title, address, etc.) and refinement suggestions to narrow down the search.`,
       parameters: {
         type: "object",
         properties: {
@@ -142,38 +142,6 @@ export function createEstateAgentToolData(
           description: "Search radius in kilometers (default: 25km)"
         }
       }
-    },
-    variableExtractionPlan: {
-      schema: {
-        type: "object",
-        required: ["properties", "totalCount", "refinements"],
-        properties: {
-          properties: {
-            type: "array",
-            description: "List of matching properties",
-            items: {
-              type: "object",
-              properties: {
-                id: { type: "string" },
-                distance_km: { 
-                  type: "number",
-                  description: "Distance in kilometers from the requested location (only present when location filter is used)"
-                },
-                // ... other property fields
-              }
-            }
-          },
-          totalCount: {
-            type: "number",
-            description: "Total number of properties matching the filters"
-          },
-          refinements: {
-            type: "array",
-            description: "Suggested refinements to narrow down the search"
-          }
-        }
-      },
-      aliases: []
     }
   }
 }
@@ -236,6 +204,20 @@ export async function attachToolToAgent(
       tool,
       toolLabel
     )
+
+    // Insert into agent_tools table to track the relationship
+    const { error: insertError } = await supabase
+      .from('agent_tools')
+      .insert({
+        agent_id: agentId,
+        tool_id: dbTool.id,
+        is_vapi_attached: true,
+      })
+
+    if (insertError) {
+      console.error('Error inserting into agent_tools:', insertError)
+      throw new Error('Failed to track tool attachment in database')
+    }
 
     return {
       vapiToolId: tool.id,

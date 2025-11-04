@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { TableBody, TableCell, TableRow } from "@/components/ui/table"
 import {
   Select,
@@ -13,8 +14,6 @@ import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { IconRobot } from "@tabler/icons-react"
 import type { AgentWithDetails } from "@/lib/vapi/agents"
-import { getOrg } from '@/lib/auth'
-import { redirect } from 'next/navigation'
 
 interface AgentsTableBodyProps {
   agents: AgentWithDetails[]
@@ -22,6 +21,7 @@ interface AgentsTableBodyProps {
 }
 
 export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps) {
+  const router = useRouter()
   const [assignedOrgs, setAssignedOrgs] = useState<Record<string, string | null>>(
     agents.reduce((acc, agent) => {
       acc[agent.vapi_assistant_id] = agent.organization?.id || null
@@ -81,9 +81,16 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
         const assignedOrg = assignedOrgId 
           ? organizations.find(o => o.id === assignedOrgId)
           : null
+        
+        // Only make clickable if agent has a database ID and is assigned to an organization
+        const canNavigate = !!agent.id && !!assignedOrg?.slug
 
         return (
-          <TableRow key={agent.vapi_assistant_id}>
+          <TableRow 
+            key={agent.vapi_assistant_id}
+            className={canNavigate ? "cursor-pointer hover:bg-muted/50" : ""}
+            onClick={canNavigate ? () => router.push(`/${assignedOrg.slug}/agents/${agent.id}`) : undefined}
+          >
             <TableCell className="w-12">
               <div className="flex items-center justify-center">
                 <div className="bg-muted flex size-8 items-center justify-center rounded-md">
@@ -113,7 +120,7 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
                 )}
               </div>
             </TableCell>
-            <TableCell>
+            <TableCell onClick={(e) => e.stopPropagation()}>
               <Select
                 value={assignedOrgId || "unassigned"}
                 onValueChange={(value) => 

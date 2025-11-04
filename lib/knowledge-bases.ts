@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import type { LocationKeywords } from '@/lib/property-prompt'
 
 // Knowledge base types
 export type KnowledgeBaseType = 'general' | 'estate_agent'
@@ -22,6 +23,7 @@ export interface KnowledgeBase {
   name: string
   type: KnowledgeBaseType
   data: GeneralKnowledgeBaseData | EstateAgentKnowledgeBaseData
+  location_data?: LocationKeywords | null
   created_at: string
   updated_at: string
 }
@@ -171,7 +173,7 @@ export async function createKnowledgeBase(
  */
 export async function updateKnowledgeBase(
   id: string,
-  updates: Partial<Pick<KnowledgeBase, 'name' | 'data'>>
+  updates: Partial<Pick<KnowledgeBase, 'name' | 'data' | 'location_data'>>
 ): Promise<KnowledgeBase> {
   const supabase = await createClient()
 

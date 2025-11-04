@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPhoneNumberById } from '@/lib/phone-numbers';
 import { findMatchingSchedule, generateTransferTwiML } from '@/lib/call-routing';
 import { createServiceClient } from '@/lib/supabase/server';
-import { executeOnCallStartTools } from '@/lib/tools/on-call-start';
 
 export async function POST(
   request: NextRequest,
@@ -200,8 +199,10 @@ export async function POST(
           const streamUrlMatch = vapiTwiml.match(/url=['"]([^'"]+)['"]/);
           if (streamUrlMatch) {
             const streamUrl = streamUrlMatch[1];
-            // Replace /transport with /control to get control URL
-            const controlUrl = streamUrl.replace('/transport', '/control');
+            // Replace /transport with /control and convert wss:// to https://
+            const controlUrl = streamUrl
+              .replace('/transport', '/control')
+              .replace(/^wss:\/\//, 'https://');
             
             console.log(`📞 Extracted control URL: ${controlUrl}`);
             
@@ -211,18 +212,33 @@ export async function POST(
               .update({ control_url: controlUrl })
               .eq('id', callRecord.id);
             
-            // Trigger on-call-start tool execution asynchronously
-            // Don't await - let it run in background
-            executeOnCallStartTools(
-              phoneNumber.agent_id,
-              callRecord.id,
-              from,
-              to,
-              controlUrl
-            ).catch(err => {
-              console.error('Error executing on-call-start tools:', err);
-              // Don't fail the call if tool execution fails
-            });
+            // Trigger on-call-start tool execution
+            // Wait for immediate response (endpoint will use after() to execute tools in background)
+            try {
+              const executeUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/call/${callRecord.id}/execute-start-tools`;
+              const response = await fetch(executeUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  agentId: phoneNumber.agent_id!,
+                  callerNumber: from,
+                  calledNumber: to,
+                  controlUrl: controlUrl,
+                }),
+              });
+              
+              if (!response.ok) {
+                console.error('Error response from execute-start-tools endpoint:', response.status);
+              } else {
+                console.log('✅ Tool execution initiated successfully');
+              }
+            } catch (error) {
+              console.error('Error triggering on-call-start tools execution:', error);
+              // Don't fail the call if the async call fails
+            }
+
           } else {
             console.warn('Could not extract Stream URL from VAPI TwiML response');
           }

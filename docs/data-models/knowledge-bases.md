@@ -11,6 +11,7 @@ The `knowledge_bases` table stores knowledge base configurations for different t
 | `name` | TEXT | NOT NULL | Name of the knowledge base |
 | `type` | knowledge_base_type | NOT NULL | Type of knowledge base: 'general' or 'estate_agent' |
 | `data` | JSONB | NOT NULL, DEFAULT '{}' | Type-specific configuration data |
+| `location_data` | JSONB | NULL | Cached location keywords for estate agent knowledge bases (cities, districts, subDistricts, postcodeDistricts, streets) |
 | `created_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Timestamp when the record was created |
 | `updated_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Timestamp when the record was last updated |
 
@@ -45,6 +46,20 @@ For property listing knowledge bases that sync from external sources. The `data`
   "resync_schedule": "6_hours" | "12_hours" | "daily" | "none"
 }
 ```
+
+The `location_data` field (separate from `data`) contains cached location keywords extracted from properties:
+```json
+{
+  "cities": ["London", "Manchester", "Birmingham"],
+  "districts": ["Kensington", "Westminster", "Salford"],
+  "subDistricts": ["North Kensington", "Pimlico"],
+  "postcodeDistricts": ["SW1A", "M1", "B1"],
+  "streets": ["High Street", "Main Road"],
+  "allKeywords": ["London", "Manchester", "Kensington", ...]
+}
+```
+
+Location data is automatically extracted and cached after properties are synced from RightMove. This data is used for speech-to-text transcription accuracy and is displayed in a separate location data sidebar component.
 
 ## Usage Notes
 

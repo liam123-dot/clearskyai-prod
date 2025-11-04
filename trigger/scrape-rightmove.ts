@@ -1,9 +1,10 @@
 import { task, logger } from "@trigger.dev/sdk/v3"
 import { ApifyClient } from "apify-client"
-import { createTriggerClient } from "@/lib/supabase/trigger"
+import { createNoCookieClient } from "@/lib/supabase/trigger"
 import type { RightmoveProperty } from "@/types/rightmove"
-import type { EstateAgentKnowledgeBaseData } from "@/lib/knowledge-bases"
+import type { EstateAgentKnowledgeBaseData, Property } from "@/lib/knowledge-bases"
 import { normalizeAddress } from "@/lib/address-normalization"
+import { extractLocationKeywords } from "@/lib/property-prompt"
 
 interface ScrapeRightmovePayload {
   knowledgeBaseId: string
@@ -22,7 +23,7 @@ export const scrapeRightmove = task({
     logger.info("🏠 Starting Rightmove scraper", { knowledgeBaseId })
 
     // Get knowledge base details
-    const supabase = createTriggerClient()
+    const supabase = createNoCookieClient()
     
     const { data: knowledgeBase, error: kbError } = await supabase
       .from("knowledge_bases")
@@ -152,16 +153,26 @@ export const scrapeRightmove = task({
           }
         }
 
+        // Determine bedroom count with special handling for Parking/Garage
+        const propertyType = prop.propertyType
+        const propertySubType = prop.propertySubType
+        const isParkingOrGarage = 
+          propertySubType?.toLowerCase() === "parking" ||
+          propertyType?.toLowerCase() === "garage" ||
+          propertyType?.toLowerCase() === "parking"
+        
+        const beds = prop.beds ?? (isParkingOrGarage ? null : 0)
+
         return {
           knowledge_base_id: knowledgeBaseId,
           source: "rightmove",
           rightmove_id: prop.id,
           url: prop.url,
-          beds: prop.beds,
+          beds: beds,
           baths: prop.baths,
           price: prop.price,
-          property_type: prop.propertyType,
-          property_subtype: prop.propertySubType,
+          property_type: propertyType,
+          property_subtype: propertySubType,
           title: prop.title,
           transaction_type: transactionType,
           street_address: normalizedAddress.street_address,
@@ -240,6 +251,58 @@ export const scrapeRightmove = task({
       knowledgeBaseId,
       propertiesScraped: insertedCount
     })
+
+    // Extract and cache location keywords
+    if (insertedCount > 0) {
+      try {
+        logger.info("📍 Extracting location keywords from properties...")
+        
+        // Fetch all properties for this knowledge base
+        const { data: properties, error: fetchError } = await supabase
+          .from("properties")
+          .select("id, latitude, longitude")
+          .eq("knowledge_base_id", knowledgeBaseId)
+
+        if (fetchError) {
+          logger.warn("⚠️  Failed to fetch properties for location extraction", { error: fetchError.message })
+        } else if (properties && properties.length > 0) {
+          // Fetch full property data needed for extraction
+          const { data: fullProperties, error: fullFetchError } = await supabase
+            .from("properties")
+            .select("*")
+            .eq("knowledge_base_id", knowledgeBaseId)
+
+          if (fullFetchError) {
+            logger.warn("⚠️  Failed to fetch full property data for location extraction", { error: fullFetchError.message })
+          } else if (fullProperties) {
+            const locationKeywords = await extractLocationKeywords(fullProperties as Property[])
+            
+            // Update knowledge base with location data
+            const { error: updateError } = await supabase
+              .from("knowledge_bases")
+              .update({ location_data: locationKeywords })
+              .eq("id", knowledgeBaseId)
+
+            if (updateError) {
+              logger.warn("⚠️  Failed to update knowledge base with location data", { error: updateError.message })
+            } else {
+              logger.info("✅ Location keywords extracted and cached", {
+                cities: locationKeywords.cities.length,
+                districts: locationKeywords.districts.length,
+                subDistricts: locationKeywords.subDistricts.length,
+                postcodeDistricts: locationKeywords.postcodeDistricts.length,
+                streets: locationKeywords.streets.length,
+              })
+            }
+          }
+        }
+      } catch (error) {
+        logger.warn("⚠️  Error extracting location keywords (non-fatal)", { 
+          error: error instanceof Error ? error.message : String(error) 
+        })
+        // Don't fail the task if location extraction fails
+      }
+    }
 
     return {
       success: true,

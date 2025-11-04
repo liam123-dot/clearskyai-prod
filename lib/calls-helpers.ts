@@ -94,7 +94,7 @@ export function getRoutingJourney(call: Call): {
   
   if (wentToTeam && teamNoAnswer) {
     return {
-      label: 'Team → Agent',
+      label: 'Agent Save',
       variant: 'secondary',
       description: 'Team did not answer, routed to agent'
     }

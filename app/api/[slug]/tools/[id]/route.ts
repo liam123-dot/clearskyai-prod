@@ -259,22 +259,90 @@ export async function DELETE(request: Request, context: RouteContext) {
       )
     }
 
-    // Delete from VAPI first (only if tool has external_tool_id)
+    // Find all agents with this tool attached via agent_tools
+    const { data: agentToolsRecords, error: agentToolsError } = await supabase
+      .from('agent_tools')
+      .select('agent_id, is_vapi_attached, agents!inner(vapi_assistant_id)')
+      .eq('tool_id', id)
+
+    if (agentToolsError) {
+      console.error('Error fetching agent_tools:', agentToolsError)
+      return NextResponse.json(
+        { error: 'Failed to fetch tool attachments' },
+        { status: 500 }
+      )
+    }
+
+    // Remove tool from all agents in VAPI (for is_vapi_attached=true)
+    if (tool.external_tool_id && agentToolsRecords && agentToolsRecords.length > 0) {
+      console.log(`Removing tool ${id} from ${agentToolsRecords.length} agent(s)`)
+      
+      for (const record of agentToolsRecords) {
+        const agentRecord = record as any
+        if (!agentRecord.is_vapi_attached) {
+          // Skip preemptive-only tools
+          continue
+        }
+
+        const vapiAssistantId = agentRecord.agents?.vapi_assistant_id
+        if (!vapiAssistantId) {
+          console.warn(`Agent ${agentRecord.agent_id} has no vapi_assistant_id`)
+          continue
+        }
+
+        try {
+          // Fetch current assistant
+          const assistant = await vapiClient.assistants.get(vapiAssistantId)
+          const currentToolIds = assistant.model?.toolIds || []
+
+          // Remove tool from toolIds
+          const updatedToolIds = currentToolIds.filter(toolId => toolId !== tool.external_tool_id)
+
+          // Update assistant
+          await vapiClient.assistants.update(vapiAssistantId, {
+            model: {
+              ...assistant.model,
+              toolIds: updatedToolIds
+            } as any
+          })
+          
+          console.log(`Removed tool from agent ${agentRecord.agent_id} in VAPI`)
+        } catch (vapiError: any) {
+          // Check if it's a 404 error (tool or assistant not found)
+          if (vapiError?.statusCode === 404 || vapiError?.status === 404) {
+            console.log(`Tool or assistant not found in VAPI (404), continuing with deletion`)
+          } else {
+            // Other errors should fail the deletion
+            console.error(`Error removing tool from agent ${agentRecord.agent_id}:`, vapiError)
+            return NextResponse.json(
+              { error: 'Failed to remove tool from agents in VAPI' },
+              { status: 500 }
+            )
+          }
+        }
+      }
+    }
+
+    // Delete tool from VAPI (only if tool has external_tool_id)
     if (tool.external_tool_id) {
       try {
         console.log('Deleting VAPI tool:', tool.external_tool_id)
         await vapiClient.tools.delete(tool.external_tool_id)
         console.log('VAPI tool deleted successfully')
-      } catch (vapiError) {
-        console.error('Error deleting VAPI tool:', vapiError)
-        // Continue with DB deletion even if VAPI deletion fails
-        // This handles cases where the VAPI tool might already be deleted
+      } catch (vapiError: any) {
+        // If 404, the tool was already deleted, which is fine
+        if (vapiError?.statusCode === 404 || vapiError?.status === 404) {
+          console.log('VAPI tool already deleted (404)')
+        } else {
+          console.error('Error deleting VAPI tool:', vapiError)
+          // Continue with DB deletion even if VAPI deletion fails
+        }
       }
     } else {
       console.log('No VAPI tool to delete (preemptive-only tool)')
     }
 
-    // Delete from DB
+    // Delete from DB (CASCADE will handle agent_tools deletion)
     const { error: deleteError } = await supabase
       .from('tools')
       .delete()

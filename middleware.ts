@@ -12,6 +12,7 @@ export default authkitMiddleware({
       '/api/stripe/webhook',
       '/api/number',
       'api/tools/:id/execute',
+      '/api/call/:id/execute-start-tools',
       '/api/phone-number/:id/incoming',
       '/api/phone-number/:id/incoming/fallback',
     ],
@@ -35,3 +36,12 @@ export default authkitMiddleware({
 //     '/((?!demo|api/calls|api/callback|api/agents|api/phone-number|api/tools|_next/static|_next/image|favicon.ico).*)',
 //   ],
 // };
+
+export const config = {
+  matcher: [
+    // ... your existing matchers
+    {
+      source: '/((?!_next/static|_next/image|favicon.ico).*)', 
+    },
+  ],
+};

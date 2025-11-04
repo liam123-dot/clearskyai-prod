@@ -34,6 +34,32 @@ function formatCurrency(cents: number): string {
   }).format(cents / 100)
 }
 
+function formatTime(seconds: number): string {
+  if (seconds === 0) return '0s'
+  
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = seconds % 60
+  
+  const parts: string[] = []
+  if (hours > 0) parts.push(`${hours}h`)
+  if (minutes > 0) parts.push(`${minutes}m`)
+  if (secs > 0) parts.push(`${secs}s`)
+  
+  return parts.join(' ') || '0s'
+}
+
+function formatMinutesSeconds(seconds: number): string {
+  if (seconds === 0) return '0m'
+  
+  const minutes = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  
+  if (minutes === 0) return `${secs}s`
+  if (secs === 0) return `${minutes}m`
+  return `${minutes}m ${secs}s`
+}
+
 export default async function AdminClientPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const client = await getClientBySlug(slug)
@@ -64,9 +90,10 @@ export default async function AdminClientPage({ params }: { params: Promise<{ sl
   const currentOverageCost = usage?.estimatedOverageCost ? Math.round(usage.estimatedOverageCost * 100) : 0
   const nextInvoiceEstimate = baseMonthlyPrice + currentOverageCost
   const overagePricePerMinute = usageSubscription?.product.price_per_minute_cents || 0
-  const minutesIncluded = usage?.minutesIncluded || 0
-  const minutesUsed = usage?.minutesUsed || 0
-  const minutesOverage = usage?.secondsOverage ? Math.ceil(usage.secondsOverage / 60) : 0
+  const secondsIncluded = usage?.secondsIncluded || 0
+  const secondsUsed = usage?.secondsUsed || 0
+  const secondsOverage = usage?.secondsOverage || 0
+  const secondsRemaining = Math.max(0, secondsIncluded - secondsUsed)
 
   return (
     <div className="space-y-6">
@@ -128,21 +155,24 @@ export default async function AdminClientPage({ params }: { params: Promise<{ sl
                 )}
               </div>
 
-              {minutesIncluded > 0 ? (
+              {secondsIncluded > 0 ? (
                 <div className="space-y-2">
                   <div className="flex items-baseline justify-between">
                     <div>
                       <p className="text-lg font-semibold">
-                        {minutesUsed.toLocaleString()}m / {minutesIncluded.toLocaleString()}m
+                        {formatTime(secondsUsed)} / {formatTime(secondsIncluded)}
                       </p>
-                      {minutesOverage > 0 && (
+                      {secondsOverage > 0 && (
                         <p className="text-sm text-muted-foreground mt-0.5">
-                          {minutesOverage.toLocaleString()}m overage
+                          {formatMinutesSeconds(secondsOverage)}
+                          {overagePricePerMinute > 0 && (
+                            <> @ {formatCurrency(overagePricePerMinute)}/min</>
+                          )}
                         </p>
                       )}
-                      {minutesUsed < minutesIncluded && (
+                      {secondsRemaining > 0 && (
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {(minutesIncluded - minutesUsed).toLocaleString()}m remaining
+                          {formatTime(secondsRemaining)} remaining
                         </p>
                       )}
                     </div>
@@ -158,20 +188,25 @@ export default async function AdminClientPage({ params }: { params: Promise<{ sl
                   <div className="w-full bg-secondary rounded-full h-2">
                     <div
                       className={`h-2 rounded-full transition-all ${
-                        minutesUsed > minutesIncluded ? 'bg-destructive' : 'bg-primary'
+                        secondsUsed > secondsIncluded ? 'bg-destructive' : 'bg-primary'
                       }`}
                       style={{
-                        width: `${Math.min(100, (minutesUsed / minutesIncluded) * 100)}%`,
+                        width: `${Math.min(100, (secondsUsed / secondsIncluded) * 100)}%`,
                       }}
                     />
                   </div>
                 </div>
               ) : (
                 <div>
-                  <p className="text-lg font-semibold">{minutesUsed.toLocaleString()}m used</p>
-                  {minutesOverage > 0 && (
+                  <p className="text-lg font-semibold">{formatTime(secondsUsed)} used</p>
+                  {secondsOverage > 0 && (
                     <p className="text-sm text-muted-foreground mt-1">
-                      {minutesOverage.toLocaleString()}m overage • {formatCurrency(currentOverageCost)}
+                      {formatMinutesSeconds(secondsOverage)}
+                      {overagePricePerMinute > 0 && (
+                        <> @ {formatCurrency(overagePricePerMinute)}/min</>
+                      )}
+                      {' • '}
+                      {formatCurrency(currentOverageCost)}
                     </p>
                   )}
                 </div>

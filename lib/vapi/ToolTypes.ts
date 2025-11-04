@@ -179,7 +179,7 @@ export interface CreateApiRequestToolDto {
       enum?: string[];
     }>;
   };
-  variableExtractionPlan: {
+  variableExtractionPlan?: {
     schema: {
       type: "object";
       required: string[];

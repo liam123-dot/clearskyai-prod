@@ -73,7 +73,7 @@ export async function POST(
 
     // Handle attachment based on attach_to_agent flag
     if (tool.attach_to_agent === false) {
-      // Preemptive-only tool: attach via agent_tools table
+      // Preemptive-only tool: attach via agent_tools table only
       // Ensure tool has execute_on_call_start = true
       if (!tool.execute_on_call_start) {
         return NextResponse.json(
@@ -82,12 +82,13 @@ export async function POST(
         )
       }
 
-      // Insert into agent_tools table
+      // Insert into agent_tools table with is_vapi_attached = false
       const { error: insertError } = await supabase
         .from('agent_tools')
         .insert({
           agent_id: agentId,
           tool_id: toolId,
+          is_vapi_attached: false,
         })
 
       if (insertError) {
@@ -100,7 +101,7 @@ export async function POST(
 
       return NextResponse.json({ success: true })
     } else {
-      // Attachable tool: attach via VAPI assistant's toolIds
+      // Attachable tool: attach via VAPI assistant's toolIds AND agent_tools table
       // Check if tool has an external_tool_id (required for VAPI attachment)
       if (!tool.external_tool_id) {
         return NextResponse.json(
@@ -123,6 +124,35 @@ export async function POST(
           toolIds: updatedToolIds
         } as any
       })
+
+      // Also insert into agent_tools table with is_vapi_attached = true
+      const { error: insertError } = await supabase
+        .from('agent_tools')
+        .insert({
+          agent_id: agentId,
+          tool_id: toolId,
+          is_vapi_attached: true,
+        })
+
+      if (insertError) {
+        console.error('Error inserting into agent_tools:', insertError)
+        // Try to rollback VAPI change
+        try {
+          const rollbackToolIds = currentToolIds
+          await vapiClient.assistants.update(agent.vapi_assistant_id, {
+            model: {
+              ...assistant.model,
+              toolIds: rollbackToolIds
+            } as any
+          })
+        } catch (rollbackError) {
+          console.error('Error rolling back VAPI change:', rollbackError)
+        }
+        return NextResponse.json(
+          { error: 'Failed to attach tool' },
+          { status: 500 }
+        )
+      }
 
       return NextResponse.json({ success: true })
     }
