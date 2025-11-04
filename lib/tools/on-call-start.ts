@@ -25,6 +25,7 @@ export async function executeOnCallStartTools(
   calledNumber: string,
   controlUrl: string
 ): Promise<void> {
+  'use step';
   console.log(`🚀 Executing on-call-start tools for agent ${agentId}, call ${callRecordId}`)
   console.log(`📞 Caller: ${callerNumber}, Called: ${calledNumber}`)
   console.log(`🔗 Control URL: ${controlUrl}`)

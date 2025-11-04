@@ -36,3 +36,12 @@ export default authkitMiddleware({
 //     '/((?!demo|api/calls|api/callback|api/agents|api/phone-number|api/tools|_next/static|_next/image|favicon.ico).*)',
 //   ],
 // };
+
+export const config = {
+  matcher: [
+    // ... your existing matchers
+    {
+      source: '/((?!_next/static|_next/image|favicon.ico|.well-known/workflow/).*)', 
+    },
+  ],
+};
