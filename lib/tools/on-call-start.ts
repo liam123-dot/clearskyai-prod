@@ -6,8 +6,8 @@
  */
 
 import { createServiceClient } from '@/lib/supabase/server'
-import { vapiClient } from '@/lib/vapi/VapiClients'
 import { injectSystemContext } from '@/lib/vapi/call-control'
+import { executeToolById } from '@/lib/tools/execute'
 import type { VariableContext } from '@/lib/tools/variables'
 
 /**
@@ -67,43 +67,23 @@ export async function executeOnCallStartTools(
       console.log(`🔧 Executing tool: ${toolName} (${tool.id})`)
       
       try {
-        // Build execution request with metadata
-        const executionRequest = {
-          metadata: {
-            callerPhoneNumber: callerNumber,
-            calledPhoneNumber: calledNumber,
-          },
-          // Empty parameters - tools should use fixed values with variables
-          parameters: {},
-        }
+        // Execute tool directly using shared function
+        // Empty parameters - tools should use fixed values with variables
+        const executionResult = await executeToolById(tool.id, {}, variableContext)
         
-        // Make internal fetch to tool execution endpoint
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-        const executeUrl = `${baseUrl}/api/tools/${tool.id}/execute`
-        
-        const response = await fetch(executeUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(executionRequest),
-        })
-        
-        const data = await response.json()
-        
-        if (response.ok && data.success) {
+        if (executionResult.success) {
           console.log(`✅ Tool ${toolName} executed successfully`)
           results.push({
             toolName,
             success: true,
-            result: data.result,
+            result: executionResult.result,
           })
         } else {
-          console.error(`❌ Tool ${toolName} execution failed:`, data.error || 'Unknown error')
+          console.error(`❌ Tool ${toolName} execution failed:`, executionResult.error || 'Unknown error')
           results.push({
             toolName,
             success: false,
-            error: data.error || 'Unknown error',
+            error: executionResult.error || 'Unknown error',
           })
         }
       } catch (error) {
