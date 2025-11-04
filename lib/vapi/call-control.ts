@@ -17,9 +17,6 @@ export async function addMessageToConversation(
   triggerResponse: boolean = false
 ): Promise<void> {
   try {
-    // Convert wss:// to https:// if needed (VAPI control URLs use HTTPS, not WebSocket)
-    const httpsUrl = controlUrl.replace(/^wss:\/\//, 'https://')
-    
     const requestBody = {
       type: 'add-message',
       message,
@@ -27,11 +24,11 @@ export async function addMessageToConversation(
     }
     
     console.log('📤 Call Control Request:')
-    console.log(`   URL: ${httpsUrl}`)
+    console.log(`   URL: ${controlUrl}`)
     console.log(`   Method: POST`)
     console.log(`   Body:`, JSON.stringify(requestBody, null, 2))
     
-    const response = await fetch(httpsUrl, {
+    const response = await fetch(controlUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -61,9 +58,6 @@ export async function sayMessage(
   endCallAfterSpoken: boolean = false
 ): Promise<void> {
   try {
-    // Convert wss:// to https:// if needed
-    const httpsUrl = controlUrl.replace(/^wss:\/\//, 'https://')
-    
     const requestBody = {
       type: 'say',
       content,
@@ -71,10 +65,10 @@ export async function sayMessage(
     }
     
     console.log('📤 Call Control Request (say):')
-    console.log(`   URL: ${httpsUrl}`)
+    console.log(`   URL: ${controlUrl}`)
     console.log(`   Body:`, JSON.stringify(requestBody, null, 2))
     
-    const response = await fetch(httpsUrl, {
+    const response = await fetch(controlUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

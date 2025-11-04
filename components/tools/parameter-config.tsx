@@ -52,7 +52,7 @@ interface ParameterConfigProps {
   isBoolean?: boolean
   isInteger?: boolean
   hasOptions?: boolean
-  options?: string[]
+  options?: string[] | Array<{ label: string; value: string }>
   defaultValue?: string | number | boolean
   value: ParameterConfig
   onChange: (config: ParameterConfig) => void
@@ -78,9 +78,17 @@ export function ParameterConfigField({
 }: ParameterConfigProps) {
   const [searchQuery, setSearchQuery] = useState('')
   
-  // Filter options based on search query
-  const filteredOptions = options.filter((opt) =>
-    opt.toLowerCase().includes(searchQuery.toLowerCase())
+  // Normalize options to a consistent format and filter based on search query
+  const normalizedOptions = (options || []).map((opt) => {
+    if (typeof opt === 'string') {
+      return { label: opt, value: opt }
+    }
+    return opt
+  })
+  
+  const filteredOptions = normalizedOptions.filter((opt) =>
+    opt.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    opt.value.toLowerCase().includes(searchQuery.toLowerCase())
   )
   
   // Detect variables in the current value (both fixed and AI modes)
@@ -421,8 +429,8 @@ export function ParameterConfigField({
                   )}
                   {filteredOptions.length > 0 ? (
                     filteredOptions.map((opt) => (
-                      <SelectItem key={opt} value={opt}>
-                        {opt}
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
                       </SelectItem>
                     ))
                   ) : (

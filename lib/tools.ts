@@ -329,62 +329,143 @@ export async function getOrCreateAgentTools(
 }
 
 /**
- * Gets all tools attached to an agent (from both VAPI toolIds and agent_tools table)
+ * Gets all tools attached to an agent and syncs with VAPI state
+ * This function reconciles VAPI toolIds with agent_tools table
  */
 export async function getAgentTools(agentId: string): Promise<Tool[]> {
   const supabase = await createServiceClient()
   
-  // Get VAPI-attached tools
+  // Get agent and VAPI assistant
   const { data: agent } = await supabase
     .from('agents')
-    .select('vapi_assistant_id')
+    .select('vapi_assistant_id, organization_id')
     .eq('id', agentId)
     .single()
 
-  let vapiTools: Tool[] = []
-  if (agent?.vapi_assistant_id) {
+  if (!agent) {
+    return []
+  }
+
+  // Get tools from VAPI
+  let vapiToolIds: string[] = []
+  if (agent.vapi_assistant_id) {
     try {
       const assistant = await vapiClient.assistants.get(agent.vapi_assistant_id)
-      const toolIds = assistant.model?.toolIds || []
-      vapiTools = await getOrCreateAgentTools(agentId, toolIds)
+      vapiToolIds = assistant.model?.toolIds || []
     } catch (error) {
-      console.error('Error fetching VAPI tools:', error)
+      console.error('Error fetching VAPI assistant:', error)
     }
   }
 
-  // Get agent_tools-attached tools
-  const { data: agentToolsRecords, error: agentToolsError } = await supabase
+  // Get tools from agent_tools table
+  const { data: agentToolsRecords } = await supabase
+    .from('agent_tools')
+    .select('tool_id, is_vapi_attached, tools!inner(external_tool_id)')
+    .eq('agent_id', agentId)
+
+  const agentToolsMap = new Map<string, { toolId: string; isVapiAttached: boolean; externalToolId: string | null }>()
+  for (const record of agentToolsRecords || []) {
+    const toolRecord = record as any
+    agentToolsMap.set(toolRecord.tool_id, {
+      toolId: toolRecord.tool_id,
+      isVapiAttached: toolRecord.is_vapi_attached,
+      externalToolId: toolRecord.tools?.external_tool_id || null,
+    })
+  }
+
+  // Sync: Find VAPI tools not in agent_tools (is_vapi_attached=true)
+  const vapiToolsToSync: string[] = []
+  for (const externalToolId of vapiToolIds) {
+    // Check if this external_tool_id is already in agent_tools
+    const found = Array.from(agentToolsMap.values()).find(
+      t => t.externalToolId === externalToolId && t.isVapiAttached
+    )
+    if (!found) {
+      vapiToolsToSync.push(externalToolId)
+    }
+  }
+
+  // Insert missing VAPI tools into agent_tools
+  if (vapiToolsToSync.length > 0) {
+    console.log(`Syncing ${vapiToolsToSync.length} tools from VAPI to agent_tools for agent ${agentId}`)
+    for (const externalToolId of vapiToolsToSync) {
+      // Get or create the tool in our database
+      let tool = await getToolByExternalId(externalToolId)
+      if (!tool) {
+        try {
+          const vapiTool = await vapiClient.tools.get(externalToolId)
+          const toolType = inferToolType(vapiTool)
+          const toolLabel = inferToolName(vapiTool)
+          let toolName = externalToolId
+          if ('function' in vapiTool && vapiTool.function?.name) {
+            toolName = vapiTool.function.name
+          } else if ('name' in vapiTool && vapiTool.name) {
+            toolName = vapiTool.name
+          }
+          tool = await createTool(agent.organization_id, externalToolId, toolType, toolName, vapiTool, toolLabel)
+        } catch (error) {
+          console.error(`Error fetching/creating tool ${externalToolId}:`, error)
+          continue
+        }
+      }
+
+      // Insert into agent_tools
+      const { error: insertErr } = await supabase.from('agent_tools').insert({
+        agent_id: agentId,
+        tool_id: tool.id,
+        is_vapi_attached: true,
+      })
+      
+      if (insertErr) {
+        console.error(`Error inserting tool ${tool.id} into agent_tools:`, insertErr)
+      }
+    }
+  }
+
+  // Sync: Find agent_tools (is_vapi_attached=true) not in VAPI
+  const staleToolIds: string[] = []
+  for (const [toolId, toolData] of agentToolsMap) {
+    if (toolData.isVapiAttached && toolData.externalToolId && !vapiToolIds.includes(toolData.externalToolId)) {
+      staleToolIds.push(toolId)
+    }
+  }
+
+  // Remove stale tools from agent_tools
+  if (staleToolIds.length > 0) {
+    console.log(`Removing ${staleToolIds.length} stale tools from agent_tools for agent ${agentId}`)
+    const { error: deleteErr } = await supabase
+      .from('agent_tools')
+      .delete()
+      .eq('agent_id', agentId)
+      .in('tool_id', staleToolIds)
+      
+    if (deleteErr) {
+      console.error('Error removing stale tools:', deleteErr)
+    }
+  }
+
+  // Fetch all current tools from agent_tools (after sync)
+  const { data: finalAgentToolsRecords } = await supabase
     .from('agent_tools')
     .select('tool_id')
     .eq('agent_id', agentId)
 
-  if (agentToolsError) {
-    console.error('Error fetching agent_tools:', agentToolsError)
-    return vapiTools
-  }
+  const toolIds = (finalAgentToolsRecords || []).map(record => record.tool_id)
+  const tools: Tool[] = []
 
-  const agentToolIds = (agentToolsRecords || []).map(record => record.tool_id)
-  const agentTools: Tool[] = []
-
-  for (const toolId of agentToolIds) {
+  for (const toolId of toolIds) {
     const tool = await getTool(toolId)
     if (tool) {
-      agentTools.push(tool)
+      tools.push(tool)
     }
   }
 
-  // Combine and deduplicate by tool ID
-  const allTools = [...vapiTools, ...agentTools]
-  const uniqueTools = new Map<string, Tool>()
-  for (const tool of allTools) {
-    uniqueTools.set(tool.id, tool)
-  }
-
-  return Array.from(uniqueTools.values())
+  return tools
 }
 
 /**
- * Checks if a tool is attached to an agent (via VAPI or agent_tools table)
+ * Checks if a tool is attached to an agent
+ * Uses agent_tools table as the single source of truth
  */
 export async function isToolAttachedToAgent(
   agentId: string,
@@ -402,36 +483,10 @@ export async function isToolAttachedToAgent(
 
   if (agentToolError) {
     console.error('Error checking agent_tools:', agentToolError)
-  }
-
-  if (agentTool) {
-    return true
-  }
-
-  // Check VAPI toolIds
-  const tool = await getTool(toolId)
-  if (!tool?.external_tool_id) {
     return false
   }
 
-  const { data: agent } = await supabase
-    .from('agents')
-    .select('vapi_assistant_id')
-    .eq('id', agentId)
-    .single()
-
-  if (!agent?.vapi_assistant_id) {
-    return false
-  }
-
-  try {
-    const assistant = await vapiClient.assistants.get(agent.vapi_assistant_id)
-    const toolIds = assistant.model?.toolIds || []
-    return toolIds.includes(tool.external_tool_id)
-  } catch (error) {
-    console.error('Error checking VAPI tools:', error)
-    return false
-  }
+  return !!agentTool
 }
 
 /**
@@ -460,4 +515,5 @@ export async function getAgentToolsFromTable(agentId: string): Promise<Tool[]> {
 
   return tools
 }
+
 

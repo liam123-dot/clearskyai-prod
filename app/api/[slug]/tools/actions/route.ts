@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthSession } from '@/lib/auth'
-import { pipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
+import { getPipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
 
 type RouteContext = {
   params: Promise<{ slug: string }>
@@ -45,7 +45,7 @@ export async function GET(request: Request, context: RouteContext) {
     console.log('Fetching actions for app:', app)
 
     // Fetch actions from Pipedream
-    const actions = await pipedreamClient.actions.list({
+    const actions = await getPipedreamClient().actions.list({
       app,
     })
 

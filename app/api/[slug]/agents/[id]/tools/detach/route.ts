@@ -76,28 +76,74 @@ export async function POST(
     // For non-query tools or query tools not associated with a knowledge base,
     // proceed with normal detach
     
-    // Check if tool is attached via agent_tools table (for attach_to_agent = false tools)
-    if (tool.attach_to_agent === false) {
-      const { data: agentTool, error: agentToolError } = await supabase
-        .from('agent_tools')
-        .select('id')
-        .eq('agent_id', agentId)
-        .eq('tool_id', toolId)
-        .maybeSingle()
+    // Check if tool is attached via agent_tools table
+    const { data: agentTool, error: agentToolError } = await supabase
+      .from('agent_tools')
+      .select('id')
+      .eq('agent_id', agentId)
+      .eq('tool_id', toolId)
+      .maybeSingle()
 
-      if (agentToolError) {
-        console.error('Error checking agent_tools:', agentToolError)
+    if (agentToolError) {
+      console.error('Error checking agent_tools:', agentToolError)
+      return NextResponse.json(
+        { error: 'Failed to check tool attachment' },
+        { status: 500 }
+      )
+    }
+
+    if (!agentTool) {
+      return NextResponse.json(
+        { error: 'Tool is not attached to this agent' },
+        { status: 400 }
+      )
+    }
+
+    // Handle detachment based on attach_to_agent flag
+    if (tool.attach_to_agent === false) {
+      // Preemptive-only tool: only remove from agent_tools table
+      const { error: deleteError } = await supabase
+        .from('agent_tools')
+        .delete()
+        .eq('id', agentTool.id)
+
+      if (deleteError) {
+        console.error('Error removing from agent_tools:', deleteError)
         return NextResponse.json(
-          { error: 'Failed to check tool attachment' },
+          { error: 'Failed to detach tool' },
           { status: 500 }
         )
       }
 
-      if (!agentTool) {
+      return NextResponse.json({ success: true })
+    } else {
+      // VAPI-attached tool: remove from both VAPI and agent_tools
+      if (!tool.external_tool_id) {
         return NextResponse.json(
-          { error: 'Tool is not attached to this agent' },
+          { error: 'Tool does not have a VAPI tool ID and cannot be detached from VAPI' },
           { status: 400 }
         )
+      }
+
+      // Fetch assistant from VAPI
+      const assistant = await vapiClient.assistants.get(agent.vapi_assistant_id)
+      const currentToolIds = assistant.model?.toolIds || []
+
+      // Check if tool is attached via VAPI
+      if (!currentToolIds.includes(tool.external_tool_id)) {
+        // Tool not in VAPI but is in agent_tools - just remove from agent_tools
+        console.warn(`Tool ${toolId} not found in VAPI but was in agent_tools`)
+      } else {
+        // Remove the tool ID from the assistant
+        const updatedToolIds = currentToolIds.filter(id => id !== tool.external_tool_id)
+
+        // Update the assistant without the tool
+        await vapiClient.assistants.update(agent.vapi_assistant_id, {
+          model: {
+            ...assistant.model,
+            toolIds: updatedToolIds
+          } as any
+        })
       }
 
       // Remove from agent_tools table
@@ -116,39 +162,6 @@ export async function POST(
 
       return NextResponse.json({ success: true })
     }
-
-    // Handle VAPI-attached tools (attach_to_agent = true)
-    if (!tool.external_tool_id) {
-      return NextResponse.json(
-        { error: 'Tool does not have a VAPI tool ID and cannot be detached from VAPI' },
-        { status: 400 }
-      )
-    }
-
-    // Fetch assistant from VAPI
-    const assistant = await vapiClient.assistants.get(agent.vapi_assistant_id)
-    const currentToolIds = assistant.model?.toolIds || []
-
-    // Check if tool is attached via VAPI
-    if (!currentToolIds.includes(tool.external_tool_id)) {
-      return NextResponse.json(
-        { error: 'Tool is not attached to this agent' },
-        { status: 400 }
-      )
-    }
-
-    // Remove the tool ID from the assistant
-    const updatedToolIds = currentToolIds.filter(id => id !== tool.external_tool_id)
-
-    // Update the assistant without the tool
-    await vapiClient.assistants.update(agent.vapi_assistant_id, {
-      model: {
-        ...assistant.model,
-        toolIds: updatedToolIds
-      } as any
-    })
-
-    return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error detaching tool:', error)
     return NextResponse.json(

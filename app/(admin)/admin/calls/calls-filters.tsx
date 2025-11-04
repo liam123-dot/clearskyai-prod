@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
-import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react"
+import { IconChevronLeft, IconChevronRight, IconRefresh } from "@tabler/icons-react"
 
 interface Organization {
   id: string
@@ -22,13 +22,17 @@ interface CallsFiltersProps {
   currentPage: number
   totalPages: number
   totalCount: number
+  onRefresh: () => void
+  isRefreshing: boolean
 }
 
 export function CallsFilters({ 
   organizations, 
   currentPage, 
   totalPages,
-  totalCount 
+  totalCount,
+  onRefresh,
+  isRefreshing
 }: CallsFiltersProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -76,6 +80,16 @@ export function CallsFilters({
               ))}
             </SelectContent>
           </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="cursor-pointer"
+          >
+            <IconRefresh className={`size-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </Button>
         </div>
         <div className="text-sm text-muted-foreground">
           Showing {startRecord}-{endRecord} of {totalCount} {totalCount === 1 ? 'call' : 'calls'}

@@ -153,16 +153,26 @@ export const scrapeRightmove = task({
           }
         }
 
+        // Determine bedroom count with special handling for Parking/Garage
+        const propertyType = prop.propertyType
+        const propertySubType = prop.propertySubType
+        const isParkingOrGarage = 
+          propertySubType?.toLowerCase() === "parking" ||
+          propertyType?.toLowerCase() === "garage" ||
+          propertyType?.toLowerCase() === "parking"
+        
+        const beds = prop.beds ?? (isParkingOrGarage ? null : 0)
+
         return {
           knowledge_base_id: knowledgeBaseId,
           source: "rightmove",
           rightmove_id: prop.id,
           url: prop.url,
-          beds: prop.beds,
+          beds: beds,
           baths: prop.baths,
           price: prop.price,
-          property_type: prop.propertyType,
-          property_subtype: prop.propertySubType,
+          property_type: propertyType,
+          property_subtype: propertySubType,
           title: prop.title,
           transaction_type: transactionType,
           street_address: normalizedAddress.street_address,

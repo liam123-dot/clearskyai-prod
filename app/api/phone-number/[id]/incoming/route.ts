@@ -200,8 +200,10 @@ export async function POST(
           const streamUrlMatch = vapiTwiml.match(/url=['"]([^'"]+)['"]/);
           if (streamUrlMatch) {
             const streamUrl = streamUrlMatch[1];
-            // Replace /transport with /control to get control URL
-            const controlUrl = streamUrl.replace('/transport', '/control');
+            // Replace /transport with /control and convert wss:// to https://
+            const controlUrl = streamUrl
+              .replace('/transport', '/control')
+              .replace(/^wss:\/\//, 'https://');
             
             console.log(`📞 Extracted control URL: ${controlUrl}`);
             

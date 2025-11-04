@@ -19,7 +19,8 @@ export async function PATCH(
       transcriber, 
       serverMessages, 
       startSpeakingPlan, 
-      stopSpeakingPlan 
+      stopSpeakingPlan,
+      analysisPlan
     } = body
 
     // Validate that at least one field is being updated
@@ -30,7 +31,8 @@ export async function PATCH(
       transcriber === undefined &&
       serverMessages === undefined &&
       startSpeakingPlan === undefined &&
-      stopSpeakingPlan === undefined
+      stopSpeakingPlan === undefined &&
+      analysisPlan === undefined
     ) {
       return NextResponse.json(
         { error: 'At least one field must be provided for update' },
@@ -93,6 +95,7 @@ export async function PATCH(
         ...(assistant.voice as any),
         voiceId: voiceId,
         provider: '11labs',
+        model: 'eleven_flash_v2_5',
       }
     }
 
@@ -122,6 +125,14 @@ export async function PATCH(
       updateData.stopSpeakingPlan = {
         ...(assistant.stopSpeakingPlan as any),
         ...stopSpeakingPlan,
+      }
+    }
+
+    // Update analysisPlan if provided
+    if (analysisPlan !== undefined) {
+      updateData.analysisPlan = {
+        ...(assistant.analysisPlan as any),
+        ...analysisPlan,
       }
     }
 

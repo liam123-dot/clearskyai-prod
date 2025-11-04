@@ -13,9 +13,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Play, Loader2 } from 'lucide-react'
+import { Play, Loader2, X, Plus } from 'lucide-react'
 import { Slider } from '@/components/ui/slider'
 import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
 
 interface Voice {
   voice_id: string
@@ -30,9 +31,7 @@ interface AgentSettingsFormProps {
   agentId: string
   slug: string
   isAdmin: boolean
-  initialPrompt: string
   initialVoiceId: string
-  initialFirstMessage: string
   initialEndpointing: number
   initialEotThreshold: number
   initialEotTimeoutMs: number
@@ -44,15 +43,14 @@ interface AgentSettingsFormProps {
   initialStopSpeakingPlanNumWords: number
   initialStopSpeakingPlanBackoffSeconds: number
   initialServerMessages: string[]
+  initialKeyterms: string[]
 }
 
 export function AgentSettingsForm({
   agentId,
   slug,
   isAdmin,
-  initialPrompt,
   initialVoiceId,
-  initialFirstMessage,
   initialEndpointing,
   initialEotThreshold,
   initialEotTimeoutMs,
@@ -64,10 +62,9 @@ export function AgentSettingsForm({
   initialStopSpeakingPlanNumWords,
   initialStopSpeakingPlanBackoffSeconds,
   initialServerMessages,
+  initialKeyterms,
 }: AgentSettingsFormProps) {
   // Baseline values (last saved state) - used for change detection
-  const [baselineFirstMessage, setBaselineFirstMessage] = useState(initialFirstMessage)
-  const [baselinePrompt, setBaselinePrompt] = useState(initialPrompt)
   const [baselineVoiceId, setBaselineVoiceId] = useState(initialVoiceId)
   const [baselineEndpointing, setBaselineEndpointing] = useState(initialEndpointing)
   const [baselineEotThreshold, setBaselineEotThreshold] = useState(initialEotThreshold)
@@ -79,10 +76,9 @@ export function AgentSettingsForm({
   const [baselineStopSpeakingPlanVoiceSeconds, setBaselineStopSpeakingPlanVoiceSeconds] = useState(initialStopSpeakingPlanVoiceSeconds)
   const [baselineStopSpeakingPlanNumWords, setBaselineStopSpeakingPlanNumWords] = useState(initialStopSpeakingPlanNumWords)
   const [baselineStopSpeakingPlanBackoffSeconds, setBaselineStopSpeakingPlanBackoffSeconds] = useState(initialStopSpeakingPlanBackoffSeconds)
+  const [baselineKeyterms, setBaselineKeyterms] = useState<string[]>(initialKeyterms)
 
   // Current form values
-  const [firstMessage, setFirstMessage] = useState(initialFirstMessage)
-  const [prompt, setPrompt] = useState(initialPrompt)
   const [selectedVoiceId, setSelectedVoiceId] = useState(initialVoiceId)
   const [voices, setVoices] = useState<Voice[]>([])
   const [isLoadingVoices, setIsLoadingVoices] = useState(true)
@@ -105,6 +101,8 @@ export function AgentSettingsForm({
   const [stopSpeakingPlanVoiceSeconds, setStopSpeakingPlanVoiceSeconds] = useState(initialStopSpeakingPlanVoiceSeconds)
   const [stopSpeakingPlanNumWords, setStopSpeakingPlanNumWords] = useState(initialStopSpeakingPlanNumWords)
   const [stopSpeakingPlanBackoffSeconds, setStopSpeakingPlanBackoffSeconds] = useState(initialStopSpeakingPlanBackoffSeconds)
+  const [keyterms, setKeyterms] = useState<string[]>(initialKeyterms)
+  const [newKeyword, setNewKeyword] = useState('')
 
   // Fetch voices with filters
   useEffect(() => {
@@ -188,13 +186,37 @@ export function AgentSettingsForm({
     setPlayingVoiceId(null)
   }
 
+  const handleAddKeyword = () => {
+    const trimmed = newKeyword.trim()
+    if (trimmed && !keyterms.includes(trimmed)) {
+      setKeyterms([...keyterms, trimmed])
+      setNewKeyword('')
+    }
+  }
+
+  const handleRemoveKeyword = (keywordToRemove: string) => {
+    setKeyterms(keyterms.filter(k => k !== keywordToRemove))
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleAddKeyword()
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    // Check if keyterms changed (order-insensitive comparison)
+    const keytermsChanged = 
+      keyterms.length !== baselineKeyterms.length ||
+      !keyterms.every(k => baselineKeyterms.includes(k)) ||
+      !baselineKeyterms.every(k => keyterms.includes(k))
+
     const hasChanges =
-      firstMessage !== baselineFirstMessage ||
-      prompt !== baselinePrompt ||
       selectedVoiceId !== baselineVoiceId ||
+      keytermsChanged ||
       (isAdmin && (
         endpointing !== baselineEndpointing ||
         eotThreshold !== baselineEotThreshold ||
@@ -217,17 +239,28 @@ export function AgentSettingsForm({
 
     try {
       const updatePayload: any = {
-        firstMessage: firstMessage !== baselineFirstMessage ? firstMessage : undefined,
-        prompt: prompt !== baselinePrompt ? prompt : undefined,
         voiceId: selectedVoiceId !== baselineVoiceId ? selectedVoiceId : undefined,
+      }
+
+      // Add keyterms if they changed (for all users)
+      if (keytermsChanged) {
+        updatePayload.transcriber = {
+          keyterm: keyterms,
+        }
       }
 
       // Add admin-only fields if user is admin
       if (isAdmin) {
+        // Always set voiceId when admin saves to ensure model is set to eleven_flash_v2_5
+        if (selectedVoiceId) {
+          updatePayload.voiceId = selectedVoiceId
+        }
+
         // Always set serverMessages to end-of-call-report when admin saves
         updatePayload.serverMessages = ['end-of-call-report']
 
         // Always set transcriber with flux-general-en and deepgram provider when admin saves
+        // Merge with keyterms if they were already set above
         updatePayload.transcriber = {
           model: 'flux-general-en',
           provider: 'deepgram',
@@ -235,6 +268,8 @@ export function AgentSettingsForm({
           endpointing,
           eotThreshold,
           eotTimeoutMs,
+          ...(updatePayload.transcriber || {}),
+          keyterm: keyterms,
         }
 
         // Always set startSpeakingPlan with smartEndpointingEnabled: false when admin saves
@@ -285,9 +320,8 @@ export function AgentSettingsForm({
       }
 
       // Optimistic update: update baseline values to current values
-      setBaselineFirstMessage(firstMessage)
-      setBaselinePrompt(prompt)
       setBaselineVoiceId(selectedVoiceId)
+      setBaselineKeyterms([...keyterms])
       
       if (isAdmin) {
         setBaselineEndpointing(endpointing)
@@ -318,54 +352,6 @@ export function AgentSettingsForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl">
-      <Card>
-        <CardHeader>
-          <CardTitle>First Message</CardTitle>
-          <CardDescription>
-            Configure the first message that the agent will say when a call starts.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="firstMessage">First Message</Label>
-            <Textarea
-              id="firstMessage"
-              placeholder="Enter the first message..."
-              value={firstMessage}
-              onChange={(e) => setFirstMessage(e.target.value)}
-              className="min-h-[100px]"
-            />
-            <p className="text-xs text-muted-foreground">
-              This is the initial greeting message that will be spoken when a call begins.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>System Prompt</CardTitle>
-          <CardDescription>
-            Configure the system message that guides the agent's behavior and responses.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="prompt">Prompt</Label>
-            <Textarea
-              id="prompt"
-              placeholder="Enter the system prompt..."
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              className="min-h-[300px] font-mono text-sm"
-            />
-            <p className="text-xs text-muted-foreground">
-              This prompt defines how the agent behaves and responds to users.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
       <Card>
         <CardHeader>
           <CardTitle>Voice Settings</CardTitle>
@@ -516,6 +502,58 @@ export function AgentSettingsForm({
               </div>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Keywords</CardTitle>
+          <CardDescription>
+            Add keywords to improve transcription accuracy for specific terms, locations, or phrases.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
+            <Input
+              placeholder="Enter a keyword..."
+              value={newKeyword}
+              onChange={(e) => setNewKeyword(e.target.value)}
+              onKeyPress={handleKeyPress}
+              className="flex-1"
+            />
+            <Button
+              type="button"
+              onClick={handleAddKeyword}
+              disabled={!newKeyword.trim() || keyterms.includes(newKeyword.trim())}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add
+            </Button>
+          </div>
+          {keyterms.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {keyterms.map((keyword) => (
+                <Badge
+                  key={keyword}
+                  variant="secondary"
+                  className="px-3 py-1 text-sm"
+                >
+                  {keyword}
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveKeyword(keyword)}
+                    className="ml-2 hover:text-destructive"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No keywords added yet. Add keywords to help the transcriber recognize specific terms.
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -728,9 +766,10 @@ export function AgentSettingsForm({
           type="submit"
           disabled={
             isSaving ||
-            (firstMessage === baselineFirstMessage &&
-              prompt === baselinePrompt &&
-              selectedVoiceId === baselineVoiceId &&
+            (selectedVoiceId === baselineVoiceId &&
+              (keyterms.length === baselineKeyterms.length &&
+                keyterms.every(k => baselineKeyterms.includes(k)) &&
+                baselineKeyterms.every(k => keyterms.includes(k))) &&
               (!isAdmin || (
                 endpointing === baselineEndpointing &&
                 eotThreshold === baselineEotThreshold &&

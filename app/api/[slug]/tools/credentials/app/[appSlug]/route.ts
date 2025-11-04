@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthSession } from '@/lib/auth'
-import { pipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
+import { getPipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
 
 type RouteContext = {
   params: Promise<{ slug: string; appSlug: string }>
@@ -34,7 +34,7 @@ export async function GET(request: Request, context: RouteContext) {
     // Fetch app details from Pipedream
     let appData = null
     try {
-      const appsResults = await pipedreamClient.apps.list({
+      const appsResults = await getPipedreamClient().apps.list({
         q: appSlug,
         limit: 10,
       })
@@ -57,7 +57,7 @@ export async function GET(request: Request, context: RouteContext) {
     }
 
     // List all connected accounts for this organization
-    const results = await pipedreamClient.accounts.list({
+    const results = await getPipedreamClient().accounts.list({
       externalUserId: organizationId,
       includeCredentials: false,
     })

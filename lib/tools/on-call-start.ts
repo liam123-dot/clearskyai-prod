@@ -30,84 +30,26 @@ export async function executeOnCallStartTools(
   try {
     const supabase = await createServiceClient()
     
-    // Get the agent's VAPI assistant ID
-    const { data: agent, error: agentError } = await supabase
-      .from('agents')
-      .select('vapi_assistant_id')
-      .eq('id', agentId)
-      .single()
-    
-    if (agentError || !agent) {
-      console.error(`❌ Agent not found: ${agentId}`, agentError)
-      return
-    }
-    
-    if (!agent.vapi_assistant_id) {
-      console.warn(`⚠️ Agent ${agentId} has no VAPI assistant ID`)
-      return
-    }
-    
-    // Get the assistant's tool IDs from VAPI (for attached tools)
-    let toolIds: string[] = []
-    try {
-      const assistant = await vapiClient.assistants.get(agent.vapi_assistant_id)
-      toolIds = assistant.model?.toolIds || []
-    } catch (error) {
-      console.error(`❌ Failed to fetch assistant ${agent.vapi_assistant_id}:`, error)
-      return
-    }
-    
     // Query tools with execute_on_call_start = true that are attached to this agent
-    // Two cases:
-    // 1. Tools attached via VAPI (have external_tool_id in agent's toolIds)
-    // 2. Tools attached via agent_tools table (attach_to_agent = false)
-    
-    // Get tools attached via agent_tools table
+    // All agent-tool relationships are now tracked in agent_tools table
     const { data: agentToolsRecords, error: agentToolsError } = await supabase
       .from('agent_tools')
-      .select('tool_id')
+      .select('tools!inner(*)')
       .eq('agent_id', agentId)
+      .eq('tools.execute_on_call_start', true)
     
     if (agentToolsError) {
-      console.error(`❌ Error fetching agent_tools:`, agentToolsError)
+      console.error(`❌ Error fetching agent tools:`, agentToolsError)
+      return
     }
     
-    const agentToolIds = (agentToolsRecords || []).map(record => record.tool_id)
-    
-    // Query tools: VAPI-attached OR agent_tools-attached, both with execute_on_call_start = true
-    const conditions: string[] = []
-    
-    // Condition 1: Tools attached via VAPI
-    if (toolIds.length > 0) {
-      conditions.push(`external_tool_id.in.(${toolIds.join(',')})`)
-    }
-    
-    // Condition 2: Tools attached via agent_tools table
-    if (agentToolIds.length > 0) {
-      conditions.push(`id.in.(${agentToolIds.join(',')})`)
-    }
-    
-    if (conditions.length === 0) {
+    if (!agentToolsRecords || agentToolsRecords.length === 0) {
       console.log(`ℹ️ No on-call-start tools found for agent ${agentId}`)
       return
     }
     
-    // Query tools with execute_on_call_start = true that match either condition
-    const { data: tools, error: toolsError } = await supabase
-      .from('tools')
-      .select('*')
-      .eq('execute_on_call_start', true)
-      .or(conditions.join(','))
-    
-    if (toolsError) {
-      console.error(`❌ Error querying on-call-start tools:`, toolsError)
-      return
-    }
-    
-    if (!tools || tools.length === 0) {
-      console.log(`ℹ️ No on-call-start tools found for agent ${agentId}`)
-      return
-    }
+    // Extract tools from the join result
+    const tools = agentToolsRecords.map((record: any) => record.tools)
     
     console.log(`📋 Found ${tools.length} on-call-start tool(s) to execute`)
     

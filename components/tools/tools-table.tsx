@@ -3,9 +3,18 @@
 import { Tool } from "@/lib/tools"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { useRouter } from "next/navigation"
 import { formatDistanceToNow } from "date-fns"
 import Image from "next/image"
+import { IconDotsVertical, IconCopy } from "@tabler/icons-react"
+import { toast } from "sonner"
 import { PipedreamActionToolConfig } from "@/lib/tools/types"
 
 interface ToolsTableProps {
@@ -69,6 +78,28 @@ function getToolImageSrc(tool: Tool): string | null {
 export function ToolsTable({ tools, slug }: ToolsTableProps) {
   const router = useRouter()
 
+  const handleCopyToolDescription = async (toolId: string) => {
+    try {
+      const response = await fetch(`/api/${slug}/tools/${toolId}/llm-prompt`)
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch tool description')
+      }
+      
+      const data = await response.json()
+      
+      if (!data.prompt) {
+        throw new Error('No prompt data received')
+      }
+      
+      await navigator.clipboard.writeText(data.prompt)
+      toast.success('Tool description copied to clipboard')
+    } catch (error) {
+      console.error('Error copying tool description:', error)
+      toast.error('Failed to copy tool description')
+    }
+  }
+
   return (
     <div className="rounded-lg border overflow-hidden">
       <Table>
@@ -77,6 +108,7 @@ export function ToolsTable({ tools, slug }: ToolsTableProps) {
             <TableHead className="font-semibold">Name</TableHead>
             <TableHead className="font-semibold">Type</TableHead>
             <TableHead className="font-semibold">Created</TableHead>
+            <TableHead className="font-semibold w-12"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -118,6 +150,30 @@ export function ToolsTable({ tools, slug }: ToolsTableProps) {
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {formatDistanceToNow(new Date(tool.created_at), { addSuffix: true })}
+                </TableCell>
+                <TableCell>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          className="data-[state=open]:bg-muted text-muted-foreground flex size-8"
+                          size="icon"
+                        >
+                          <IconDotsVertical className="size-4" />
+                          <span className="sr-only">Open menu</span>
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuItem
+                          onClick={() => handleCopyToolDescription(tool.id)}
+                        >
+                          <IconCopy className="size-4 mr-2" />
+                          Copy tool description
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </TableCell>
               </TableRow>
             )

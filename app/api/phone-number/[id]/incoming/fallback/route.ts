@@ -386,8 +386,8 @@ async function addTwilioCostToCall(
 
     // If no price found, wait 30 seconds and check again
     if (!call.price) {
-      console.warn('No price found in Twilio call data, waiting 30 seconds and retrying...');
-      await new Promise(resolve => setTimeout(resolve, 30000)); // Wait 30 seconds
+      console.warn('No price found in Twilio call data, waiting 60 seconds and retrying...');
+      await new Promise(resolve => setTimeout(resolve, 60000)); // Wait 60 seconds
       
       // Fetch again after waiting
       call = await twilioClient.calls(callSid).fetch();

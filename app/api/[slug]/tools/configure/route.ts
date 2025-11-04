@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthSession } from '@/lib/auth'
-import { pipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
+import { getPipedreamClient, isPipedreamConfigured } from '@/lib/pipedream/client'
 
 type RouteContext = {
   params: Promise<{ slug: string }>
@@ -67,7 +67,7 @@ export async function POST(request: Request, context: RouteContext) {
       configureParams.query = query
     }
 
-    const response = await pipedreamClient.actions.configureProp(configureParams)
+    const response = await getPipedreamClient().actions.configureProp(configureParams)
 
     console.log('Configure response:', JSON.stringify(response, null, 2))
 
