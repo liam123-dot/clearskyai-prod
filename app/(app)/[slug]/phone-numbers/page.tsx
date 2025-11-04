@@ -57,6 +57,7 @@ export default async function OrganizationPhoneNumbersPage({ params }: PageProps
           phoneNumbers={phoneNumbers}
           agents={agents}
           isAdmin={false}
+          organizationSlug={slug}
         />
       </div>
 

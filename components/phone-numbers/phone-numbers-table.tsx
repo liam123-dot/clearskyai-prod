@@ -28,13 +28,15 @@ interface PhoneNumbersTableProps {
   agents?: Agent[]
   organizations?: Array<{ id: string; slug: string; name: string }>
   isAdmin: boolean
+  organizationSlug?: string
 }
 
 export function PhoneNumbersTable({ 
   phoneNumbers, 
   agents = [], 
   organizations = [], 
-  isAdmin 
+  isAdmin,
+  organizationSlug
 }: PhoneNumbersTableProps) {
   const [assignedAgents, setAssignedAgents] = useState<Record<string, string | null>>(
     phoneNumbers.reduce((acc, phone) => {
@@ -72,7 +74,16 @@ export function PhoneNumbersTable({
     }))
 
     try {
-      const response = await fetch('/api/admin/phone-numbers/assign', {
+      // Use different endpoint based on admin status
+      const endpoint = isAdmin 
+        ? '/api/admin/phone-numbers/assign'
+        : `/api/${organizationSlug}/phone-numbers/assign`
+      
+      if (!isAdmin && !organizationSlug) {
+        throw new Error('Organization slug is required for non-admin users')
+      }
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -228,39 +239,29 @@ export function PhoneNumbersTable({
                   </Badge>
                 </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
-                  {isAdmin ? (
-                    <Select
-                      value={assignedAgentId || "unassigned"}
-                      onValueChange={(value) => 
-                        handleAgentChange(
-                          phoneNumber.id, 
-                          value === "unassigned" ? null : value
-                        )
-                      }
-                    >
-                      <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Assign to agent" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="unassigned">
-                          <span className="text-muted-foreground">Unassigned</span>
+                  <Select
+                    value={assignedAgentId || "unassigned"}
+                    onValueChange={(value) => 
+                      handleAgentChange(
+                        phoneNumber.id, 
+                        value === "unassigned" ? null : value
+                      )
+                    }
+                  >
+                    <SelectTrigger className="w-[200px]">
+                      <SelectValue placeholder="Assign to agent" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned">
+                        <span className="text-muted-foreground">Unassigned</span>
+                      </SelectItem>
+                      {agents.map((agent) => (
+                        <SelectItem key={agent.id} value={agent.id}>
+                          {agent.vapiAssistant.name || agent.vapi_assistant_id}
                         </SelectItem>
-                        {agents.map((agent) => (
-                          <SelectItem key={agent.id} value={agent.id}>
-                            {agent.vapiAssistant.name || agent.vapi_assistant_id}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    assignedAgent ? (
-                      <Badge variant="secondary" className="font-normal">
-                        {assignedAgent.vapiAssistant.name || assignedAgent.vapi_assistant_id}
-                      </Badge>
-                    ) : (
-                      <span className="text-muted-foreground text-sm">Unassigned</span>
-                    )
-                  )}
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </TableCell>
                 {isAdmin && (
                   <>

@@ -42,23 +42,32 @@ export default async function AgentToolsPage({ params }: AgentToolsPageProps) {
 
   try {
     // Get tools from both VAPI toolIds and agent_tools table
-    attachedTools = await getAgentTools(id)
+    const allAttachedTools = await getAgentTools(id)
+    
+    // Filter out query type tools from attached tools
+    attachedTools = allAttachedTools.filter(tool => tool.type !== 'query')
 
     // Get all organization tools
     const allOrgTools = await getToolsByOrganization(organizationId)
 
     // Get sets of attached tool IDs for filtering
-    const attachedToolDbIds = new Set(attachedTools.map(t => t.id))
+    const attachedToolDbIds = new Set(allAttachedTools.map(t => t.id))
     const attachedToolExternalIds = new Set(
-      attachedTools
+      allAttachedTools
         .map(t => t.external_tool_id)
         .filter((id): id is string => id !== null)
     )
     
     // Filter available tools:
-    // 1. Tools with attach_to_agent = true that aren't already attached via VAPI
-    // 2. Tools with attach_to_agent = false AND execute_on_call_start = true that aren't in agent_tools
+    // 1. Exclude query type tools
+    // 2. Tools with attach_to_agent = true that aren't already attached via VAPI
+    // 3. Tools with attach_to_agent = false AND execute_on_call_start = true that aren't in agent_tools
     availableTools = allOrgTools.filter(tool => {
+      // Skip query type tools
+      if (tool.type === 'query') {
+        return false
+      }
+
       // Skip if already attached
       if (attachedToolDbIds.has(tool.id)) {
         return false

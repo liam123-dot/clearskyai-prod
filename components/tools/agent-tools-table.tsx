@@ -4,35 +4,36 @@ import { Tool } from "@/lib/tools"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { toast } from "sonner"
-import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { formatDistanceToNow } from "date-fns"
 import Image from "next/image"
 import { PipedreamActionToolConfig } from "@/lib/tools/types"
+import { useState } from "react"
+import { IconLoader2 } from "@tabler/icons-react"
 
 interface AgentToolsTableProps {
   tools: Tool[]
   slug: string
   agentId: string
+  onDetach?: (tool: Tool) => Promise<void>
 }
 
 function getToolTypeBadgeColor(type: Tool['type']) {
   switch (type) {
     case 'query':
-      return 'bg-purple-100 text-purple-700 hover:bg-purple-100'
+      return 'bg-purple-50 text-purple-700 border-purple-200'
     case 'sms':
-      return 'bg-blue-100 text-blue-700 hover:bg-blue-100'
+      return 'bg-blue-50 text-blue-700 border-blue-200'
     case 'apiRequest':
-      return 'bg-green-100 text-green-700 hover:bg-green-100'
+      return 'bg-green-50 text-green-700 border-green-200'
     case 'transferCall':
-      return 'bg-orange-100 text-orange-700 hover:bg-orange-100'
+      return 'bg-orange-50 text-orange-700 border-orange-200'
     case 'externalApp':
-      return 'bg-gray-100 text-gray-700 hover:bg-gray-100'
+      return 'bg-slate-50 text-slate-700 border-slate-200'
     case 'pipedream_action':
-      return 'bg-gray-100 text-gray-700 hover:bg-gray-100'
+      return 'bg-slate-50 text-slate-700 border-slate-200'
     default:
-      return 'bg-gray-100 text-gray-700 hover:bg-gray-100'
+      return 'bg-slate-50 text-slate-700 border-slate-200'
   }
 }
 
@@ -70,35 +71,19 @@ function getToolImageSrc(tool: Tool): string | null {
   return null
 }
 
-export function AgentToolsTable({ tools, slug, agentId }: AgentToolsTableProps) {
+export function AgentToolsTable({ tools, slug, agentId, onDetach }: AgentToolsTableProps) {
   const router = useRouter()
-  const [detaching, setDetaching] = useState<Record<string, boolean>>({})
+  const [detachingId, setDetachingId] = useState<string | null>(null)
 
-  const handleDetach = async (toolId: string, e: React.MouseEvent) => {
+  const handleDetach = async (tool: Tool, e: React.MouseEvent) => {
     e.stopPropagation()
-    setDetaching(prev => ({ ...prev, [toolId]: true }))
-
+    if (!onDetach || detachingId) return
+    
+    setDetachingId(tool.id)
     try {
-      const response = await fetch(`/api/${slug}/agents/${agentId}/tools/detach`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ toolId }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to detach tool')
-      }
-
-      toast.success('Tool detached successfully')
-      window.location.reload()
-    } catch (error) {
-      console.error('Error detaching tool:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to detach tool')
+      await onDetach(tool)
     } finally {
-      setDetaching(prev => ({ ...prev, [toolId]: false }))
+      setDetachingId(null)
     }
   }
 
@@ -143,12 +128,22 @@ export function AgentToolsTable({ tools, slug, agentId }: AgentToolsTableProps) 
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge
-                    variant="secondary"
-                    className={getToolTypeBadgeColor(tool.type)}
-                  >
-                    {typeLabel}
-                  </Badge>
+                  <div className="flex items-center gap-1.5">
+                    <Badge
+                      variant="outline"
+                      className={`${getToolTypeBadgeColor(tool.type)} font-medium`}
+                    >
+                      {typeLabel}
+                    </Badge>
+                    {tool.execute_on_call_start && (
+                      <Badge
+                        variant="outline"
+                        className="bg-amber-50 text-amber-700 border-amber-200 font-medium text-[10px] px-1.5 py-0"
+                      >
+                        PRE-CALL
+                      </Badge>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="text-muted-foreground text-sm">
                   {formatDistanceToNow(new Date(tool.created_at), { addSuffix: true })}
@@ -156,11 +151,19 @@ export function AgentToolsTable({ tools, slug, agentId }: AgentToolsTableProps) 
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <Button
                     size="sm"
-                    variant="outline"
-                    onClick={(e) => handleDetach(tool.id, e)}
-                    disabled={detaching[tool.id]}
+                    variant="ghost"
+                    onClick={(e) => handleDetach(tool, e)}
+                    disabled={detachingId !== null || !onDetach}
+                    className="h-8"
                   >
-                    {detaching[tool.id] ? 'Detaching...' : 'Detach'}
+                    {detachingId === tool.id ? (
+                      <>
+                        <IconLoader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                        Detaching...
+                      </>
+                    ) : (
+                      'Detach'
+                    )}
                   </Button>
                 </TableCell>
               </TableRow>
