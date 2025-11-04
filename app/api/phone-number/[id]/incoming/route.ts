@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { getPhoneNumberById } from '@/lib/phone-numbers';
 import { findMatchingSchedule, generateTransferTwiML } from '@/lib/call-routing';
 import { createServiceClient } from '@/lib/supabase/server';
@@ -215,16 +215,17 @@ export async function POST(
             
             // Trigger on-call-start tool execution asynchronously
             // Don't await - let it run in background
-            executeOnCallStartTools(
-              phoneNumber.agent_id,
-              callRecord.id,
-              from,
-              to,
-              controlUrl
-            ).catch(err => {
-              console.error('Error executing on-call-start tools:', err);
-              // Don't fail the call if tool execution fails
-            });
+            
+            after(async () => {
+              executeOnCallStartTools(
+                phoneNumber.agent_id!,
+                callRecord.id,
+                from,
+                to,
+                controlUrl
+              )
+            })
+
           } else {
             console.warn('Could not extract Stream URL from VAPI TwiML response');
           }
