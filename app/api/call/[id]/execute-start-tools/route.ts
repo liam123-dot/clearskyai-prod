@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { executeOnCallStartTools } from '@/lib/tools/on-call-start';
 
 /**
  * API endpoint to execute on-call-start tools for a call
- * Called asynchronously from the incoming call route
+ * Responds immediately and executes tools in background using after()
  */
 export async function POST(
   request: NextRequest,
@@ -48,25 +48,30 @@ export async function POST(
     console.log(`   Agent ID: ${agentId}`);
     console.log(`   Caller: ${callerNumber}, Called: ${calledNumber}`);
 
-    // Execute the on-call-start tools
-    await executeOnCallStartTools(
-      agentId,
-      callRecordId,
-      callerNumber,
-      calledNumber,
-      controlUrl
-    );
+    // Execute the on-call-start tools in background using after()
+    // This allows us to respond immediately while tools run asynchronously
+    after(async () => {
+      await executeOnCallStartTools(
+        agentId,
+        callRecordId,
+        callerNumber,
+        calledNumber,
+        controlUrl
+      );
+    });
 
+    // Respond immediately - tools will execute in background
     return NextResponse.json({
       success: true,
       callRecordId,
+      message: 'Tool execution started in background',
     });
   } catch (error) {
-    console.error('❌ Error executing on-call-start tools:', error);
+    console.error('❌ Error setting up on-call-start tools execution:', error);
     return NextResponse.json(
       { 
         success: false, 
-        error: error instanceof Error ? error.message : 'Failed to execute on-call-start tools' 
+        error: error instanceof Error ? error.message : 'Failed to setup tool execution' 
       },
       { status: 500 }
     );

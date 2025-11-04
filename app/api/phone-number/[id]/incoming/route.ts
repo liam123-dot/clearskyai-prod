@@ -212,24 +212,32 @@ export async function POST(
               .update({ control_url: controlUrl })
               .eq('id', callRecord.id);
             
-            // Trigger on-call-start tool execution asynchronously
-            // Don't await - fire and forget for async execution
-            const executeUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/call/${callRecord.id}/execute-start-tools`;
-            fetch(executeUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                agentId: phoneNumber.agent_id!,
-                callerNumber: from,
-                calledNumber: to,
-                controlUrl: controlUrl,
-              }),
-            }).catch(error => {
+            // Trigger on-call-start tool execution
+            // Wait for immediate response (endpoint will use after() to execute tools in background)
+            try {
+              const executeUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/call/${callRecord.id}/execute-start-tools`;
+              const response = await fetch(executeUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  agentId: phoneNumber.agent_id!,
+                  callerNumber: from,
+                  calledNumber: to,
+                  controlUrl: controlUrl,
+                }),
+              });
+              
+              if (!response.ok) {
+                console.error('Error response from execute-start-tools endpoint:', response.status);
+              } else {
+                console.log('✅ Tool execution initiated successfully');
+              }
+            } catch (error) {
               console.error('Error triggering on-call-start tools execution:', error);
               // Don't fail the call if the async call fails
-            });
+            }
 
           } else {
             console.warn('Could not extract Stream URL from VAPI TwiML response');
