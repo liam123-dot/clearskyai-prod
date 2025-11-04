@@ -5,7 +5,7 @@
  * Results are injected into the conversation as system context using VAPI Call Control API.
  */
 
-import { createServiceClient } from '@/lib/supabase/server'
+import { createNoCookieClient } from '@/lib/supabase/trigger'
 import { injectSystemContext } from '@/lib/vapi/call-control'
 import { executeToolById } from '@/lib/tools/execute'
 import type { VariableContext } from '@/lib/tools/variables'
@@ -28,7 +28,7 @@ export async function executeOnCallStartTools(
   console.log(`🚀 Executing on-call-start tools for agent ${agentId}, call ${callRecordId}`)
   
   try {
-    const supabase = await createServiceClient()
+    const supabase = createNoCookieClient()
     
     // Query tools with execute_on_call_start = true that are attached to this agent
     // All agent-tool relationships are now tracked in agent_tools table
