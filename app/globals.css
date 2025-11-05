@@ -90,3 +90,9 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Ensure Sonner toast text is always white */
+[data-sonner-toast],
+[data-sonner-toast] * {
+  color: white !important;
+}
