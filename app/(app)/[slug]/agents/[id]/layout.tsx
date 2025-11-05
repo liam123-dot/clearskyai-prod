@@ -1,6 +1,6 @@
 import { getAgentById } from "@/lib/vapi/agents"
 import { notFound } from "next/navigation"
-import { ExternalLink, Phone } from "lucide-react"
+import { ExternalLink, Phone, Clock, MessageSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { AgentNav } from "./agent-nav"
@@ -8,6 +8,11 @@ import { getAuthSession } from "@/lib/auth"
 import { TestAgentButtonWrapper } from "@/components/vapi/test-agent-button-wrapper"
 import { getPhoneNumbersByAgent } from "@/lib/phone-numbers"
 import { Badge } from "@/components/ui/badge"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 
 interface AgentLayoutProps {
   params: Promise<{ slug: string; id: string }>
@@ -64,33 +69,69 @@ export default async function AgentLayout({ params, children }: AgentLayoutProps
         </div>
         
         {phoneNumbers.length > 0 && (
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Phone className="h-4 w-4" />
-              <span>Phone Numbers:</span>
+              <span className="font-medium">{phoneNumbers.length} {phoneNumbers.length === 1 ? 'Number' : 'Numbers'}:</span>
             </div>
-            {phoneNumbers.map((phoneNumber) => (
-              <div key={phoneNumber.id} className="flex items-center gap-2">
-                <Badge variant="secondary" className="font-mono text-sm">
-                  {formatPhoneNumber(phoneNumber.phone_number)}
-                </Badge>
-                {isAdmin && (
-                  <Badge variant="outline" className="capitalize text-xs">
-                    {phoneNumber.provider}
-                  </Badge>
-                )}
-                {phoneNumber.sms_enabled && (
-                  <Badge variant="outline" className="text-xs">
-                    SMS
-                  </Badge>
-                )}
-                {phoneNumber.time_based_routing_enabled && (
-                  <Badge variant="outline" className="text-xs">
-                    Time Routing
-                  </Badge>
-                )}
-              </div>
-            ))}
+            <div className="flex flex-wrap items-center gap-2">
+              {phoneNumbers.map((phoneNumber) => (
+                <Popover key={phoneNumber.id}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2 font-mono text-xs hover:bg-muted"
+                    >
+                      {formatPhoneNumber(phoneNumber.phone_number)}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72" align="start">
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-sm font-medium mb-1">Phone Number</div>
+                        <div className="font-mono text-sm">{formatPhoneNumber(phoneNumber.phone_number)}</div>
+                      </div>
+                      
+                      {isAdmin && (
+                        <div>
+                          <div className="text-sm font-medium mb-1">Provider</div>
+                          <Badge variant="outline" className="capitalize">
+                            {phoneNumber.provider}
+                          </Badge>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm">SMS</span>
+                          <Badge variant={phoneNumber.sms_enabled ? "default" : "secondary"} className="text-xs">
+                            {phoneNumber.sms_enabled ? "Enabled" : "Disabled"}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      {phoneNumber.time_based_routing_enabled && (
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm">Time-based Routing</span>
+                          <Badge variant="default" className="text-xs">
+                            Active
+                          </Badge>
+                        </div>
+                      )}
+
+                      {phoneNumber.schedules_count > 0 && (
+                        <div className="text-xs text-muted-foreground">
+                          {phoneNumber.schedules_count} schedule{phoneNumber.schedules_count !== 1 ? 's' : ''} configured
+                        </div>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              ))}
+            </div>
           </div>
         )}
         
