@@ -96,11 +96,11 @@ export function BillingPageClient({ initialState }: BillingPageClientProps) {
             organizationId={initialState.organization.id}
             organizationSlug={initialState.organization.slug}
           />
-          <SetupFeeDialog
+          {/* <SetupFeeDialog
             organizationId={initialState.organization.id}
             currentEmail={initialState.organization.billing_email}
             hasPaymentMethod={initialState.hasPaymentMethod}
-          />
+          /> */}
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
