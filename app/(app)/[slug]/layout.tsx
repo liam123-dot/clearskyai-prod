@@ -45,7 +45,7 @@ export default async function SlugLayout({ params, children }: SlugLayoutProps) 
       <AppSidebar 
         type="organization" 
         slug={slug} 
-        orgName={organisation?.slug}
+        orgName={(organisation as any)?.name || organisation?.slug}
         user={{
           name: user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.email,
           email: user.email,

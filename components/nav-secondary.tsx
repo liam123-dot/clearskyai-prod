@@ -67,7 +67,10 @@ function CollapsibleNavItem({
           <SidebarMenuSub>
             {item.items?.map((subItem) => {
               // Match exact path or subroutes
-              const isSubActive = pathname === subItem.url || pathname.startsWith(subItem.url + '/')
+              // However, if sub-item URL matches parent URL (like General = Settings), only match exactly
+              // to avoid highlighting General when on sibling routes like /settings/billing
+              const isSameAsParent = subItem.url === item.url
+              const isSubActive = pathname === subItem.url || (!isSameAsParent && pathname.startsWith(subItem.url + '/'))
               return (
                 <SidebarMenuSubItem key={subItem.title}>
                   <SidebarMenuSubButton
