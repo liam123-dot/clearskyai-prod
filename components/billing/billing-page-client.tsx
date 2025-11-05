@@ -94,7 +94,7 @@ export function BillingPageClient({ initialState }: BillingPageClientProps) {
       <div className="flex items-center justify-end gap-2">
           <CheckoutLinkDialog
             organizationId={initialState.organization.id}
-            products={initialState.allProducts || []}
+            organizationSlug={initialState.organization.slug}
           />
           <SetupFeeDialog
             organizationId={initialState.organization.id}
