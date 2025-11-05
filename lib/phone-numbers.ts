@@ -201,6 +201,67 @@ export async function getPhoneNumbersByOrganization(
 }
 
 /**
+ * Get phone numbers for a specific agent
+ */
+export async function getPhoneNumbersByAgent(
+  agentId: string
+): Promise<PhoneNumberWithDetails[]> {
+  const supabase = await createServiceClient();
+  
+  const { data, error } = await supabase
+    .from('phone_numbers')
+    .select(`
+      *,
+      agent:agents(id, vapi_assistant_id),
+      organization:organisations(id, slug, external_id)
+    `)
+    .eq('agent_id', agentId)
+    .order('created_at', { ascending: false });
+  
+  if (error) {
+    throw new Error(`Failed to get phone numbers: ${error.message}`);
+  }
+  
+  if (!data || data.length === 0) {
+    return [];
+  }
+  
+  // Get enabled schedules count for all phone numbers
+  const phoneNumberIds = data.map(p => p.id);
+  const { data: schedules } = await supabase
+    .from('phone_number_schedules')
+    .select('phone_number_id, enabled')
+    .in('phone_number_id', phoneNumberIds)
+    .eq('enabled', true);
+  
+  // Create a map of phone_number_id -> count
+  const schedulesCountMap = new Map<string, number>();
+  schedules?.forEach(schedule => {
+    const count = schedulesCountMap.get(schedule.phone_number_id) || 0;
+    schedulesCountMap.set(schedule.phone_number_id, count + 1);
+  });
+  
+  // Sync SMS enabled from VAPI for phone numbers with vapi_phone_number_id
+  const syncedData = await Promise.all(
+    data.map(async (phone) => {
+      const syncedSmsEnabled = await syncSmsEnabledFromVapi(
+        phone.id,
+        phone.vapi_phone_number_id,
+        phone.sms_enabled ?? true
+      );
+      
+      return {
+        ...phone,
+        sms_enabled: syncedSmsEnabled,
+        schedules_count: schedulesCountMap.get(phone.id) || 0,
+      };
+    })
+  );
+  
+  return syncedData as PhoneNumberWithDetails[];
+}
+
+/**
  * Get a single phone number by phone number string
  */
 export async function getPhoneNumberByNumber(
