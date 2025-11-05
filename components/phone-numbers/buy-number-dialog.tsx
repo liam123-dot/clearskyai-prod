@@ -137,7 +137,7 @@ export function BuyNumberDialog({ isAdmin, organizationSlug, onPurchaseComplete 
           Buy Number
         </Button>
       </SheetTrigger>
-      <SheetContent className="sm:max-w-2xl overflow-y-auto">
+      <SheetContent className="sm:max-w-2xl overflow-y-auto p-4">
         <SheetHeader>
           <SheetTitle>Buy Phone Number from Twilio</SheetTitle>
           <SheetDescription>

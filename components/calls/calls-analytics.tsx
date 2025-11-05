@@ -517,6 +517,16 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cost)
   }
 
+  // Format cost per minute with 3 decimal places
+  const formatCostPerMinute = (cost: number): string => {
+    return new Intl.NumberFormat('en-US', { 
+      style: 'currency', 
+      currency: 'USD',
+      minimumFractionDigits: 3,
+      maximumFractionDigits: 3
+    }).format(cost)
+  }
+
   // Chart config - only show total calls
   const chartConfig = useMemo(() => {
     return {
@@ -1468,7 +1478,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                     tickLine={false}
                     axisLine={false}
                     tickMargin={8}
-                    tickFormatter={(value) => formatCurrency(value)}
+                    tickFormatter={(value) => formatCostPerMinute(value)}
                   />
                   <ChartTooltip 
                     content={
@@ -1527,7 +1537,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                               return label
                           }
                         }}
-                        formatter={(value) => formatCurrency(value as number)}
+                        formatter={(value) => formatCostPerMinute(value as number)}
                       />
                     } 
                   />
