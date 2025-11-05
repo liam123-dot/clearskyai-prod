@@ -1,5 +1,6 @@
 import { createServiceClient } from "./supabase/server";
-import { createVapiTwilioPhoneNumber, updateVapiPhoneNumberAssistant } from "./vapi/phone-numbers";
+import { createVapiTwilioPhoneNumber, updateVapiPhoneNumberAssistant, updateVapiPhoneNumberSmsEnabled } from "./vapi/phone-numbers";
+import { vapiClient } from "./vapi/VapiClients";
 import type { PhoneNumberSchedule } from "./call-routing";
 
 export interface PhoneNumberCredentials {
@@ -19,6 +20,7 @@ export interface PhoneNumber {
   owned_by_admin: boolean;
   vapi_phone_number_id: string | null;
   time_based_routing_enabled: boolean;
+  sms_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -43,6 +45,40 @@ export interface ImportPhoneNumberData {
   organization_id: string | null;
   owned_by_admin: boolean;
   agent_id?: string | null;
+}
+
+/**
+ * Sync SMS enabled status from VAPI for a phone number
+ * Returns the SMS enabled value (defaults to true if not present in VAPI)
+ */
+async function syncSmsEnabledFromVapi(
+  phoneNumberId: string,
+  vapiPhoneNumberId: string | null,
+  currentSmsEnabled: boolean
+): Promise<boolean> {
+  if (!vapiPhoneNumberId) {
+    return currentSmsEnabled;
+  }
+
+  try {
+    const vapiPhoneNumber = await vapiClient.phoneNumbers.get(vapiPhoneNumberId);
+    const vapiSmsEnabled = (vapiPhoneNumber as any).smsEnabled ?? true;
+    
+    // Sync to database if different
+    if (vapiSmsEnabled !== currentSmsEnabled) {
+      const supabase = await createServiceClient();
+      await supabase
+        .from('phone_numbers')
+        .update({ sms_enabled: vapiSmsEnabled })
+        .eq('id', phoneNumberId);
+    }
+    
+    return vapiSmsEnabled;
+  } catch (error) {
+    console.error('Failed to fetch SMS enabled from VAPI:', error);
+    // Return current value if VAPI fetch fails
+    return currentSmsEnabled;
+  }
 }
 
 /**
@@ -83,11 +119,24 @@ export async function getPhoneNumbers(): Promise<PhoneNumberWithDetails[]> {
     schedulesCountMap.set(schedule.phone_number_id, count + 1);
   });
   
-  // Map the data to include schedules_count
-  return data.map((phone) => ({
-    ...phone,
-    schedules_count: schedulesCountMap.get(phone.id) || 0,
-  })) as PhoneNumberWithDetails[];
+  // Sync SMS enabled from VAPI for phone numbers with vapi_phone_number_id
+  const syncedData = await Promise.all(
+    data.map(async (phone) => {
+      const syncedSmsEnabled = await syncSmsEnabledFromVapi(
+        phone.id,
+        phone.vapi_phone_number_id,
+        phone.sms_enabled ?? true
+      );
+      
+      return {
+        ...phone,
+        sms_enabled: syncedSmsEnabled,
+        schedules_count: schedulesCountMap.get(phone.id) || 0,
+      };
+    })
+  );
+  
+  return syncedData as PhoneNumberWithDetails[];
 }
 
 /**
@@ -131,11 +180,24 @@ export async function getPhoneNumbersByOrganization(
     schedulesCountMap.set(schedule.phone_number_id, count + 1);
   });
   
-  // Map the data to include schedules_count
-  return data.map((phone) => ({
-    ...phone,
-    schedules_count: schedulesCountMap.get(phone.id) || 0,
-  })) as PhoneNumberWithDetails[];
+  // Sync SMS enabled from VAPI for phone numbers with vapi_phone_number_id
+  const syncedData = await Promise.all(
+    data.map(async (phone) => {
+      const syncedSmsEnabled = await syncSmsEnabledFromVapi(
+        phone.id,
+        phone.vapi_phone_number_id,
+        phone.sms_enabled ?? true
+      );
+      
+      return {
+        ...phone,
+        sms_enabled: syncedSmsEnabled,
+        schedules_count: schedulesCountMap.get(phone.id) || 0,
+      };
+    })
+  );
+  
+  return syncedData as PhoneNumberWithDetails[];
 }
 
 /**
@@ -282,12 +344,14 @@ export async function assignPhoneNumberToAgent(
     throw new Error(`Failed to get phone number: ${phoneError.message}`);
   }
   
-  // If assigning to an agent (not unassigning) and phone number has VAPI ID
-  if (agentId && phoneNumber.vapi_phone_number_id) {
-    // Get the agent's VAPI assistant ID
+  let agentOrganizationId: string | null = null;
+  
+  // If assigning to an agent (not unassigning)
+  if (agentId) {
+    // Get the agent's VAPI assistant ID and organization ID
     const { data: agent, error: agentError } = await supabase
       .from('agents')
-      .select('vapi_assistant_id')
+      .select('vapi_assistant_id, organization_id')
       .eq('id', agentId)
       .single();
     
@@ -295,17 +359,21 @@ export async function assignPhoneNumberToAgent(
       throw new Error(`Failed to get agent: ${agentError.message}`);
     }
     
-    // Update VAPI to link the phone number to the assistant
-    try {
-      await updateVapiPhoneNumberAssistant(
-        phoneNumber.vapi_phone_number_id,
-        agent.vapi_assistant_id
-      );
-    } catch (error) {
-      console.error('Failed to update VAPI phone number assignment:', error);
-      throw new Error(
-        `Failed to link phone number to agent in VAPI: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
+    agentOrganizationId = agent.organization_id;
+    
+    // Update VAPI if phone number has VAPI ID
+    if (phoneNumber.vapi_phone_number_id) {
+      try {
+        await updateVapiPhoneNumberAssistant(
+          phoneNumber.vapi_phone_number_id,
+          agent.vapi_assistant_id
+        );
+      } catch (error) {
+        console.error('Failed to update VAPI phone number assignment:', error);
+        throw new Error(
+          `Failed to link phone number to agent in VAPI: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
     }
   } else if (!agentId && phoneNumber.vapi_phone_number_id) {
     // Unassigning - remove assistant from VAPI phone number
@@ -320,10 +388,19 @@ export async function assignPhoneNumberToAgent(
     }
   }
   
-  // Update the database
+  // Update the database - assign agent and organization if agent belongs to one
+  const updateData: { agent_id: string | null; organization_id?: string | null } = {
+    agent_id: agentId
+  };
+  
+  // If assigning to an agent that belongs to an organization, also assign phone number to that organization
+  if (agentId && agentOrganizationId) {
+    updateData.organization_id = agentOrganizationId;
+  }
+  
   const { error } = await supabase
     .from('phone_numbers')
-    .update({ agent_id: agentId })
+    .update(updateData)
     .eq('id', phoneNumberId);
   
   if (error) {
@@ -506,6 +583,53 @@ export async function updateTimeBasedRoutingEnabled(
   
   if (error) {
     throw new Error(`Failed to update time-based routing: ${error.message}`);
+  }
+}
+
+/**
+ * Update SMS enabled status for a phone number
+ * This also updates VAPI if the phone number has a vapi_phone_number_id
+ */
+export async function updateSmsEnabled(
+  phoneNumberId: string,
+  smsEnabled: boolean
+): Promise<void> {
+  const supabase = await createServiceClient();
+  
+  // Get the phone number details to check if it has a VAPI ID
+  const { data: phoneNumber, error: phoneError } = await supabase
+    .from('phone_numbers')
+    .select('vapi_phone_number_id')
+    .eq('id', phoneNumberId)
+    .single();
+  
+  if (phoneError) {
+    throw new Error(`Failed to get phone number: ${phoneError.message}`);
+  }
+  
+  // Update VAPI if phone number has a VAPI ID
+  if (phoneNumber.vapi_phone_number_id) {
+    try {
+      await updateVapiPhoneNumberSmsEnabled(
+        phoneNumber.vapi_phone_number_id,
+        smsEnabled
+      );
+    } catch (error) {
+      console.error('Failed to update VAPI phone number SMS enabled:', error);
+      throw new Error(
+        `Failed to update SMS enabled in VAPI: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }
+  
+  // Update the database
+  const { error } = await supabase
+    .from('phone_numbers')
+    .update({ sms_enabled: smsEnabled })
+    .eq('id', phoneNumberId);
+  
+  if (error) {
+    throw new Error(`Failed to update SMS enabled: ${error.message}`);
   }
 }
 

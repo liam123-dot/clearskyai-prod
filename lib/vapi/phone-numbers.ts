@@ -59,3 +59,25 @@ export async function updateVapiPhoneNumberAssistant(
   }
 }
 
+/**
+ * Update SMS enabled status for a VAPI phone number
+ * 
+ * @param vapiPhoneNumberId - The VAPI phone number ID
+ * @param smsEnabled - Whether SMS should be enabled
+ */
+export async function updateVapiPhoneNumberSmsEnabled(
+  vapiPhoneNumberId: string,
+  smsEnabled: boolean
+): Promise<void> {
+  try {
+    await vapiClient.phoneNumbers.update(vapiPhoneNumberId, {
+      smsEnabled: smsEnabled,
+    });
+  } catch (error) {
+    console.error('Error updating VAPI phone number SMS enabled:', error);
+    throw new Error(
+      `Failed to update VAPI phone number SMS enabled: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+

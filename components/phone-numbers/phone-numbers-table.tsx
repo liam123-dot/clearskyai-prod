@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 import { IconPhone, IconClock, IconChevronRight } from "@tabler/icons-react"
 import type { PhoneNumberWithDetails } from "@/lib/phone-numbers"
@@ -18,6 +19,7 @@ import { TimeBasedRoutingDrawer } from "./time-based-routing-drawer"
 interface Agent {
   id: string;
   vapi_assistant_id: string;
+  organization_id?: string | null;
   vapiAssistant: {
     name?: string;
   };
@@ -52,6 +54,13 @@ export function PhoneNumbersTable({
     }, {} as Record<string, string | null>)
   )
 
+  const [smsEnabled, setSmsEnabled] = useState<Record<string, boolean>>(
+    phoneNumbers.reduce((acc, phone) => {
+      acc[phone.id] = phone.sms_enabled ?? true
+      return acc
+    }, {} as Record<string, boolean>)
+  )
+
   const [selectedPhoneNumberId, setSelectedPhoneNumberId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
@@ -65,13 +74,29 @@ export function PhoneNumbersTable({
     : null
 
   const handleAgentChange = async (phoneNumberId: string, agentId: string | null) => {
-    const previousValue = assignedAgents[phoneNumberId]
+    const previousAgentValue = assignedAgents[phoneNumberId]
+    const previousOrgValue = assignedOrgs[phoneNumberId]
     
-    // Optimistically update UI
+    // Get agent's organization if assigning
+    const agent = agentId ? agents.find(a => a.id === agentId) : null
+    const agentOrganizationId = agent?.organization_id || null
+    
+    // Optimistically update UI for both agent and organization
     setAssignedAgents(prev => ({
       ...prev,
       [phoneNumberId]: agentId
     }))
+    
+    // If agent belongs to an organization, also update organization assignment
+    if (agentId && agentOrganizationId) {
+      setAssignedOrgs(prev => ({
+        ...prev,
+        [phoneNumberId]: agentOrganizationId
+      }))
+    } else if (!agentId) {
+      // If unassigning agent, don't change organization (keep it as is)
+      // Organization assignment is independent
+    }
 
     try {
       // Use different endpoint based on admin status
@@ -98,7 +123,6 @@ export function PhoneNumbersTable({
         throw new Error('Failed to assign phone number to agent')
       }
 
-      const agent = agentId ? agents.find(a => a.id === agentId) : null
       toast.success(
         agentId 
           ? `Phone number assigned to ${agent?.vapiAssistant.name || agent?.vapi_assistant_id || 'agent'}` 
@@ -109,7 +133,11 @@ export function PhoneNumbersTable({
       // Revert on error
       setAssignedAgents(prev => ({
         ...prev,
-        [phoneNumberId]: previousValue
+        [phoneNumberId]: previousAgentValue
+      }))
+      setAssignedOrgs(prev => ({
+        ...prev,
+        [phoneNumberId]: previousOrgValue
       }))
       toast.error('Failed to assign phone number to agent')
     }
@@ -157,6 +185,47 @@ export function PhoneNumbersTable({
     }
   }
 
+  const handleSmsEnabledChange = async (phoneNumberId: string, enabled: boolean) => {
+    const previousValue = smsEnabled[phoneNumberId]
+    
+    // Optimistically update UI
+    setSmsEnabled(prev => ({
+      ...prev,
+      [phoneNumberId]: enabled
+    }))
+
+    try {
+      const response = await fetch('/api/admin/phone-numbers/sms-enabled', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phone_number_id: phoneNumberId,
+          sms_enabled: enabled,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to update SMS enabled status')
+      }
+
+      toast.success(
+        enabled 
+          ? 'SMS enabled for phone number' 
+          : 'SMS disabled for phone number'
+      )
+    } catch (error) {
+      console.error('Error updating SMS enabled:', error)
+      // Revert on error
+      setSmsEnabled(prev => ({
+        ...prev,
+        [phoneNumberId]: previousValue
+      }))
+      toast.error('Failed to update SMS enabled status')
+    }
+  }
+
   const formatPhoneNumber = (phone: string) => {
     // Simple formatting for US numbers
     if (phone.startsWith('+1') && phone.length === 12) {
@@ -171,19 +240,16 @@ export function PhoneNumbersTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-12"></TableHead>
           <TableHead>Phone Number</TableHead>
-          <TableHead>Provider</TableHead>
           <TableHead>Agent</TableHead>
           {isAdmin && <TableHead>Organization</TableHead>}
-          {isAdmin && <TableHead>Ownership</TableHead>}
-          <TableHead className="w-12"></TableHead>
+          <TableHead className="text-center">SMS</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {phoneNumbers.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={isAdmin ? 7 : 5} className="text-center text-muted-foreground h-24">
+            <TableCell colSpan={isAdmin ? 4 : 3} className="text-center text-muted-foreground h-24">
               No phone numbers found
             </TableCell>
           </TableRow>
@@ -205,38 +271,40 @@ export function PhoneNumbersTable({
                 className="cursor-pointer hover:bg-muted/50 transition-colors"
                 onClick={() => handleRowClick(phoneNumber.id)}
               >
-                <TableCell className="w-12">
-                  <div className="flex items-center justify-center">
-                    <div className="bg-muted flex size-8 items-center justify-center rounded-md">
+                <TableCell>
+                  <div className="flex items-center gap-3">
+                    <div className="bg-muted flex size-9 items-center justify-center rounded-lg shrink-0">
                       <IconPhone className="text-muted-foreground size-4" />
                     </div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{formatPhoneNumber(phoneNumber.phone_number)}</span>
-                      {phoneNumber.schedules_count && phoneNumber.schedules_count > 0 ? (
-                        <Badge variant="secondary" className="gap-1 text-xs">
-                          <IconClock className="size-3" />
-                          {phoneNumber.schedules_count} schedule{phoneNumber.schedules_count !== 1 ? 's' : ''}
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="gap-1 text-xs text-muted-foreground border-dashed">
-                          <IconClock className="size-3" />
-                          No schedule
-                        </Badge>
-                      )}
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{formatPhoneNumber(phoneNumber.phone_number)}</span>
+                        {isAdmin && (
+                          <Badge variant="outline" className="capitalize text-xs shrink-0">
+                            {phoneNumber.provider}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {phoneNumber.schedules_count && phoneNumber.schedules_count > 0 ? (
+                          <Badge variant="secondary" className="gap-1 text-xs h-5">
+                            <IconClock className="size-3" />
+                            {phoneNumber.schedules_count}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="gap-1 text-xs h-5 text-muted-foreground border-dashed">
+                            <IconClock className="size-3" />
+                            None
+                          </Badge>
+                        )}
+                        {isAdmin && !phoneNumber.owned_by_admin && (
+                          <Badge variant="outline" className="text-xs h-5">
+                            Org-owned
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-muted-foreground text-xs">
-                      Click to configure time-based routing
-                    </div>
                   </div>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="capitalize">
-                    {phoneNumber.provider}
-                  </Badge>
                 </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <Select
@@ -248,8 +316,8 @@ export function PhoneNumbersTable({
                       )
                     }
                   >
-                    <SelectTrigger className="w-[200px]">
-                      <SelectValue placeholder="Assign to agent" />
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Assign agent" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="unassigned">
@@ -264,55 +332,55 @@ export function PhoneNumbersTable({
                   </Select>
                 </TableCell>
                 {isAdmin && (
-                  <>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      {phoneNumber.owned_by_admin ? (
-                        <Select
-                          value={assignedOrgId || "unassigned"}
-                          onValueChange={(value) => 
-                            handleOrganizationChange(
-                              phoneNumber.id, 
-                              value === "unassigned" ? null : value
-                            )
-                          }
-                        >
-                          <SelectTrigger className="w-[200px]">
-                            <SelectValue placeholder="Assign to organization" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="unassigned">
-                              <span className="text-muted-foreground">Unassigned</span>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    {phoneNumber.owned_by_admin ? (
+                      <Select
+                        value={assignedOrgId || "unassigned"}
+                        onValueChange={(value) => 
+                          handleOrganizationChange(
+                            phoneNumber.id, 
+                            value === "unassigned" ? null : value
+                          )
+                        }
+                      >
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue placeholder="Assign org" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="unassigned">
+                            <span className="text-muted-foreground">Unassigned</span>
+                          </SelectItem>
+                          {organizations.map((org) => (
+                            <SelectItem key={org.id} value={org.id}>
+                              {org.name}
                             </SelectItem>
-                            {organizations.map((org) => (
-                              <SelectItem key={org.id} value={org.id}>
-                                {org.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      assignedOrg ? (
+                        <Badge variant="secondary" className="font-normal">
+                          {assignedOrg.name}
+                        </Badge>
                       ) : (
-                        assignedOrg ? (
-                          <Badge variant="secondary" className="font-normal">
-                            {assignedOrg.name}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">—</span>
-                        )
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {phoneNumber.owned_by_admin ? (
-                        <Badge variant="default">Admin</Badge>
-                      ) : (
-                        <Badge variant="outline">Organization</Badge>
-                      )}
-                    </TableCell>
-                  </>
+                        <span className="text-muted-foreground text-sm">—</span>
+                      )
+                    )}
+                  </TableCell>
                 )}
-                <TableCell className="w-12">
-                  <div className="flex items-center justify-center">
-                    <IconChevronRight className="text-muted-foreground size-4" />
-                  </div>
+                <TableCell onClick={(e) => e.stopPropagation()} className="text-center">
+                  {isAdmin ? (
+                    <Switch
+                      checked={smsEnabled[phoneNumber.id] ?? true}
+                      onCheckedChange={(checked) => 
+                        handleSmsEnabledChange(phoneNumber.id, checked)
+                      }
+                    />
+                  ) : (
+                    <Badge variant={smsEnabled[phoneNumber.id] ?? true ? "default" : "secondary"} className="text-xs">
+                      {smsEnabled[phoneNumber.id] ?? true ? "On" : "Off"}
+                    </Badge>
+                  )}
                 </TableCell>
               </TableRow>
             )

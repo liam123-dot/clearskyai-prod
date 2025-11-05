@@ -15,6 +15,7 @@ The `phone_numbers` table stores phone numbers with their provider credentials f
 | `owned_by_admin` | BOOLEAN | NOT NULL, DEFAULT false | Whether owned by admin vs organization |
 | `vapi_phone_number_id` | TEXT | NULL | VAPI phone number ID (for Twilio numbers registered with VAPI) |
 | `time_based_routing_enabled` | BOOLEAN | NOT NULL, DEFAULT false | Whether time-based routing is enabled for this phone number |
+| `sms_enabled` | BOOLEAN | NOT NULL, DEFAULT true | Whether SMS is enabled for this phone number |
 | `created_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Timestamp when the record was created |
 | `updated_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Timestamp when the record was last updated |
 
@@ -70,6 +71,8 @@ The `credentials` JSONB field allows flexible structure for any provider:
 - The `vapi_phone_number_id` stores the VAPI phone number ID for integration
 - When a phone number is assigned to an agent, it is also linked to the agent's VAPI assistant
 - The webhook URL is set on Twilio when assigning to an agent to point to our server endpoint
+- The `sms_enabled` status is synced with VAPI when fetching phone numbers
+- When updating `sms_enabled`, the change is synced to both the database and VAPI
 
 ## Example Queries
 
@@ -122,6 +125,13 @@ SET agent_id = 'agent-uuid-here'
 WHERE id = 'phone-number-uuid-here';
 ```
 
+### Update SMS enabled status
+```sql
+UPDATE phone_numbers 
+SET sms_enabled = true
+WHERE id = 'phone-number-uuid-here';
+```
+
 ### Get phone number with agent and organization details
 ```sql
 SELECT 
@@ -151,6 +161,9 @@ Links a phone number to an agent for call handling.
 
 ### `assignPhoneNumberToOrganization(phoneNumberId, organizationId)`
 Assigns an admin-owned phone number to an organization.
+
+### `updateSmsEnabled(phoneNumberId, smsEnabled)`
+Updates the SMS enabled status for a phone number. If the phone number has a `vapi_phone_number_id`, the status is also synced to VAPI.
 
 ## Security Considerations
 

@@ -25,6 +25,7 @@ export default async function AdminPhoneNumbersPage() {
     .map(agent => ({
       id: agent.id,
       vapi_assistant_id: agent.vapi_assistant_id,
+      organization_id: agent.organization?.id || null,
       vapiAssistant: { name: agent.vapiAssistant.name }
     }))
 

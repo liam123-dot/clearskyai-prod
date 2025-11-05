@@ -229,7 +229,7 @@ export function TimeBasedRoutingDrawer({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+      <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto p-4">
         <SheetHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

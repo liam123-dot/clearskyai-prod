@@ -36,10 +36,18 @@ export default async function OrganizationPhoneNumbersPage({ params }: PageProps
     notFound()
   }
 
-  const [phoneNumbers, agents] = await Promise.all([
+  const [phoneNumbers, agentsData] = await Promise.all([
     getPhoneNumbersByOrganization(org.id),
     getAgentsByOrganization(org.id),
   ])
+
+  // Map agents to include organization_id for the component
+  const agents = agentsData.map(agent => ({
+    id: agent.id,
+    vapi_assistant_id: agent.vapi_assistant_id,
+    organization_id: agent.organization.id,
+    vapiAssistant: { name: agent.vapiAssistant.name }
+  }))
 
   return (
     <div className="space-y-6">
