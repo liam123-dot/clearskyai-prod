@@ -833,7 +833,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                   <span className="text-sm font-medium text-muted-foreground">Total Calls</span>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button type="button" className="text-muted-foreground/60 hover:text-muted-foreground transition-colors">
+                      <button type="button" className="cursor-pointer text-muted-foreground/60 hover:text-muted-foreground transition-colors">
                         <Info className="h-3 w-3" />
                       </button>
                     </TooltipTrigger>
@@ -858,7 +858,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                   <span className="text-sm font-medium text-muted-foreground">Agent Handled</span>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button type="button" className="text-muted-foreground/60 hover:text-muted-foreground transition-colors">
+                      <button type="button" className="cursor-pointer text-muted-foreground/60 hover:text-muted-foreground transition-colors">
                         <Info className="h-3 w-3" />
                       </button>
                     </TooltipTrigger>
@@ -886,7 +886,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                   <span className="text-sm font-medium text-muted-foreground">Saved Calls</span>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button type="button" className="text-muted-foreground/60 hover:text-muted-foreground transition-colors">
+                      <button type="button" className="cursor-pointer text-muted-foreground/60 hover:text-muted-foreground transition-colors">
                         <Info className="h-3 w-3" />
                       </button>
                     </TooltipTrigger>
@@ -914,7 +914,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                   <span className="text-sm font-medium text-muted-foreground">Minutes Used</span>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button type="button" className="text-muted-foreground/60 hover:text-muted-foreground transition-colors">
+                      <button type="button" className="cursor-pointer text-muted-foreground/60 hover:text-muted-foreground transition-colors">
                         <Info className="h-3 w-3" />
                       </button>
                     </TooltipTrigger>

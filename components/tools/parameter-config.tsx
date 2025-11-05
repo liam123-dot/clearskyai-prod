@@ -139,7 +139,7 @@ export function ParameterConfigField({
               {description && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <button type="button" className="text-muted-foreground hover:text-foreground">
+                    <button type="button" className="cursor-pointer text-muted-foreground hover:text-foreground">
                       <HelpCircle className="h-4 w-4" />
                     </button>
                   </TooltipTrigger>
@@ -190,7 +190,7 @@ export function ParameterConfigField({
             {description && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button type="button" className="text-muted-foreground hover:text-foreground">
+                  <button type="button" className="cursor-pointer text-muted-foreground hover:text-foreground">
                     <HelpCircle className="h-4 w-4" />
                   </button>
                 </TooltipTrigger>
@@ -361,7 +361,7 @@ export function ParameterConfigField({
                       </Label>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <button type="button" className="text-muted-foreground hover:text-foreground">
+                          <button type="button" className="cursor-pointer text-muted-foreground hover:text-foreground">
                             <HelpCircle className="h-3 w-3" />
                           </button>
                         </TooltipTrigger>

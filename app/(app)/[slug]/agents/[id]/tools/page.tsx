@@ -9,8 +9,18 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { IconTool } from "@tabler/icons-react"
+import { IconTool, IconPlus } from "@tabler/icons-react"
 import { AgentToolsTabs } from "@/components/tools/agent-tools-tabs"
+import { Button } from "@/components/ui/button"
+import Link from "next/link"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface AgentToolsPageProps {
   params: Promise<{ slug: string; id: string }>
@@ -105,6 +115,54 @@ export default async function AgentToolsPage({ params }: AgentToolsPageProps) {
   if (attachedTools.length === 0 && availableTools.length === 0) {
     return (
       <div className="space-y-6">
+        <div className="flex items-start justify-between">
+          <div>
+          </div>
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button>
+                  <IconPlus className="w-4 h-4 mr-2" />
+                  Create Tool
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Choose Tool Type</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href={`/${slug}/tools/create?type=pipedream_action`}>
+                    <div className="flex flex-col gap-1">
+                      <div className="font-medium">External App</div>
+                      <div className="text-xs text-muted-foreground">
+                        Connect to 2,000+ apps via Pipedream
+                      </div>
+                    </div>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/${slug}/tools/create?type=sms`}>
+                    <div className="flex flex-col gap-1">
+                      <div className="font-medium">SMS / Text Message</div>
+                      <div className="text-xs text-muted-foreground">
+                        Send text messages during calls
+                      </div>
+                    </div>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={`/${slug}/tools/create?type=transfer_call`}>
+                    <div className="flex flex-col gap-1">
+                      <div className="font-medium">Transfer Call</div>
+                      <div className="text-xs text-muted-foreground">
+                        Transfer calls to another number
+                      </div>
+                    </div>
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">

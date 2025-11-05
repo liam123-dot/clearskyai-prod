@@ -114,7 +114,7 @@ export function TestAgentButton({ assistantId, vapiPublishableKey }: { assistant
 
       variant="outline"
 
-      className="h-9 text-sm cursor-pointer"
+      className="h-9 text-sm"
 
     >
 
