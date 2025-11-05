@@ -28,7 +28,11 @@ export function NavMain({
       <SidebarGroupContent className="flex flex-col gap-2">
         <SidebarMenu>
           {items.map((item) => {
-            const isActive = pathname === item.url
+            // Match exact path or subroutes (e.g., /agents matches /agents/[id] or /agents/[id]/settings)
+            // For base routes (like Dashboard /${slug} or /admin), only match exactly to avoid highlighting on all subroutes
+            const pathSegments = item.url.split('/').filter(Boolean)
+            const isBaseRoute = pathSegments.length <= 1 // e.g., ["org-123"] or ["admin"]
+            const isActive = pathname === item.url || (!isBaseRoute && pathname.startsWith(item.url + '/'))
             return (
               <SidebarMenuItem key={item.title}>
                 <SidebarMenuButton 

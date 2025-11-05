@@ -39,7 +39,7 @@ function CollapsibleNavItem({
 }) {
   const [open, setOpen] = React.useState(initialOpen)
   // Only highlight if a child is active, not the parent itself
-  const isChildActive = item.items?.some(child => pathname === child.url) || false
+  const isChildActive = item.items?.some(child => pathname === child.url || pathname.startsWith(child.url + '/')) || false
   // Don't highlight parent when on child routes
   const isParentActive = false // Never highlight parent for collapsible items
 
@@ -66,7 +66,8 @@ function CollapsibleNavItem({
         <Collapsible.Content>
           <SidebarMenuSub>
             {item.items?.map((subItem) => {
-              const isSubActive = pathname === subItem.url
+              // Match exact path or subroutes
+              const isSubActive = pathname === subItem.url || pathname.startsWith(subItem.url + '/')
               return (
                 <SidebarMenuSubItem key={subItem.title}>
                   <SidebarMenuSubButton
@@ -102,7 +103,7 @@ export function NavSecondary({
           {items.map((item) => {
             const hasSubItems = item.items && item.items.length > 0
             // Only check child active for collapsible items
-            const isChildActive = hasSubItems ? (item.items?.some(child => pathname === child.url) || false) : false
+            const isChildActive = hasSubItems ? (item.items?.some(child => pathname === child.url || pathname.startsWith(child.url + '/')) || false) : false
             const isOpen = isChildActive
 
             if (hasSubItems) {
@@ -116,7 +117,8 @@ export function NavSecondary({
               )
             }
 
-            const isActive = pathname === item.url
+            // Match exact path or subroutes (e.g., /settings matches /settings/billing)
+            const isActive = pathname === item.url || pathname.startsWith(item.url + '/')
             return (
               <SidebarMenuItem key={item.title}>
                 <SidebarMenuButton 
