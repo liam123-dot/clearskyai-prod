@@ -203,14 +203,39 @@ export async function getAgentById(agentId: string): Promise<AgentWithDetails | 
     }
 }
 
+/**
+ * Ensures server messages array includes both 'chat.created' and 'end-of-call-report'
+ * Merges with existing server messages if provided
+ */
+export function ensureRequiredServerMessages(existingServerMessages?: string[]): string[] {
+    const requiredMessages = ['chat.created', 'end-of-call-report'];
+    const existing = existingServerMessages || [];
+    
+    // Create a Set to track which messages we have
+    const messageSet = new Set(existing);
+    
+    // Add required messages if they're not already present
+    requiredMessages.forEach(msg => messageSet.add(msg));
+    
+    return Array.from(messageSet);
+}
+
 export async function updateAgentWebhookWithVapiAssistantId(vapiAssistantId: string): Promise<void> {
     if (!vapiAssistantId) {
         throw new Error('VAPI assistant ID is required');
     }
 
+    // Fetch current assistant to get existing server messages
+    const assistant = await vapiClient.assistants.get(vapiAssistantId);
+    const existingServerMessages = (assistant.serverMessages as string[]) || [];
+    
+    // Ensure required server messages are included
+    const serverMessages = ensureRequiredServerMessages(existingServerMessages);
+
     await vapiClient.assistants.update(vapiAssistantId, {
         server: {
             url: process.env.NEXT_PUBLIC_APP_URL + '/api/vapi/webhook',
-        }
+        },
+        serverMessages: serverMessages as any
     });
 }

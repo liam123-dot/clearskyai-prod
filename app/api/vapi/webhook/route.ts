@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     
     const message = data.message;
 
-    // console.log(JSON.stringify(message, null, 2));
+    console.log(JSON.stringify(message, null, 2));
 
     if (message.type === 'end-of-call-report') {
         const report = message as Vapi.ServerMessageEndOfCallReport;

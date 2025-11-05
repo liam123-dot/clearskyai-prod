@@ -264,8 +264,8 @@ export function AgentSettingsForm({
           updatePayload.voiceId = selectedVoiceId
         }
 
-        // Always set serverMessages to end-of-call-report when admin saves
-        updatePayload.serverMessages = ['end-of-call-report']
+        // Always set serverMessages to include chat.created and end-of-call-report when admin saves
+        updatePayload.serverMessages = ['chat.created', 'end-of-call-report']
 
         // Always set transcriber with flux-general-en and deepgram provider when admin saves
         // Merge with keyterms if they were already set above

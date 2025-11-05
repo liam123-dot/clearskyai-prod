@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthSession } from '@/lib/auth'
 import { vapiClient } from '@/lib/vapi/VapiClients'
 import { createServiceClient } from '@/lib/supabase/server'
+import { ensureRequiredServerMessages } from '@/lib/vapi/agents'
 
 export async function PATCH(
   request: NextRequest,
@@ -108,8 +109,19 @@ export async function PATCH(
     }
 
     // Update serverMessages if provided
+    // Always ensure chat.created and end-of-call-report are included
     if (serverMessages !== undefined) {
-      updateData.serverMessages = serverMessages
+      updateData.serverMessages = ensureRequiredServerMessages(serverMessages)
+    } else {
+      // If serverMessages not provided, check if required ones are missing
+      const existingServerMessages = (assistant.serverMessages as string[]) || []
+      const requiredMessages = ['chat.created', 'end-of-call-report']
+      const hasAllRequired = requiredMessages.every(msg => existingServerMessages.includes(msg))
+      
+      // Only update if required messages are missing
+      if (!hasAllRequired) {
+        updateData.serverMessages = ensureRequiredServerMessages(existingServerMessages)
+      }
     }
 
     // Update startSpeakingPlan if provided
