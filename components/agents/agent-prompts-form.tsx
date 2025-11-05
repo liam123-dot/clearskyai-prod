@@ -7,12 +7,15 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'
+import { IdleMessagesForm } from './idle-messages-form'
 
 interface AgentPromptsFormProps {
   agentId: string
   slug: string
   initialPrompt: string
   initialFirstMessage: string
+  initialIdleMessages: string[]
+  initialIdleTimeoutSeconds: number
 }
 
 export function AgentPromptsForm({
@@ -20,22 +23,39 @@ export function AgentPromptsForm({
   slug,
   initialPrompt,
   initialFirstMessage,
+  initialIdleMessages,
+  initialIdleTimeoutSeconds,
 }: AgentPromptsFormProps) {
   // Baseline values (last saved state) - used for change detection
   const [baselineFirstMessage, setBaselineFirstMessage] = useState(initialFirstMessage)
   const [baselinePrompt, setBaselinePrompt] = useState(initialPrompt)
+  const [baselineIdleMessages, setBaselineIdleMessages] = useState(initialIdleMessages)
+  const [baselineIdleTimeoutSeconds, setBaselineIdleTimeoutSeconds] = useState(initialIdleTimeoutSeconds)
 
   // Current form values
   const [firstMessage, setFirstMessage] = useState(initialFirstMessage)
   const [prompt, setPrompt] = useState(initialPrompt)
+  const [idleMessages, setIdleMessages] = useState<string[]>(initialIdleMessages)
+  const [idleTimeoutSeconds, setIdleTimeoutSeconds] = useState<number>(initialIdleTimeoutSeconds)
   const [isSaving, setIsSaving] = useState(false)
+
+  const handleIdleMessagesChange = (messages: string[], timeout: number) => {
+    setIdleMessages(messages)
+    setIdleTimeoutSeconds(timeout)
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    // Check if idle messages have changed
+    const idleMessagesChanged = 
+      JSON.stringify(idleMessages) !== JSON.stringify(baselineIdleMessages) ||
+      idleTimeoutSeconds !== baselineIdleTimeoutSeconds
+
     const hasChanges =
       firstMessage !== baselineFirstMessage ||
-      prompt !== baselinePrompt
+      prompt !== baselinePrompt ||
+      idleMessagesChanged
 
     if (!hasChanges) {
       toast.info('No changes to save')
@@ -48,6 +68,14 @@ export function AgentPromptsForm({
       const updatePayload: any = {
         firstMessage: firstMessage !== baselineFirstMessage ? firstMessage : undefined,
         prompt: prompt !== baselinePrompt ? prompt : undefined,
+      }
+
+      // Add messagePlan if idle messages changed
+      if (idleMessagesChanged) {
+        updatePayload.messagePlan = {
+          idleMessages,
+          idleTimeoutSeconds,
+        }
       }
 
       // Remove undefined fields
@@ -74,6 +102,8 @@ export function AgentPromptsForm({
       // Optimistic update: update baseline values to current values
       setBaselineFirstMessage(firstMessage)
       setBaselinePrompt(prompt)
+      setBaselineIdleMessages(idleMessages)
+      setBaselineIdleTimeoutSeconds(idleTimeoutSeconds)
 
       toast.success('Agent prompts updated successfully!')
     } catch (error) {
@@ -139,13 +169,21 @@ export function AgentPromptsForm({
         </CardContent>
       </Card>
 
+      <IdleMessagesForm
+        initialIdleMessages={initialIdleMessages}
+        initialIdleTimeoutSeconds={initialIdleTimeoutSeconds}
+        onChange={handleIdleMessagesChange}
+      />
+
       <div className="flex justify-end gap-4">
         <Button
           type="submit"
           disabled={
             isSaving ||
             (firstMessage === baselineFirstMessage &&
-              prompt === baselinePrompt)
+              prompt === baselinePrompt &&
+              JSON.stringify(idleMessages) === JSON.stringify(baselineIdleMessages) &&
+              idleTimeoutSeconds === baselineIdleTimeoutSeconds)
           }
         >
           {isSaving ? (

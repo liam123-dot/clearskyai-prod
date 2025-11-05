@@ -21,7 +21,8 @@ export async function PATCH(
       serverMessages, 
       startSpeakingPlan, 
       stopSpeakingPlan,
-      analysisPlan
+      analysisPlan,
+      messagePlan
     } = body
 
     // Validate that at least one field is being updated
@@ -33,7 +34,8 @@ export async function PATCH(
       serverMessages === undefined &&
       startSpeakingPlan === undefined &&
       stopSpeakingPlan === undefined &&
-      analysisPlan === undefined
+      analysisPlan === undefined &&
+      messagePlan === undefined
     ) {
       return NextResponse.json(
         { error: 'At least one field must be provided for update' },
@@ -145,6 +147,14 @@ export async function PATCH(
       updateData.analysisPlan = {
         ...(assistant.analysisPlan as any),
         ...analysisPlan,
+      }
+    }
+
+    // Update messagePlan if provided
+    if (messagePlan !== undefined) {
+      updateData.messagePlan = {
+        ...((assistant as any).messagePlan as any),
+        ...messagePlan,
       }
     }
 

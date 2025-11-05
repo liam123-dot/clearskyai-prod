@@ -44,6 +44,15 @@ export default async function AgentConfigurationPage({ params }: { params: Promi
     (msg: any) => msg.role === 'system'
   )?.content || ''
 
+  // Extract messagePlan
+  const messagePlan = (agent.vapiAssistant as any).messagePlan as {
+    idleMessages?: string[]
+    idleTimeoutSeconds?: number
+  } | undefined
+
+  const initialIdleMessages = messagePlan?.idleMessages || []
+  const initialIdleTimeoutSeconds = messagePlan?.idleTimeoutSeconds ?? 7.5
+
   return (
     <div className="space-y-6">
       <AgentPromptsForm
@@ -51,6 +60,8 @@ export default async function AgentConfigurationPage({ params }: { params: Promi
         slug={slug}
         initialFirstMessage={firstMessage}
         initialPrompt={prompt}
+        initialIdleMessages={initialIdleMessages}
+        initialIdleTimeoutSeconds={initialIdleTimeoutSeconds}
       />
     </div>
   )
