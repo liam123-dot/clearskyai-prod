@@ -122,9 +122,9 @@ export default async function AgentLayout({ params, children }: AgentLayoutProps
                         </div>
                       )}
 
-                      {phoneNumber.schedules_count > 0 && (
+                      {(phoneNumber.schedules_count ?? 0) > 0 && (
                         <div className="text-xs text-muted-foreground">
-                          {phoneNumber.schedules_count} schedule{phoneNumber.schedules_count !== 1 ? 's' : ''} configured
+                          {phoneNumber.schedules_count ?? 0} schedule{(phoneNumber.schedules_count ?? 0) !== 1 ? 's' : ''} configured
                         </div>
                       )}
                     </div>
