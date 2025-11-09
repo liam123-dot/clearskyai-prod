@@ -17,6 +17,7 @@ import { Play, Loader2, X, Plus } from 'lucide-react'
 import { Slider } from '@/components/ui/slider'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 interface Voice {
   voice_id: string
@@ -88,6 +89,13 @@ export function AgentSettingsForm({
   const [accentFilter, setAccentFilter] = useState<string>('british')
   const [availableLanguages, setAvailableLanguages] = useState<string[]>([])
   const [availableAccents, setAvailableAccents] = useState<string[]>([])
+  const [voiceSelectionMode, setVoiceSelectionMode] = useState<'library' | 'custom'>('library')
+  const [customVoiceId, setCustomVoiceId] = useState('')
+  const [customVoiceName, setCustomVoiceName] = useState<string | null>(null)
+  const [customVoicePreviewUrl, setCustomVoicePreviewUrl] = useState<string | null>(null)
+  const [isLookingUpVoice, setIsLookingUpVoice] = useState(false)
+  const [voiceLookupError, setVoiceLookupError] = useState<string | null>(null)
+  const [isCustomVoiceConfirmed, setIsCustomVoiceConfirmed] = useState(false)
   const audioRefs = useRef<Record<string, HTMLAudioElement>>({})
   
   // Admin-only state
@@ -103,6 +111,35 @@ export function AgentSettingsForm({
   const [stopSpeakingPlanBackoffSeconds, setStopSpeakingPlanBackoffSeconds] = useState(initialStopSpeakingPlanBackoffSeconds)
   const [keyterms, setKeyterms] = useState<string[]>(initialKeyterms)
   const [newKeyword, setNewKeyword] = useState('')
+
+  // Function to fetch custom voice details (used for auto-loading)
+  const fetchCustomVoiceDetails = async (voiceId: string) => {
+    if (!voiceId.trim()) return
+
+    setIsLookingUpVoice(true)
+    setVoiceLookupError(null)
+
+    try {
+      const response = await fetch(`/api/${slug}/agents/${agentId}/voices/${voiceId.trim()}`)
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to lookup voice')
+      }
+
+      const data = await response.json()
+      setCustomVoiceName(data.name)
+      setCustomVoicePreviewUrl(data.preview_url || null)
+      setVoiceLookupError(null)
+      setIsCustomVoiceConfirmed(true)
+    } catch (error) {
+      console.error('Error looking up voice:', error)
+      // Don't show toast for auto-load failures, just log
+      setVoiceLookupError(null) // Don't show error on auto-load
+    } finally {
+      setIsLookingUpVoice(false)
+    }
+  }
 
   // Fetch voices with filters
   useEffect(() => {
@@ -130,9 +167,29 @@ export function AgentSettingsForm({
           setAvailableAccents(data.filters.accents || [])
         }
 
-        // If selected voice is no longer in filtered list, clear selection
-        if (selectedVoiceId && !filteredVoices.some((v: Voice) => v.voice_id === selectedVoiceId)) {
-          setSelectedVoiceId('')
+        // Check if baseline voice ID (saved voice) is not in filtered list
+        if (baselineVoiceId && !filteredVoices.some((v: Voice) => v.voice_id === baselineVoiceId)) {
+          // This is a custom voice ID - switch to custom mode
+          setVoiceSelectionMode('custom')
+          setCustomVoiceId(baselineVoiceId)
+          
+          // Automatically fetch voice details
+          try {
+            const voiceResponse = await fetch(`/api/${slug}/agents/${agentId}/voices/${baselineVoiceId}`)
+            if (voiceResponse.ok) {
+              const voiceData = await voiceResponse.json()
+              setCustomVoiceName(voiceData.name)
+              setCustomVoicePreviewUrl(voiceData.preview_url || null)
+              setIsCustomVoiceConfirmed(true)
+            }
+          } catch (error) {
+            console.error('Error auto-loading custom voice:', error)
+            // Silently fail for auto-load
+          }
+        } else if (baselineVoiceId && filteredVoices.some((v: Voice) => v.voice_id === baselineVoiceId)) {
+          // Voice is in library - select it in library mode
+          setSelectedVoiceId(baselineVoiceId)
+          setVoiceSelectionMode('library')
         }
       } catch (error) {
         console.error('Error fetching voices:', error)
@@ -186,6 +243,56 @@ export function AgentSettingsForm({
     setPlayingVoiceId(null)
   }
 
+  const handleConfirmCustomVoice = async () => {
+    if (!customVoiceId.trim()) {
+      setVoiceLookupError('Please enter a voice ID')
+      return
+    }
+
+    setIsLookingUpVoice(true)
+    setVoiceLookupError(null)
+    setCustomVoiceName(null)
+    setCustomVoicePreviewUrl(null)
+
+    try {
+      const response = await fetch(`/api/${slug}/agents/${agentId}/voices/${customVoiceId.trim()}`)
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to lookup voice')
+      }
+
+      const data = await response.json()
+      setCustomVoiceName(data.name)
+      setCustomVoicePreviewUrl(data.preview_url || null)
+      setVoiceLookupError(null)
+      setIsCustomVoiceConfirmed(true)
+      
+      // Show success toast
+      toast.success('Voice confirmed successfully', {
+        description: `${data.name} is now selected`,
+      })
+    } catch (error) {
+      console.error('Error looking up voice:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to lookup voice'
+      setVoiceLookupError(errorMessage)
+      setCustomVoiceName(null)
+      setCustomVoicePreviewUrl(null)
+      setIsCustomVoiceConfirmed(false)
+      toast.error('Failed to lookup voice', {
+        description: errorMessage,
+      })
+    } finally {
+      setIsLookingUpVoice(false)
+    }
+  }
+
+  const handleEditCustomVoice = () => {
+    setIsCustomVoiceConfirmed(false)
+    setVoiceLookupError(null)
+    handleStopPreview()
+  }
+
   const handleAddKeyword = () => {
     const trimmed = newKeyword.trim()
     if (!trimmed) return
@@ -222,8 +329,11 @@ export function AgentSettingsForm({
       !keyterms.every(k => baselineKeyterms.includes(k)) ||
       !baselineKeyterms.every(k => keyterms.includes(k))
 
+    // Determine the actual voice ID to use (custom or selected)
+    const actualVoiceId = voiceSelectionMode === 'custom' ? customVoiceId : selectedVoiceId
+
     const hasChanges =
-      selectedVoiceId !== baselineVoiceId ||
+      actualVoiceId !== baselineVoiceId ||
       keytermsChanged ||
       (isAdmin && (
         endpointing !== baselineEndpointing ||
@@ -247,7 +357,7 @@ export function AgentSettingsForm({
 
     try {
       const updatePayload: any = {
-        voiceId: selectedVoiceId !== baselineVoiceId ? selectedVoiceId : undefined,
+        voiceId: actualVoiceId !== baselineVoiceId ? actualVoiceId : undefined,
       }
 
       // Add keyterms if they changed (for all users)
@@ -260,8 +370,8 @@ export function AgentSettingsForm({
       // Add admin-only fields if user is admin
       if (isAdmin) {
         // Always set voiceId when admin saves to ensure model is set to eleven_flash_v2_5
-        if (selectedVoiceId) {
-          updatePayload.voiceId = selectedVoiceId
+        if (actualVoiceId) {
+          updatePayload.voiceId = actualVoiceId
         }
 
         // Always set serverMessages to include chat.created and end-of-call-report when admin saves
@@ -328,7 +438,7 @@ export function AgentSettingsForm({
       }
 
       // Optimistic update: update baseline values to current values
-      setBaselineVoiceId(selectedVoiceId)
+      setBaselineVoiceId(actualVoiceId)
       setBaselineKeyterms([...keyterms])
       
       if (isAdmin) {
@@ -415,100 +525,264 @@ export function AgentSettingsForm({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="voice">Voice</Label>
-            {isLoadingVoices ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading voices...
-              </div>
-            ) : voices.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No voices available. Please check your ElevenLabs API configuration.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                <Select
-                  value={selectedVoiceId}
-                  onValueChange={(value) => {
-                    handleStopPreview()
-                    setSelectedVoiceId(value)
-                  }}
-                >
-                  <SelectTrigger id="voice" className="w-full">
-                    <SelectValue placeholder="Select a voice" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {voices.map((voice) => (
-                      <SelectItem key={voice.voice_id} value={voice.voice_id}>
-                        <div className="flex items-center justify-between w-full">
-                          <span>{voice.name}</span>
-                          {voice.preview_url && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 w-6 p-0 ml-2"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                if (playingVoiceId === voice.voice_id) {
-                                  handleStopPreview()
-                                } else {
-                                  handlePlayPreview(voice.voice_id, voice.preview_url)
-                                }
-                              }}
-                            >
-                              {playingVoiceId === voice.voice_id ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Play className="h-3 w-3" />
-                              )}
-                            </Button>
-                          )}
+            <Label>Voice Selection</Label>
+            <Tabs 
+              value={voiceSelectionMode} 
+              onValueChange={(value) => {
+                const newMode = value as 'library' | 'custom'
+                setVoiceSelectionMode(newMode)
+                handleStopPreview()
+                
+                // When switching to custom mode, populate with current voice ID if available
+                if (newMode === 'custom') {
+                  const currentVoiceId = selectedVoiceId || baselineVoiceId
+                  if (currentVoiceId && !customVoiceId) {
+                    setCustomVoiceId(currentVoiceId)
+                    // Check if this voice is in the loaded list to get its name
+                    const voice = voices.find(v => v.voice_id === currentVoiceId)
+                    if (voice) {
+                      setCustomVoiceName(voice.name)
+                      setCustomVoicePreviewUrl(voice.preview_url)
+                      setIsCustomVoiceConfirmed(true)
+                    }
+                  }
+                }
+              }}
+            >
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="library">Voice Library</TabsTrigger>
+                <TabsTrigger value="custom">Custom Voice ID</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="library" className="space-y-4 mt-4">
+                {isLoadingVoices ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading voices...
+                  </div>
+                ) : voices.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No voices available. Please check your ElevenLabs API configuration.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {!selectedVoiceId ? (
+                      // No voice selected - show dropdown
+                      <Select
+                        value={selectedVoiceId}
+                        onValueChange={(value) => {
+                          handleStopPreview()
+                          setSelectedVoiceId(value)
+                        }}
+                      >
+                        <SelectTrigger id="voice" className="w-full">
+                          <SelectValue placeholder="Select a voice" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {voices.map((voice) => (
+                            <SelectItem key={voice.voice_id} value={voice.voice_id}>
+                              <div className="flex items-center justify-between w-full">
+                                <span>{voice.name}</span>
+                                {voice.preview_url && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0 ml-2"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      if (playingVoiceId === voice.voice_id) {
+                                        handleStopPreview()
+                                      } else {
+                                        handlePlayPreview(voice.voice_id, voice.preview_url)
+                                      }
+                                    }}
+                                  >
+                                    {playingVoiceId === voice.voice_id ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <Play className="h-3 w-3" />
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      // Voice selected - show selected card (consistent with custom voice ID)
+                      <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="default" className="text-xs">
+                                Selected
+                              </Badge>
+                            </div>
+                            <p className="text-sm font-medium">
+                              {voices.find(v => v.voice_id === selectedVoiceId)?.name || 'Unknown Voice'}
+                            </p>
+                            <p className="text-xs text-muted-foreground font-mono">
+                              {selectedVoiceId}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              setSelectedVoiceId('')
+                              handleStopPreview()
+                            }}
+                            variant="outline"
+                            size="sm"
+                          >
+                            Change
+                          </Button>
                         </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {selectedVoiceId && (
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const selectedVoice = voices.find(
-                          (v) => v.voice_id === selectedVoiceId
-                        )
-                        if (selectedVoice?.preview_url) {
-                          if (playingVoiceId === selectedVoiceId) {
-                            handleStopPreview()
-                          } else {
-                            handlePlayPreview(selectedVoiceId, selectedVoice.preview_url)
-                          }
-                        }
-                      }}
-                    >
-                      {playingVoiceId === selectedVoiceId ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Stop Preview
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-4 w-4 mr-2" />
-                          Preview Voice
-                        </>
-                      )}
-                    </Button>
-                    {playingVoiceId === selectedVoiceId && (
-                      <p className="text-xs text-muted-foreground">
-                        Playing preview...
-                      </p>
+                        {(() => {
+                          const selectedVoice = voices.find(v => v.voice_id === selectedVoiceId)
+                          return selectedVoice?.preview_url && (
+                            <div className="flex items-center gap-2 pt-2 border-t">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  if (playingVoiceId === selectedVoiceId) {
+                                    handleStopPreview()
+                                  } else {
+                                    handlePlayPreview(selectedVoiceId, selectedVoice.preview_url)
+                                  }
+                                }}
+                              >
+                                {playingVoiceId === selectedVoiceId ? (
+                                  <>
+                                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                    Stop Preview
+                                  </>
+                                ) : (
+                                  <>
+                                    <Play className="h-4 w-4 mr-2" />
+                                    Preview Voice
+                                  </>
+                                )}
+                              </Button>
+                              {playingVoiceId === selectedVoiceId && (
+                                <p className="text-xs text-muted-foreground">
+                                  Playing preview...
+                                </p>
+                              )}
+                            </div>
+                          )
+                        })()}
+                      </div>
                     )}
                   </div>
                 )}
-              </div>
-            )}
+              </TabsContent>
+              
+              <TabsContent value="custom" className="space-y-3 mt-4">
+                {!isCustomVoiceConfirmed ? (
+                  // Edit mode - entering/confirming voice ID
+                  <>
+                    <div className="flex gap-2">
+                      <Input
+                        id="custom-voice-input"
+                        placeholder="Enter custom voice ID"
+                        value={customVoiceId}
+                        onChange={(e) => {
+                          setCustomVoiceId(e.target.value)
+                          // Clear voice name, preview, and error when ID changes
+                          setCustomVoiceName(null)
+                          setCustomVoicePreviewUrl(null)
+                          setVoiceLookupError(null)
+                        }}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        onClick={handleConfirmCustomVoice}
+                        disabled={isLookingUpVoice || !customVoiceId.trim()}
+                      >
+                        {isLookingUpVoice ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Confirming...
+                          </>
+                        ) : (
+                          'Confirm'
+                        )}
+                      </Button>
+                    </div>
+                    {voiceLookupError && (
+                      <p className="text-sm text-destructive">
+                        {voiceLookupError}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  // View mode - voice confirmed and selected
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="default" className="text-xs">
+                            Selected
+                          </Badge>
+                        </div>
+                        <p className="text-sm font-medium">
+                          {customVoiceName}
+                        </p>
+                        <p className="text-xs text-muted-foreground font-mono">
+                          {customVoiceId}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        onClick={handleEditCustomVoice}
+                        variant="outline"
+                        size="sm"
+                      >
+                        Edit
+                      </Button>
+                    </div>
+                    {customVoicePreviewUrl && (
+                      <div className="flex items-center gap-2 pt-2 border-t">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (playingVoiceId === customVoiceId) {
+                              handleStopPreview()
+                            } else {
+                              handlePlayPreview(customVoiceId, customVoicePreviewUrl)
+                            }
+                          }}
+                        >
+                          {playingVoiceId === customVoiceId ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Stop Preview
+                            </>
+                          ) : (
+                            <>
+                              <Play className="h-4 w-4 mr-2" />
+                              Preview Voice
+                            </>
+                          )}
+                        </Button>
+                        {playingVoiceId === customVoiceId && (
+                          <p className="text-xs text-muted-foreground">
+                            Playing preview...
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </div>
         </CardContent>
       </Card>
@@ -774,7 +1048,7 @@ export function AgentSettingsForm({
           type="submit"
           disabled={
             isSaving ||
-            (selectedVoiceId === baselineVoiceId &&
+            ((voiceSelectionMode === 'custom' ? customVoiceId : selectedVoiceId) === baselineVoiceId &&
               (keyterms.length === baselineKeyterms.length &&
                 keyterms.every(k => baselineKeyterms.includes(k)) &&
                 baselineKeyterms.every(k => keyterms.includes(k))) &&
