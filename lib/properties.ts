@@ -429,12 +429,15 @@ async function queryPropertiesWithLocation(
       const dateB = b.added_on ? new Date(b.added_on).getTime() : 0
       return dateB - dateA
     })
-    .slice(0, 3)
 
+  // Get total count BEFORE slicing
   const totalCount = propertiesWithDistance.length
 
+  // Take top 3 for results
+  const topProperties = propertiesWithDistance.slice(0, 3)
+
   // Map to simplified result format
-  const results: PropertySearchResult[] = propertiesWithDistance.map((prop: any) => ({
+  const results: PropertySearchResult[] = topProperties.map((prop: any) => ({
     id: prop.id,
     url: prop.url,
     beds: prop.beds,
@@ -460,12 +463,13 @@ async function queryPropertiesWithLocation(
     distance_km: prop.distance_km,
   }))
 
-  // Generate refinement suggestions
+  // Generate refinement suggestions from the filtered properties
   const refinements = await generateRefinements(
     supabase,
     knowledgeBaseId,
     filters,
-    totalCount
+    totalCount,
+    propertiesWithDistance // Pass the filtered properties
   )
 
   return {
@@ -674,11 +678,256 @@ async function findFuzzyLocationMatch(
 
   return null
 }
+
+/**
+ * Generate refinements from an array of pre-filtered properties
+ */
+function generateRefinementsFromArray(
+  properties: any[],
+  filters: PropertyQueryFilters,
+  totalCount: number
+): RefinementSuggestion[] {
+  const suggestions: RefinementSuggestion[] = []
+
+  // Helper to add refinement - shows ALL options so counts add up
+  const addRefinement = (
+    filterName: string,
+    filterValue: string | number | boolean | PriceFilter,
+    count: number
+  ) => {
+    // Show all options with count > 0
+    if (count > 0) {
+      suggestions.push({
+        filterName,
+        filterValue,
+        resultCount: count,
+      })
+    }
+  }
+
+  // Count transaction types (only if not already filtered)
+  if (!filters.transaction_type) {
+    const transactionCounts: Record<string, number> = {}
+    properties.forEach(prop => {
+      if (prop.transaction_type) {
+        transactionCounts[prop.transaction_type] = (transactionCounts[prop.transaction_type] || 0) + 1
+      }
+    })
+    Object.entries(transactionCounts).forEach(([type, count]) => {
+      addRefinement('transaction_type', type, count)
+    })
+  }
+
+  // Count beds (only if not already filtered)
+  if (filters.beds === undefined) {
+    const bedsCounts: Record<number, number> = {}
+    properties.forEach(prop => {
+      if (prop.beds !== null && prop.beds !== undefined) {
+        bedsCounts[prop.beds] = (bedsCounts[prop.beds] || 0) + 1
+      }
+    })
+    // Sort by number of beds
+    Object.entries(bedsCounts)
+      .sort(([a], [b]) => parseInt(a) - parseInt(b))
+      .forEach(([beds, count]) => {
+        addRefinement('beds', parseInt(beds), count)
+      })
+  }
+
+  // Count baths (only if not already filtered)
+  if (filters.baths === undefined) {
+    const bathsCounts: Record<number, number> = {}
+    properties.forEach(prop => {
+      if (prop.baths !== null && prop.baths !== undefined) {
+        bathsCounts[prop.baths] = (bathsCounts[prop.baths] || 0) + 1
+      }
+    })
+    // Sort by number of baths
+    Object.entries(bathsCounts)
+      .sort(([a], [b]) => parseInt(a) - parseInt(b))
+      .forEach(([baths, count]) => {
+        addRefinement('baths', parseInt(baths), count)
+      })
+  }
+
+  // Count property types (only if not already filtered)
+  if (!filters.property_type) {
+    const typeCounts: Record<string, number> = {}
+    properties.forEach(prop => {
+      if (prop.property_type) {
+        typeCounts[prop.property_type] = (typeCounts[prop.property_type] || 0) + 1
+      }
+    })
+    // Sort by count (most common first)
+    Object.entries(typeCounts)
+      .sort(([, a], [, b]) => b - a)
+      .forEach(([type, count]) => {
+        addRefinement('property_type', type, count)
+      })
+  }
+
+  // Count furnished types (only if not already filtered)
+  if (!filters.furnished_type) {
+    const furnishedCounts: Record<string, number> = {}
+    properties.forEach(prop => {
+      if (prop.furnished_type) {
+        furnishedCounts[prop.furnished_type] = (furnishedCounts[prop.furnished_type] || 0) + 1
+      }
+    })
+    // Sort by count (most common first)
+    Object.entries(furnishedCounts)
+      .sort(([, a], [, b]) => b - a)
+      .forEach(([type, count]) => {
+        addRefinement('furnished_type', type, count)
+      })
+  }
+
+  // Count has_nearby_station (only if not already filtered)
+  if (filters.has_nearby_station === undefined) {
+    const stationCounts: Record<string, number> = { 'true': 0, 'false': 0 }
+    properties.forEach(prop => {
+      if (prop.has_nearby_station !== null && prop.has_nearby_station !== undefined) {
+        const key = prop.has_nearby_station ? 'true' : 'false'
+        stationCounts[key] = (stationCounts[key] || 0) + 1
+      }
+    })
+    Object.entries(stationCounts).forEach(([hasStation, count]) => {
+      if (count > 0) {
+        addRefinement('has_nearby_station', hasStation === 'true', count)
+      }
+    })
+  }
+
+  // Count cities (only if not already filtered)
+  if (!filters.city) {
+    const cityCounts: Record<string, number> = {}
+    properties.forEach(prop => {
+      if (prop.city) {
+        cityCounts[prop.city] = (cityCounts[prop.city] || 0) + 1
+      }
+    })
+    // Show ALL cities sorted by count to ensure they add up
+    Object.entries(cityCounts)
+      .sort(([, a], [, b]) => b - a)
+      .forEach(([city, count]) => {
+        addRefinement('city', city, count)
+      })
+  }
+
+  // Count districts (only if not already filtered)
+  if (!filters.district) {
+    const districtCounts: Record<string, number> = {}
+    properties.forEach(prop => {
+      if (prop.district) {
+        districtCounts[prop.district] = (districtCounts[prop.district] || 0) + 1
+      }
+    })
+    // Show ALL districts sorted by count to ensure they add up
+    Object.entries(districtCounts)
+      .sort(([, a], [, b]) => b - a)
+      .forEach(([district, count]) => {
+        addRefinement('district', district, count)
+      })
+  }
+
+  // Price range refinements
+  if (filters.transaction_type && !(filters.price && filters.price.filter)) {
+    const prices = properties
+      .map(p => Number(p.price))
+      .filter(p => !isNaN(p))
+      .sort((a, b) => a - b)
+
+    if (prices.length > 0) {
+      const minPrice = prices[0]
+      const maxPrice = prices[prices.length - 1]
+      const priceRange = maxPrice - minPrice
+
+      if (priceRange > 0) {
+        // Create dynamic buckets based on quartiles
+        const q1 = prices[Math.floor(prices.length * 0.25)]
+        const q2 = prices[Math.floor(prices.length * 0.5)] // median
+        const q3 = prices[Math.floor(prices.length * 0.75)]
+
+        // Round to nice numbers
+        const roundToNice = (num: number) => {
+          if (filters.transaction_type === 'rent') {
+            if (num < 1000) return Math.round(num / 50) * 50
+            if (num < 5000) return Math.round(num / 100) * 100
+            return Math.round(num / 500) * 500
+          }
+          if (num < 100000) return Math.round(num / 10000) * 10000
+          if (num < 1000000) return Math.round(num / 50000) * 50000
+          return Math.round(num / 100000) * 100000
+        }
+
+        const roundedQ2 = roundToNice(q2)
+        const roundedQ3 = roundToNice(q3)
+
+        // Create buckets
+        const buckets: Array<{ filter: PriceFilter; min?: number; max?: number }> = [
+          { filter: { filter: 'under', value: roundedQ2 }, max: roundedQ2 },
+          { filter: { filter: 'between', value: roundedQ2, max_value: roundedQ3 }, min: roundedQ2, max: roundedQ3 },
+          { filter: { filter: 'over', value: roundedQ3 }, min: roundedQ3 }
+        ]
+
+        // Count properties in each bucket
+        for (const bucket of buckets) {
+          const countInBucket = prices.filter(p => {
+            if (bucket.min !== undefined && bucket.max !== undefined) {
+              return p >= bucket.min && p <= bucket.max
+            } else if (bucket.max !== undefined) {
+              return p <= bucket.max
+            } else if (bucket.min !== undefined) {
+              return p >= bucket.min
+            }
+            return false
+          }).length
+
+          if (countInBucket > 0 && countInBucket < totalCount) {
+            suggestions.push({
+              filterName: 'price',
+              filterValue: bucket.filter,
+              resultCount: countInBucket,
+            })
+          }
+        }
+      }
+    }
+  }
+
+  // If no refinements would narrow the results, add street addresses
+  const refinementsThatNarrow = suggestions.filter(s => s.resultCount < totalCount)
+  if (refinementsThatNarrow.length === 0 && totalCount > 1) {
+    const streetCounts: Record<string, number> = {}
+    properties.forEach(prop => {
+      if (prop.street_address) {
+        streetCounts[prop.street_address] = (streetCounts[prop.street_address] || 0) + 1
+      }
+    })
+    
+    // Add street addresses sorted by count
+    Object.entries(streetCounts)
+      .sort(([, a], [, b]) => b - a)
+      .forEach(([street, count]) => {
+        if (count > 0) {
+          suggestions.push({
+            filterName: 'street_address',
+            filterValue: street,
+            resultCount: count,
+          })
+        }
+      })
+  }
+
+  return suggestions
+}
+
 async function generateRefinements(
   supabase: any,
   knowledgeBaseId: string,
   filters: PropertyQueryFilters,
-  totalCount: number
+  totalCount: number,
+  filteredProperties?: any[] // Optional pre-filtered properties array
 ): Promise<RefinementSuggestion[]> {
   const suggestions: RefinementSuggestion[] = []
 
@@ -690,6 +939,11 @@ async function generateRefinements(
     const parsedPrice = parsePriceFilter(filters.price)
     minPriceForRefinements = parsedPrice.min
     maxPriceForRefinements = parsedPrice.max
+  }
+
+  // If pre-filtered properties are provided, use them directly
+  if (filteredProperties && filteredProperties.length > 0) {
+    return generateRefinementsFromArray(filteredProperties, filters, totalCount)
   }
 
   // Build base query matching current filters (same as main query but without limit)
@@ -736,14 +990,14 @@ async function generateRefinements(
     return query
   }
 
-  // Helper to add refinement if it would narrow results
+  // Helper to add refinement - shows ALL options so counts add up
   const addRefinement = (
     filterName: string,
     filterValue: string | number | boolean,
     count: number
   ) => {
-    // Only suggest if count > 0 and count < totalCount (would narrow results)
-    if (count > 0 && count < totalCount) {
+    // Show all options with count > 0
+    if (count > 0) {
       suggestions.push({
         filterName,
         filterValue,
@@ -752,151 +1006,177 @@ async function generateRefinements(
     }
   }
 
-  // Get refinements for transaction_type (rent vs sale)
-  const { data: transactionData } = await buildBaseQuery()
-    .select('transaction_type')
-    .not('transaction_type', 'is', null)
+  // Get refinements for transaction_type (only if not already filtered)
+  if (!filters.transaction_type) {
+    const { data: transactionData } = await buildBaseQuery()
+      .select('transaction_type')
+      .not('transaction_type', 'is', null)
 
-  if (transactionData) {
-    const transactionCounts = transactionData.reduce((acc: Record<string, number>, prop: any) => {
-      const type = prop.transaction_type
-      acc[type] = (acc[type] || 0) + 1
-      return acc
-    }, {})
-
-    Object.entries(transactionCounts).forEach(([type, count]) => {
-      addRefinement('transaction_type', type, count as number)
-    })
-  }
-
-  // Get refinements for beds (show all options)
-  const { data: bedsData } = await buildBaseQuery()
-    .select('beds')
-    .not('beds', 'is', null)
-
-  if (bedsData) {
-    const bedsCounts = bedsData.reduce((acc: Record<number, number>, prop: any) => {
-      const beds = prop.beds
-      acc[beds] = (acc[beds] || 0) + 1
-      return acc
-    }, {})
-
-    Object.entries(bedsCounts).forEach(([beds, count]) => {
-      addRefinement('beds', parseInt(beds), count as number)
-    })
-  }
-
-  // Get refinements for baths (show all options)
-  const { data: bathsData } = await buildBaseQuery()
-    .select('baths')
-    .not('baths', 'is', null)
-
-  if (bathsData) {
-    const bathsCounts = bathsData.reduce((acc: Record<number, number>, prop: any) => {
-      const baths = prop.baths
-      acc[baths] = (acc[baths] || 0) + 1
-      return acc
-    }, {})
-
-    Object.entries(bathsCounts).forEach(([baths, count]) => {
-      addRefinement('baths', parseInt(baths), count as number)
-    })
-  }
-
-  // Get refinements for property_type
-  const { data: typeData } = await buildBaseQuery()
-    .select('property_type')
-    .not('property_type', 'is', null)
-
-  if (typeData) {
-    const typeCounts = typeData.reduce((acc: Record<string, number>, prop: any) => {
-      const type = prop.property_type
-      acc[type] = (acc[type] || 0) + 1
-      return acc
-    }, {})
-
-    Object.entries(typeCounts).forEach(([type, count]) => {
-      addRefinement('property_type', type, count as number)
-    })
-  }
-
-  // Get refinements for furnished_type
-  const { data: furnishedData } = await buildBaseQuery()
-    .select('furnished_type')
-    .not('furnished_type', 'is', null)
-
-  if (furnishedData) {
-    const furnishedCounts = furnishedData.reduce((acc: Record<string, number>, prop: any) => {
-      const type = prop.furnished_type
-      acc[type] = (acc[type] || 0) + 1
-      return acc
-    }, {})
-
-    Object.entries(furnishedCounts).forEach(([type, count]) => {
-      addRefinement('furnished_type', type, count as number)
-    })
-  }
-
-  // Get refinements for has_nearby_station
-  const { data: stationData } = await buildBaseQuery()
-    .select('has_nearby_station')
-    .not('has_nearby_station', 'is', null)
-
-  if (stationData) {
-    const stationCounts = stationData.reduce(
-      (acc: Record<string, number>, prop: any) => {
-        const hasStation = prop.has_nearby_station ? 'true' : 'false'
-        acc[hasStation] = (acc[hasStation] || 0) + 1
+    if (transactionData) {
+      const transactionCounts = transactionData.reduce((acc: Record<string, number>, prop: any) => {
+        const type = prop.transaction_type
+        acc[type] = (acc[type] || 0) + 1
         return acc
-      },
-      {}
-    )
+      }, {})
 
-    Object.entries(stationCounts).forEach(([hasStation, count]) => {
-      addRefinement('has_nearby_station', hasStation === 'true', count as number)
-    })
+      Object.entries(transactionCounts).forEach(([type, count]) => {
+        addRefinement('transaction_type', type, count as number)
+      })
+    }
   }
 
-  // Get refinements for city (show all options)
-  const { data: cityData } = await buildBaseQuery()
-    .select('city')
-    .not('city', 'is', null)
+  // Get refinements for beds (only if not already filtered)
+  if (filters.beds === undefined) {
+    const { data: bedsData } = await buildBaseQuery()
+      .select('beds')
+      .not('beds', 'is', null)
 
-  if (cityData) {
-    const cityCounts = cityData.reduce((acc: Record<string, number>, prop: any) => {
-      const city = prop.city
-      acc[city] = (acc[city] || 0) + 1
-      return acc
-    }, {})
+    if (bedsData) {
+      const bedsCounts = bedsData.reduce((acc: Record<number, number>, prop: any) => {
+        const beds = prop.beds
+        acc[beds] = (acc[beds] || 0) + 1
+        return acc
+      }, {})
 
-    // Only show top 5 cities to avoid overwhelming response
-    Object.entries(cityCounts)
-      .sort(([, a], [, b]) => (b as number) - (a as number))
-      .slice(0, 5)
-      .forEach(([city, count]) => {
-        addRefinement('city', city, count as number)
-      })
+      // Sort by number of beds
+      Object.entries(bedsCounts)
+        .sort(([a], [b]) => parseInt(a) - parseInt(b))
+        .forEach(([beds, count]) => {
+          addRefinement('beds', parseInt(beds), count as number)
+        })
+    }
   }
 
-  // Get refinements for district (show all options)
-  const { data: districtData } = await buildBaseQuery()
-    .select('district')
-    .not('district', 'is', null)
+  // Get refinements for baths (only if not already filtered)
+  if (filters.baths === undefined) {
+    const { data: bathsData } = await buildBaseQuery()
+      .select('baths')
+      .not('baths', 'is', null)
 
-  if (districtData) {
-    const districtCounts = districtData.reduce((acc: Record<string, number>, prop: any) => {
-      const district = prop.district
-      acc[district] = (acc[district] || 0) + 1
-      return acc
-    }, {})
+    if (bathsData) {
+      const bathsCounts = bathsData.reduce((acc: Record<number, number>, prop: any) => {
+        const baths = prop.baths
+        acc[baths] = (acc[baths] || 0) + 1
+        return acc
+      }, {})
 
-    // Only show top 5 districts to avoid overwhelming response
-    Object.entries(districtCounts)
-      .sort(([, a], [, b]) => (b as number) - (a as number))
-      .slice(0, 5)
-      .forEach(([district, count]) => {
-        addRefinement('district', district, count as number)
+      // Sort by number of baths
+      Object.entries(bathsCounts)
+        .sort(([a], [b]) => parseInt(a) - parseInt(b))
+        .forEach(([baths, count]) => {
+          addRefinement('baths', parseInt(baths), count as number)
+        })
+    }
+  }
+
+  // Get refinements for property_type (only if not already filtered)
+  if (!filters.property_type) {
+    const { data: typeData } = await buildBaseQuery()
+      .select('property_type')
+      .not('property_type', 'is', null)
+
+    if (typeData) {
+      const typeCounts = typeData.reduce((acc: Record<string, number>, prop: any) => {
+        const type = prop.property_type
+        acc[type] = (acc[type] || 0) + 1
+        return acc
+      }, {})
+
+      // Sort by count (most common first)
+      Object.entries(typeCounts)
+        .sort(([, a], [, b]) => (b as number) - (a as number))
+        .forEach(([type, count]) => {
+          addRefinement('property_type', type, count as number)
+        })
+    }
+  }
+
+  // Get refinements for furnished_type (only if not already filtered)
+  if (!filters.furnished_type) {
+    const { data: furnishedData } = await buildBaseQuery()
+      .select('furnished_type')
+      .not('furnished_type', 'is', null)
+
+    if (furnishedData) {
+      const furnishedCounts = furnishedData.reduce((acc: Record<string, number>, prop: any) => {
+        const type = prop.furnished_type
+        acc[type] = (acc[type] || 0) + 1
+        return acc
+      }, {})
+
+      // Sort by count (most common first)
+      Object.entries(furnishedCounts)
+        .sort(([, a], [, b]) => (b as number) - (a as number))
+        .forEach(([type, count]) => {
+          addRefinement('furnished_type', type, count as number)
+        })
+    }
+  }
+
+  // Get refinements for has_nearby_station (only if not already filtered)
+  if (filters.has_nearby_station === undefined) {
+    const { data: stationData } = await buildBaseQuery()
+      .select('has_nearby_station')
+      .not('has_nearby_station', 'is', null)
+
+    if (stationData) {
+      const stationCounts = stationData.reduce(
+        (acc: Record<string, number>, prop: any) => {
+          const hasStation = prop.has_nearby_station ? 'true' : 'false'
+          acc[hasStation] = (acc[hasStation] || 0) + 1
+          return acc
+        },
+        {}
+      )
+
+      Object.entries(stationCounts).forEach(([hasStation, count]) => {
+        addRefinement('has_nearby_station', hasStation === 'true', count as number)
       })
+    }
+  }
+
+  // Get refinements for city (only if not already filtered)
+  if (!filters.city) {
+    const { data: cityData } = await buildBaseQuery()
+      .select('city')
+      .not('city', 'is', null)
+
+    if (cityData) {
+      const cityCounts = cityData.reduce((acc: Record<string, number>, prop: any) => {
+        const city = prop.city
+        acc[city] = (acc[city] || 0) + 1
+        return acc
+      }, {})
+
+      // Show ALL cities sorted by count to ensure they add up
+      Object.entries(cityCounts)
+        .sort(([, a], [, b]) => (b as number) - (a as number))
+        .forEach(([city, count]) => {
+          addRefinement('city', city, count as number)
+        })
+    }
+  }
+
+  // Get refinements for district (only if not already filtered)
+  if (!filters.district) {
+    const { data: districtData } = await buildBaseQuery()
+      .select('district')
+      .not('district', 'is', null)
+
+    if (districtData) {
+      const districtCounts = districtData.reduce((acc: Record<string, number>, prop: any) => {
+        const district = prop.district
+        acc[district] = (acc[district] || 0) + 1
+        return acc
+      }, {})
+
+      // Show ALL districts sorted by count to ensure they add up
+      Object.entries(districtCounts)
+        .sort(([, a], [, b]) => (b as number) - (a as number))
+        .forEach(([district, count]) => {
+          addRefinement('district', district, count as number)
+        })
+    }
   }
 
   // Get price range refinements (only if transaction_type is filtered and no price already applied)
@@ -976,6 +1256,36 @@ async function generateRefinements(
           })
         }
       }
+    }
+  }
+
+  // If no refinements would narrow the results, add street addresses
+  const refinementsThatNarrow = suggestions.filter(s => s.resultCount < totalCount)
+  if (refinementsThatNarrow.length === 0 && totalCount > 1) {
+    const { data: streetData } = await buildBaseQuery()
+      .select('street_address')
+      .not('street_address', 'is', null)
+
+    if (streetData) {
+      const streetCounts = streetData.reduce((acc: Record<string, number>, prop: any) => {
+        const street = prop.street_address
+        acc[street] = (acc[street] || 0) + 1
+        return acc
+      }, {})
+
+      // Add street addresses sorted by count
+      Object.entries(streetCounts)
+        .sort(([, a], [, b]) => (b as number) - (a as number))
+        .forEach(([street, count]) => {
+          const countNum = count as number
+          if (countNum > 0) {
+            suggestions.push({
+              filterName: 'street_address',
+              filterValue: street,
+              resultCount: countNum,
+            })
+          }
+        })
     }
   }
 
