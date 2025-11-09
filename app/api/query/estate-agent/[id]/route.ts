@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { queryProperties, PropertyQueryFilters, PropertyQueryResponse } from "@/lib/properties";
+import { queryProperties, PropertyQueryFilters, PropertyQueryResponse, PriceFilter } from "@/lib/properties";
 
 /**
  * Format property query results as plain text
@@ -51,9 +51,29 @@ function formatPropertiesAsText(result: PropertyQueryResponse): string {
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ');
       
-      const valueStr = typeof refinement.filterValue === 'string' 
-        ? `"${refinement.filterValue}"` 
-        : refinement.filterValue;
+      let valueStr: string;
+      
+      // Handle PriceFilter objects
+      if (refinement.filterName === 'price' && typeof refinement.filterValue === 'object' && refinement.filterValue !== null) {
+        const priceFilter = refinement.filterValue as PriceFilter;
+        if (priceFilter.filter === 'under') {
+          valueStr = `under £${priceFilter.value.toLocaleString()}`;
+        } else if (priceFilter.filter === 'over') {
+          valueStr = `over £${priceFilter.value.toLocaleString()}`;
+        } else if (priceFilter.filter === 'between' && priceFilter.max_value !== undefined) {
+          valueStr = `£${priceFilter.value.toLocaleString()} - £${priceFilter.max_value.toLocaleString()}`;
+        } else {
+          valueStr = JSON.stringify(priceFilter);
+        }
+      } else if (typeof refinement.filterValue === 'string') {
+        valueStr = `"${refinement.filterValue}"`;
+      } else if (typeof refinement.filterValue === 'boolean') {
+        valueStr = refinement.filterValue.toString();
+      } else if (typeof refinement.filterValue === 'number') {
+        valueStr = refinement.filterValue.toString();
+      } else {
+        valueStr = String(refinement.filterValue);
+      }
       
       const resultStr = refinement.resultCount === 1 ? 'result' : 'results';
       lines.push(`${filterLabel} ${valueStr}: ${refinement.resultCount} ${resultStr}`);
