@@ -1250,147 +1250,195 @@ export function PipedreamActionToolForm({
               Configure the fields for this action. Required fields will unlock as you progress.
             </p>
 
-            {visibleProps.map((prop) => {
-              // Handle alert type props
-              if (prop.type === 'alert') {
-                const alertVariant = 
-                  prop.alertType === 'error' ? 'destructive' : 'default'
-                
-                const AlertIcon = 
-                  prop.alertType === 'error' ? AlertCircle :
-                  prop.alertType === 'warning' ? AlertTriangle :
-                  Info
-                
-                const alertColor =
-                  prop.alertType === 'info' ? 'text-blue-600' :
-                  prop.alertType === 'warning' ? 'text-yellow-600' :
-                  prop.alertType === 'error' ? 'text-destructive' :
-                  'text-muted-foreground'
-                
-                return (
-                  <Alert key={prop.name} variant={alertVariant} className="my-3">
-                    <AlertIcon className={alertColor} />
-                    <AlertDescription>
-                      {prop.content}
-                    </AlertDescription>
-                  </Alert>
-                )
+            {(() => {
+              // Find the index where we should stop rendering
+              let stopIndex = visibleProps.length
+              
+              // If reloading props, find the last field with reloadProps: true
+              if (isReloadingProps) {
+                let lastReloadPropsIndex = -1
+                for (let i = visibleProps.length - 1; i >= 0; i--) {
+                  const prop = visibleProps[i]
+                  if (prop.reloadProps) {
+                    lastReloadPropsIndex = i
+                    break
+                  }
+                }
+                if (lastReloadPropsIndex >= 0) {
+                  stopIndex = lastReloadPropsIndex + 1
+                }
+              } else {
+                // Check for remote options loading
+                for (let i = 0; i < visibleProps.length; i++) {
+                  const prop = visibleProps[i]
+                  if (loadingRemoteOptionsFor === prop.name) {
+                    stopIndex = i + 1
+                    break
+                  }
+                }
               }
               
-              const config = propsConfig[prop.name]
-              const hasConfig = config && config.mode !== undefined
-
-              // Skip if optional and not configured
-              if (prop.optional && !hasConfig) return null
-
-              const isArrayType = prop.type === 'string[]' || prop.type === 'integer[]'
-              const isBooleanType = prop.type === 'boolean'
-              const isIntegerType = prop.type === 'integer'
-
+              const propsToRender = visibleProps.slice(0, stopIndex)
+              const shouldShowLoading = stopIndex < visibleProps.length
+              
               return (
-                <ParameterConfigField
-                  key={prop.name}
-                  name={prop.name}
-                  label={prop.label || prop.name}
-                  description={prop.description}
-                  required={!prop.optional}
-                  isArray={isArrayType}
-                  isBoolean={isBooleanType}
-                  isInteger={isIntegerType}
-                  hasOptions={prop.options && prop.options.length > 0}
-                  options={prop.options}
-                  defaultValue={prop.default}
-                  value={config || { mode: 'fixed' }}
-                  onChange={(newConfig) => {
-                    setPropsConfig((prev) => ({
-                      ...prev,
-                      [prop.name]: newConfig,
-                    }))
-                  }}
-                  onRemove={
-                    prop.optional
-                      ? () => {
-                          setPropsConfig((prev) => {
-                            const updated = { ...prev }
-                            delete updated[prop.name]
-                            return updated
-                          })
+                <>
+                  {propsToRender.map((prop) => {
+                    // Handle alert type props
+                    if (prop.type === 'alert') {
+                      const alertVariant = 
+                        prop.alertType === 'error' ? 'destructive' : 'default'
+                      
+                      const AlertIcon = 
+                        prop.alertType === 'error' ? AlertCircle :
+                        prop.alertType === 'warning' ? AlertTriangle :
+                        Info
+                      
+                      const alertColor =
+                        prop.alertType === 'info' ? 'text-blue-600' :
+                        prop.alertType === 'warning' ? 'text-yellow-600' :
+                        prop.alertType === 'error' ? 'text-destructive' :
+                        'text-muted-foreground'
+                      
+                      return (
+                        <Alert key={prop.name} variant={alertVariant} className="my-3">
+                          <AlertIcon className={alertColor} />
+                          <AlertDescription>
+                            {prop.content}
+                          </AlertDescription>
+                        </Alert>
+                      )
+                    }
+                    
+                    const config = propsConfig[prop.name]
+                    const hasConfig = config && config.mode !== undefined
+
+                    // Skip if optional and not configured
+                    if (prop.optional && !hasConfig) return null
+
+                    const isArrayType = prop.type === 'string[]' || prop.type === 'integer[]'
+                    const isBooleanType = prop.type === 'boolean'
+                    const isIntegerType = prop.type === 'integer'
+
+                    return (
+                      <ParameterConfigField
+                        key={prop.name}
+                        name={prop.name}
+                        label={prop.label || prop.name}
+                        description={prop.description}
+                        required={!prop.optional}
+                        isArray={isArrayType}
+                        isBoolean={isBooleanType}
+                        isInteger={isIntegerType}
+                        hasOptions={prop.options && prop.options.length > 0}
+                        options={prop.options}
+                        defaultValue={prop.default}
+                        value={config || { mode: 'fixed' }}
+                        onChange={(newConfig) => {
+                          setPropsConfig((prev) => ({
+                            ...prev,
+                            [prop.name]: newConfig,
+                          }))
+                        }}
+                        onRemove={
+                          prop.optional
+                            ? () => {
+                                setPropsConfig((prev) => {
+                                  const updated = { ...prev }
+                                  delete updated[prop.name]
+                                  return updated
+                                })
+                              }
+                            : undefined
                         }
-                      : undefined
-                  }
-                  customFixedInput={
-                    prop.remoteOptions ? (
-                      <div className="space-y-2">
-                        <Select
-                          value={typeof config?.value === 'string' ? config.value : ''}
-                          onValueChange={(value) =>
-                            updatePropConfig(prop.name, { value })
-                          }
-                          onOpenChange={(open) => {
-                            if (open && !remoteOptionsData[prop.name]) {
-                              loadRemoteOptions(prop.name)
-                            }
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select value..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {prop.useQuery && (
-                              <div className="px-2 py-2 border-b">
-                                <Input
-                                  placeholder="Search..."
-                                  value={remoteOptionsQueries[prop.name] || ''}
-                                  onChange={(e) => {
-                                    const query = e.target.value
-                                    setRemoteOptionsQueries((prev) => ({
-                                      ...prev,
-                                      [prop.name]: query,
-                                    }))
-                                    
-                                    // Clear existing timeout
-                                    if (searchTimeoutsRef.current[prop.name]) {
-                                      clearTimeout(searchTimeoutsRef.current[prop.name])
-                                    }
-                                    
-                                    // Set new timeout for debounced search
-                                    searchTimeoutsRef.current[prop.name] = setTimeout(() => {
-                                      loadRemoteOptions(prop.name, query)
-                                    }, 500)
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="h-8"
-                                />
-                              </div>
-                            )}
-                            {loadingRemoteOptionsFor === prop.name ? (
-                              <div className="flex items-center justify-center py-4">
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              </div>
-                            ) : remoteOptionsData[prop.name]?.length > 0 ? (
-                              remoteOptionsData[prop.name].map((opt) => (
-                                <SelectItem key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </SelectItem>
-                              ))
-                            ) : (
-                              <div className="px-2 py-4 text-sm text-muted-foreground text-center">
-                                {prop.useQuery && remoteOptionsQueries[prop.name] 
-                                  ? 'No results found' 
-                                  : 'No options available'}
-                              </div>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ) : undefined
-                  }
-                />
+                        customFixedInput={
+                          prop.remoteOptions ? (
+                            <div className="space-y-2">
+                              <Select
+                                value={typeof config?.value === 'string' ? config.value : ''}
+                                onValueChange={(value) =>
+                                  updatePropConfig(prop.name, { value })
+                                }
+                                onOpenChange={(open) => {
+                                  if (open && !remoteOptionsData[prop.name]) {
+                                    loadRemoteOptions(prop.name)
+                                  }
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select value..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {prop.useQuery && (
+                                    <div className="px-2 py-2 border-b">
+                                      <Input
+                                        placeholder="Search..."
+                                        value={remoteOptionsQueries[prop.name] || ''}
+                                        onChange={(e) => {
+                                          const query = e.target.value
+                                          setRemoteOptionsQueries((prev) => ({
+                                            ...prev,
+                                            [prop.name]: query,
+                                          }))
+                                          
+                                          // Clear existing timeout
+                                          if (searchTimeoutsRef.current[prop.name]) {
+                                            clearTimeout(searchTimeoutsRef.current[prop.name])
+                                          }
+                                          
+                                          // Set new timeout for debounced search
+                                          searchTimeoutsRef.current[prop.name] = setTimeout(() => {
+                                            loadRemoteOptions(prop.name, query)
+                                          }, 500)
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="h-8"
+                                      />
+                                    </div>
+                                  )}
+                                  {loadingRemoteOptionsFor === prop.name ? (
+                                    <div className="flex items-center justify-center py-4">
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    </div>
+                                  ) : remoteOptionsData[prop.name]?.length > 0 ? (
+                                    remoteOptionsData[prop.name].map((opt) => (
+                                      <SelectItem key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                      </SelectItem>
+                                    ))
+                                  ) : (
+                                    <div className="px-2 py-4 text-sm text-muted-foreground text-center">
+                                      {prop.useQuery && remoteOptionsQueries[prop.name] 
+                                        ? 'No results found' 
+                                        : 'No options available'}
+                                    </div>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          ) : undefined
+                        }
+                      />
+                    )
+                  })}
+                  {shouldShowLoading && (
+                    <div className="flex items-center gap-2 py-4 text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="text-sm">
+                        {loadingRemoteOptionsFor
+                          ? 'Loading options...'
+                          : isReloadingProps
+                          ? 'Updating fields...'
+                          : 'Loading...'}
+                      </span>
+                    </div>
+                  )}
+                </>
               )
-            })}
+            })()}
 
             {/* Optional Fields Section */}
-            {visibleProps.some((p) => p.optional && !propsConfig[p.name]) && (
+            {!loadingRemoteOptionsFor && !isReloadingProps && visibleProps.some((p) => p.optional && !propsConfig[p.name]) && (
               <div className="space-y-2">
                 <Label className="text-sm">Add Optional Parameter</Label>
                 <Select
