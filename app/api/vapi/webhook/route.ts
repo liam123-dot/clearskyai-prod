@@ -6,6 +6,64 @@ import { createMeterEvent } from "@/lib/stripe";
 import { syncOrganizationSubscriptions } from "@/lib/billing";
 import { after } from "next/server";
 
+// Voice cost per million characters (default: $0.18 per million for ElevenLabs Flash v2.5)
+// Can be overridden via environment variable VOICE_COST_PER_MILLION_CHARACTERS
+const VOICE_COST_PER_MILLION_CHARACTERS = parseFloat(
+    process.env.VOICE_COST_PER_MILLION_CHARACTERS || "150"
+);
+
+/**
+ * Imputes voice costs when cost is 0 but characters > 0
+ * Returns a modified copy of the report with imputed costs
+ */
+function imputeVoiceCosts(report: Vapi.ServerMessageEndOfCallReport): Vapi.ServerMessageEndOfCallReport {
+    const reportCopy = JSON.parse(JSON.stringify(report)) as Vapi.ServerMessageEndOfCallReport;
+    
+    // Check if costs array exists
+    if (!reportCopy.costs || !Array.isArray(reportCopy.costs)) {
+        return reportCopy;
+    }
+    
+    let voiceCostsImputed = false;
+    
+    // Process each cost entry
+    reportCopy.costs = reportCopy.costs.map((costEntry: any) => {
+        // Check if this is a voice cost with 0 cost but characters > 0
+        if (
+            costEntry.type === 'voice' &&
+            (costEntry.cost === 0 || costEntry.cost === null || costEntry.cost === undefined) &&
+            costEntry.characters &&
+            costEntry.characters > 0
+        ) {
+            // Calculate imputed cost: (characters / 1,000,000) * cost per million
+            const imputedCost = (costEntry.characters / 1_000_000) * VOICE_COST_PER_MILLION_CHARACTERS;
+            
+            console.log(
+                `Imputing voice cost: ${costEntry.characters} characters = $${imputedCost.toFixed(6)} ` +
+                `(using $${VOICE_COST_PER_MILLION_CHARACTERS} per million characters)`
+            );
+            
+            voiceCostsImputed = true;
+            
+            // Update the cost entry
+            return {
+                ...costEntry,
+                cost: imputedCost,
+                imputed: true, // Flag to indicate this cost was imputed
+            };
+        }
+        
+        return costEntry;
+    });
+    
+    // Recalculate total cost from all costs if any voice costs were imputed
+    if (voiceCostsImputed && reportCopy.costs) {
+        reportCopy.cost = reportCopy.costs.reduce((sum: number, c: any) => sum + (c?.cost || 0), 0);
+    }
+    
+    return reportCopy;
+}
+
 export async function POST(request: NextRequest) {
 
     const data = await request.json();
@@ -28,7 +86,10 @@ export async function POST(request: NextRequest) {
 
 async function handleEndOfCallReport(report: Vapi.ServerMessageEndOfCallReport) {
     
-    const vapiAssistantId = report.call?.assistantId;
+    // Impute voice costs if needed (cost is 0 but characters > 0)
+    const reportWithImputedCosts = imputeVoiceCosts(report);
+    
+    const vapiAssistantId = reportWithImputedCosts.call?.assistantId;
 
     if (!vapiAssistantId) {
         console.warn('No assistantId found in call report');
@@ -52,7 +113,7 @@ async function handleEndOfCallReport(report: Vapi.ServerMessageEndOfCallReport) 
 
         // Try to find existing call record by CallSid
         // The CallSid might be in report.call or report.phoneCallProviderId
-        const callSid = (report.call as any)?.callSid || (report.call as any)?.twilioCallSid || report.call?.phoneCallProviderId;
+        const callSid = (reportWithImputedCosts.call as any)?.callSid || (reportWithImputedCosts.call as any)?.twilioCallSid || reportWithImputedCosts.call?.phoneCallProviderId;
         
         let existingCallRecord = null;
         if (callSid) {
@@ -75,16 +136,16 @@ async function handleEndOfCallReport(report: Vapi.ServerMessageEndOfCallReport) 
         eventSequence.push({
             type: 'agent_call_completed',
             timestamp: new Date().toISOString(),
-            details: report as unknown as Record<string, unknown>,
+            details: reportWithImputedCosts as unknown as Record<string, unknown>,
         });
 
         // Calculate rounded duration (round UP to nearest second)
-        const durationSeconds = (report as any).durationSeconds || (report.call as any)?.duration || 0;
+        const durationSeconds = (reportWithImputedCosts as any).durationSeconds || (reportWithImputedCosts.call as any)?.duration || 0;
         const roundedDurationSeconds = durationSeconds > 0 ? Math.ceil(durationSeconds) : 0;
 
         // Prepare data with rounded duration
         const callData = {
-            ...(report as unknown as Record<string, unknown>),
+            ...(reportWithImputedCosts as unknown as Record<string, unknown>),
             roundedDurationSeconds: roundedDurationSeconds,
         };
 
@@ -127,14 +188,14 @@ async function handleEndOfCallReport(report: Vapi.ServerMessageEndOfCallReport) 
         }
 
         // Skip Twilio cost and Stripe billing for webCall type calls
-        const callType = (report.call as any)?.type;
+        const callType = (reportWithImputedCosts.call as any)?.type;
         if (callType !== 'webCall') {
             // Use after() to run Twilio cost check asynchronously after response is sent
             after(async () => {
-                await getCallTwilioCost(report, callSid, existingCallRecord?.id);
+                await getCallTwilioCost(reportWithImputedCosts, callSid, existingCallRecord?.id);
             });
             // Send meter event for usage-based billing
-            await sendMeterEventForCall(report, agent.organization_id);
+            await sendMeterEventForCall(reportWithImputedCosts, agent.organization_id);
         } else {
             console.log('Skipping Twilio cost and Stripe billing for webCall type');
         }
