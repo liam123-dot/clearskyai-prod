@@ -137,8 +137,44 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const contextBlock = contextParts.join('\n')
 
+    // Validate tool references in system prompt
+    const toolValidationWarnings: string[] = []
+    const attachedToolNames = tools.map(t => t.name.toLowerCase())
+    
+    if (currentPrompt) {
+      // Extract potential tool names from the current prompt
+      // Look for common patterns like tool mentions, function calls, etc.
+      const toolNamePattern = /\b(call|use|execute|trigger|invoke)\s+(?:the\s+)?["']?([a-zA-Z0-9_\-\s]+?)["']?(?:\s|\.|\(|,|$)/gi
+      const mentions = [...currentPrompt.matchAll(toolNamePattern)]
+      
+      const mentionedToolNames = new Set<string>()
+      mentions.forEach(match => {
+        const toolName = match[2].trim().toLowerCase()
+        if (toolName && toolName.length > 2) { // Filter out very short strings
+          mentionedToolNames.add(toolName)
+        }
+      })
+
+      // Check for tools in prompt that aren't attached
+      mentionedToolNames.forEach(mentionedTool => {
+        const isAttached = attachedToolNames.some(attached => 
+          attached.includes(mentionedTool) || mentionedTool.includes(attached)
+        )
+        
+        if (!isAttached) {
+          toolValidationWarnings.push(`⚠️ Tool "${mentionedTool}" is referenced in the system prompt but is NOT attached to this agent. This will cause the agent to fail when trying to use it.`)
+        }
+      })
+    }
+
+    // Build warning section
+    let warningSection = ''
+    if (toolValidationWarnings.length > 0) {
+      warningSection = `\n\n=== ⚠️ VALIDATION WARNINGS ===\n${toolValidationWarnings.join('\n')}\n`
+    }
+
     // System prompt for the AI assistant
-    const systemPrompt = `You are an expert AI assistant helping to design and edit voice agent system prompts.
+    const systemPrompt = `You are an expert AI assistant helping to design and edit voice agent system prompts.${warningSection}
 
 CONTEXT:
 ${contextBlock}
@@ -264,6 +300,7 @@ Guidelines:
 - Structure prompts into clear sections (Identity, Style, Response Guidelines, Task, Error Handling)
 - Include explicit wait points and conditional logic for complex flows
 - Remember silent transfers - no text response when transferring calls
+- **CRITICAL:** Flag and warn about any tool references in the system prompt that don't match attached tools - the user should resolve these mismatches
 
 Remember: The user can apply your suggested prompt updates directly, so always provide complete, production-ready prompts.`
 
@@ -284,4 +321,3 @@ Remember: The user can apply your suggested prompt updates directly, so always p
     )
   }
 }
-
