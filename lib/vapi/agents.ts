@@ -239,3 +239,85 @@ export async function updateAgentWebhookWithVapiAssistantId(vapiAssistantId: str
         serverMessages: serverMessages as any
     });
 }
+
+/**
+ * Assigns or unassigns an agent to/from an organization
+ * @param vapi_assistant_id - The VAPI assistant ID
+ * @param organization_id - The organization ID to assign to, or null to unassign
+ * @returns Object with success status, assigned boolean, and agent data if assigned
+ */
+export async function assignAgentToOrganization(
+    vapi_assistant_id: string,
+    organization_id: string | null
+): Promise<{ success: boolean; assigned: boolean; agent?: { id: string; vapi_assistant_id: string; organization_id: string } }> {
+    const supabase = await createServiceClient();
+
+    // If organization_id is null, delete the agent assignment
+    if (!organization_id) {
+        const { error } = await supabase
+            .from('agents')
+            .delete()
+            .eq('vapi_assistant_id', vapi_assistant_id);
+
+        if (error) {
+            console.error('Error unassigning agent:', error);
+            throw new Error('Failed to unassign agent');
+        }
+
+        return { success: true, assigned: false };
+    }
+
+    // Check if agent already exists
+    const { data: existing } = await supabase
+        .from('agents')
+        .select('id, organization_id')
+        .eq('vapi_assistant_id', vapi_assistant_id)
+        .single();
+
+    let agent;
+
+    if (existing) {
+        // Update existing agent
+        const { data: updatedAgent, error } = await supabase
+            .from('agents')
+            .update({ organization_id })
+            .eq('vapi_assistant_id', vapi_assistant_id)
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error updating agent:', error);
+            throw new Error('Failed to update agent');
+        }
+
+        agent = updatedAgent;
+    } else {
+        // Create new agent
+        const { data: newAgent, error } = await supabase
+            .from('agents')
+            .insert({ vapi_assistant_id, organization_id })
+            .select()
+            .single();
+
+        if (error) {
+            console.error('Error creating agent:', error);
+            throw new Error('Failed to create agent');
+        }
+
+        agent = newAgent;
+    }
+
+    // Update webhook configuration
+    await updateAgentWebhookWithVapiAssistantId(vapi_assistant_id);
+
+    return {
+        success: true,
+        assigned: true,
+        agent: {
+            id: agent.id,
+            vapi_assistant_id: agent.vapi_assistant_id,
+            organization_id: agent.organization_id,
+        },
+    };
+}
+

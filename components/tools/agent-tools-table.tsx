@@ -7,68 +7,15 @@ import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 import { formatDistanceToNow } from "date-fns"
 import Image from "next/image"
-import { PipedreamActionToolConfig } from "@/lib/tools/types"
 import { useState } from "react"
 import { IconLoader2 } from "@tabler/icons-react"
+import { getToolTypeBadgeColor, getToolTypeLabel, getToolImageSrc } from "@/lib/tools/display"
 
 interface AgentToolsTableProps {
   tools: Tool[]
   slug: string
   agentId: string
   onDetach?: (tool: Tool) => Promise<void>
-}
-
-function getToolTypeBadgeColor(type: Tool['type']) {
-  switch (type) {
-    case 'query':
-      return 'bg-purple-50 text-purple-700 border-purple-200'
-    case 'sms':
-      return 'bg-blue-50 text-blue-700 border-blue-200'
-    case 'apiRequest':
-      return 'bg-green-50 text-green-700 border-green-200'
-    case 'transferCall':
-      return 'bg-orange-50 text-orange-700 border-orange-200'
-    case 'externalApp':
-      return 'bg-slate-50 text-slate-700 border-slate-200'
-    case 'pipedream_action':
-      return 'bg-slate-50 text-slate-700 border-slate-200'
-    default:
-      return 'bg-slate-50 text-slate-700 border-slate-200'
-  }
-}
-
-function getToolTypeLabel(type: Tool['type'], tool?: Tool): string {
-  // For Pipedream actions, show app name and action name
-  if (type === 'pipedream_action' && tool?.config_metadata) {
-    const config = tool.config_metadata as unknown as PipedreamActionToolConfig
-    if (config.pipedreamMetadata?.appName && config.pipedreamMetadata?.actionName) {
-      return `${config.pipedreamMetadata.appName} - ${config.pipedreamMetadata.actionName}`
-    }
-  }
-  
-  // For other types, use standard labels
-  switch (type) {
-    case 'query':
-      return 'Query'
-    case 'sms':
-      return 'SMS'
-    case 'apiRequest':
-      return 'API Request'
-    case 'transferCall':
-      return 'Transfer Call'
-    case 'externalApp':
-      return 'External App'
-    default:
-      return type
-  }
-}
-
-function getToolImageSrc(tool: Tool): string | null {
-  if (tool.type === 'pipedream_action' && tool.config_metadata) {
-    const config = tool.config_metadata as unknown as PipedreamActionToolConfig
-    return config.pipedreamMetadata?.appImgSrc || null
-  }
-  return null
 }
 
 export function AgentToolsTable({ tools, slug, agentId, onDetach }: AgentToolsTableProps) {

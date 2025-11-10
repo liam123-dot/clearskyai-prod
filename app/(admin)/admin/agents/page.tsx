@@ -17,6 +17,8 @@ import {
 import { IconRobot } from "@tabler/icons-react"
 import { AgentsTableBody } from "./agents-table-body"
 import type { Metadata } from "next"
+import { Button } from "@/components/ui/button"
+import Link from "next/link"
 
 export const metadata: Metadata = {
   title: "Agents",
@@ -79,13 +81,20 @@ export default async function AdminAgentsPage() {
     <div className="px-4 lg:px-6">
       <div className="space-y-6">
         <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            {agents.length} {agents.length === 1 ? 'agent' : 'agents'} 
-            {' • '}
-            {assignedCount} assigned
-            {' • '}
-            {unassignedCount} unassigned
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              {agents.length} {agents.length === 1 ? 'agent' : 'agents'} 
+              {' • '}
+              {assignedCount} assigned
+              {' • '}
+              {unassignedCount} unassigned
+            </p>
+            <Button>
+              <Link href="/admin/agents/create">
+                Create Agent
+              </Link>
+            </Button>
+          </div>
           <div className="rounded-lg border overflow-hidden">
             <Table>
               <TableHeader className="bg-muted/50">

@@ -691,6 +691,13 @@ export function PipedreamActionToolForm({
 
     Object.entries(propsConfig).forEach(([key, config]) => {
       const prop = selectedAction.configurableProps?.find((p) => p.name === key)
+      
+      // Filter out props that don't exist or are hidden in the current action schema
+      // This prevents stale props from previous configurations from persisting
+      if (!prop || prop.hidden) {
+        return
+      }
+      
       const isArrayType = prop?.type === 'string[]' || prop?.type === 'integer[]'
 
       if (isArrayType && config.arrayItems) {

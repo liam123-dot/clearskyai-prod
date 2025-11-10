@@ -40,7 +40,9 @@ export default async function OrganizationToolsPage({ params }: ToolsPageProps) 
   let error: string | null = null
 
   try {
-    tools = await getToolsByOrganization(organizationId)
+    const allTools = await getToolsByOrganization(organizationId)
+    // Filter out query type tools
+    tools = allTools.filter(tool => tool.type !== 'query')
   } catch (e) {
     console.error('Error fetching tools:', e)
     error = e instanceof Error ? e.message : 'Failed to load tools'

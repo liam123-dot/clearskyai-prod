@@ -257,199 +257,151 @@ export async function generatePropertyQueryPrompt(
 
   promptParts.push(`# Property Search Tool for ${knowledgeBase.name}`)
   promptParts.push('')
-  promptParts.push(`You have access to a property search tool for ${knowledgeBase.name}. Use this tool to help customers find properties that match their criteria.`)
+  promptParts.push(`This tool searches through our property database to help customers find properties that match their requirements.`)
   promptParts.push('')
-  promptParts.push('## Available Filters')
+  
+  // Location Coverage
+  promptParts.push('## Location Coverage')
   promptParts.push('')
-  promptParts.push('Use these filters to narrow down property searches. Filters can be combined to refine results.')
-  promptParts.push('')
-
-  // Transaction Type
-  promptParts.push('### Transaction Type (IMPORTANT - Use this first to narrow results)')
-  promptParts.push(`- **rent**: ${properties.filter(p => p.transaction_type === 'rent').length} rental properties available`)
-  promptParts.push(`- **sale**: ${properties.filter(p => p.transaction_type === 'sale').length} properties for sale available`)
-  promptParts.push('')
-
-  // Bedrooms
-  if (beds.length > 0) {
-    promptParts.push('### Bedrooms')
-    promptParts.push(`Available options: ${beds.join(', ')}`)
-    promptParts.push(`Use the "beds" filter to specify the number of bedrooms.`)
+  if (locationKeywords.cities.length > 0 || locationKeywords.districts.length > 0) {
+    if (locationKeywords.cities.length > 0) {
+      promptParts.push(`**Cities**: ${locationKeywords.cities.join(', ')}`)
+    }
+    if (locationKeywords.districts.length > 0) {
+      promptParts.push(`**Districts**: ${locationKeywords.districts.join(', ')}`)
+    }
     promptParts.push('')
-
-    // Show distribution
+    promptParts.push('The tool uses intelligent location matching:')
+    promptParts.push('- Searches by city names, district names, postcodes, or street names')
+    promptParts.push('- Uses Google Maps geocoding to find locations and searches within a specified radius (default 25km)')
+    promptParts.push('- Automatically filters out non-UK locations')
+    promptParts.push('- If no exact matches found, performs fuzzy search against property addresses')
+    promptParts.push('- Returns properties sorted by distance (nearest first)')
+    promptParts.push('- **Important**: Always inform users of the distance when properties are significantly far from their requested location')
+  } else {
+    promptParts.push('Location data not yet available. Use the location filter to search by any UK city, district, postcode, or street name.')
+  }
+  promptParts.push('')
+  
+  // Property Inventory
+  promptParts.push('## Property Inventory')
+  promptParts.push('')
+  promptParts.push(`**Total Properties**: ${properties.length}`)
+  
+  // Transaction types with distribution
+  const rentalCount = properties.filter(p => p.transaction_type === 'rent').length
+  const saleCount = properties.filter(p => p.transaction_type === 'sale').length
+  
+  if (rentalCount > 0 || saleCount > 0) {
+    promptParts.push('')
+    promptParts.push('### Transaction Types')
+    if (rentalCount > 0) {
+      promptParts.push(`- **Rentals**: ${rentalCount} properties`)
+      if (rentalMin !== null && rentalMax !== null) {
+        promptParts.push(`  - Price range: ${formatPrice(rentalMin, true)} - ${formatPrice(rentalMax, true)}`)
+      }
+    }
+    if (saleCount > 0) {
+      promptParts.push(`- **Sales**: ${saleCount} properties`)
+      if (saleMin !== null && saleMax !== null) {
+        promptParts.push(`  - Price range: ${formatPrice(saleMin, false)} - ${formatPrice(saleMax, false)}`)
+      }
+    }
+  }
+  
+  // Bedroom distribution
+  if (beds.length > 0) {
+    promptParts.push('')
+    promptParts.push('### Bedroom Distribution')
     const bedCounts = beds.map(bed => {
       const count = properties.filter(p => p.beds === bed).length
-      return `${bed} bed${bed !== 1 ? 's' : ''}: ${count} properties`
+      return `  - ${bed} bed${bed !== 1 ? 's' : ''}: ${count} properties`
     })
-    promptParts.push(`Property distribution: ${bedCounts.join(', ')}`)
-    promptParts.push('')
+    promptParts.push(bedCounts.join('\n'))
   }
-
-  // Bathrooms
-  if (baths.length > 0) {
-    promptParts.push('### Bathrooms')
-    promptParts.push(`Available options: ${baths.join(', ')}`)
-    promptParts.push(`Use the "baths" filter to specify the number of bathrooms.`)
-    promptParts.push('')
-  }
-
-  // Property Types
+  
+  // Property types
   if (propertyTypes.length > 0) {
-    promptParts.push('### Property Types')
-    promptParts.push(`Available types: ${propertyTypes.join(', ')}`)
-    promptParts.push(`Use the "property_type" filter to filter by property type.`)
     promptParts.push('')
+    promptParts.push('### Property Types Available')
+    promptParts.push(`${propertyTypes.join(', ')}`)
   }
-
-  // Furnished Type
+  
+  // Furnishing options
   if (furnishedTypes.length > 0) {
-    promptParts.push('### Furnishing Status')
-    promptParts.push(`Available options: ${furnishedTypes.join(', ')}`)
-    promptParts.push(`Use the "furnished_type" filter for rental properties.`)
     promptParts.push('')
+    promptParts.push('### Furnishing Options')
+    promptParts.push(`${furnishedTypes.join(', ')}`)
   }
-
-  // Price Ranges
-  promptParts.push('### Price Ranges')
-  if (rentalMin !== null && rentalMax !== null) {
-    promptParts.push(`**Rentals**: ${formatPrice(rentalMin, true)} - ${formatPrice(rentalMax, true)}`)
-  }
-  if (saleMin !== null && saleMax !== null) {
-    promptParts.push(`**Sales**: ${formatPrice(saleMin, false)} - ${formatPrice(saleMax, false)}`)
-  }
+  
   promptParts.push('')
-  promptParts.push('Use the "price" filter with one of these formats:')
-  promptParts.push('- `{ "filter": "under", "value": 2000 }` - Properties under £2000/month or £2000')
-  promptParts.push('- `{ "filter": "over", "value": 500000 }` - Properties over £500,000')
-  promptParts.push('- `{ "filter": "between", "value": 1000, "max_value": 2000 }` - Properties between £1000-£2000')
+  promptParts.push('## How This Tool Works')
   promptParts.push('')
-
-  // Location Filters
-  promptParts.push('### Location Search')
+  promptParts.push('The property search tool allows you to filter properties using multiple criteria:')
   promptParts.push('')
-  promptParts.push('**IMPORTANT: Always use the "location" filter for location-based searches.**')
-  promptParts.push('')
-  promptParts.push('- Use the **"location"** filter with any location query - this can be:')
-  promptParts.push('  - City names (e.g., "London", "Manchester", "Birmingham")')
-  promptParts.push('  - District/area names (e.g., "Kensington", "Westminster", "Salford")')
-  promptParts.push('  - Postcodes (e.g., "SW1A 1AA", "M1 1AA")')
-  promptParts.push('  - Street names (e.g., "East Street", "Main Street")')
-  promptParts.push('  - **Important**: When searching for streets or specific locations, include the city or general area context when possible (e.g., "East Street, London" instead of just "East Street") to avoid matching streets in other countries')
-  promptParts.push('  - Any UK location the customer mentions')
-  promptParts.push('')
-  promptParts.push('- The system uses Google Maps geocoding to find the location and searches for properties within the specified radius')
-  promptParts.push('- **The system automatically filters out non-UK locations** - if geocoding finds a location outside the UK, it will fall back to searching property addresses directly')
-  promptParts.push('- **If no properties are found within the default radius, the system automatically performs a fuzzy search** against property addresses with a wider radius (up to 50km)')
-  promptParts.push('- Results are automatically sorted by distance from the location center (nearest first)')
-  promptParts.push('- **Each property in the results will include a "distance_km" field** showing how far it is from the requested location center')
-  promptParts.push('- **IMPORTANT**: Always check the distance_km value and inform users if a property is significantly far from their requested location (e.g., "This property is 15km away from London" or "Note: This property is 20km from Manchester, which might be further than you wanted")')
-  promptParts.push('- This means even if an exact match isn\'t found, you\'ll get the nearest properties which is usually what customers want')
-  promptParts.push('- Default search radius is 25km - use **"location_radius_km"** to adjust:')
-  promptParts.push('  - Smaller radius (5-10km) for more precise, local searches')
-  promptParts.push('  - Larger radius (25-50km) for broader area coverage')
-  promptParts.push('')
-  promptParts.push('**Do NOT use city, district, or postcode filters - always use "location" instead.**')
-  promptParts.push('')
-
-  // Other Filters
-  promptParts.push('### Other Filters')
-  const hasStationCount = properties.filter(p => p.has_nearby_station === true).length
-  if (hasStationCount > 0) {
-    promptParts.push(`- **has_nearby_station**: ${hasStationCount} properties have nearby stations`)
+  promptParts.push('**Available Filters:**')
+  promptParts.push('- `transaction_type` - "rent" or "sale" (ALWAYS use this first)')
+  promptParts.push('- `location` - Any UK city, district, postcode, or street name')
+  promptParts.push('- `location_radius_km` - Search radius in km (default: 25km, range: 5-50km)')
+  promptParts.push('- `beds` - Number of bedrooms')
+  promptParts.push('- `baths` - Number of bathrooms')
+  promptParts.push('- `property_type` - Type of property (e.g., "House", "Flat")')
+  promptParts.push('- `furnished_type` - Furnishing status (for rentals)')
+  promptParts.push('- `price` - Price filter with options:')
+  promptParts.push('  - `{ "filter": "under", "value": 2000 }` - Under £2000')
+  promptParts.push('  - `{ "filter": "over", "value": 500000 }` - Over £500,000')
+  promptParts.push('  - `{ "filter": "between", "value": 1000, "max_value": 2000 }` - Between £1000-£2000')
+  if (properties.filter(p => p.has_nearby_station === true).length > 0) {
+    promptParts.push('- `has_nearby_station` - Properties near train/tube stations')
   }
   promptParts.push('')
-
-  // Usage Instructions
-  promptParts.push('## How to Use the Tool')
+  promptParts.push('## How to Use This Tool')
   promptParts.push('')
-  promptParts.push('1. **Start with transaction type**: Always ask if they\'re looking to rent or buy')
-  promptParts.push('2. **Gather criteria**: Ask about bedrooms, bathrooms, location preferences, and budget')
-  promptParts.push('3. **Use filters strategically**: Start with filters that reduce results the most (transaction type, location, beds)')
-  promptParts.push('4. **Combine filters**: Multiple filters can be combined for precise results')
+  promptParts.push('1. **Start with transaction type** - Always ask if they\'re looking to rent or buy')
+  promptParts.push('2. **Gather key criteria** - Location, bedrooms, and budget are most important')
+  promptParts.push('3. **Use filters strategically** - Start broad, then narrow down with additional filters')
+  promptParts.push('4. **Watch the totalCount** - The tool returns up to 3 properties plus a totalCount:')
+  promptParts.push('   - If totalCount > 10: Use refinements to narrow down before showing properties')
+  promptParts.push('   - If totalCount 4-10: Suggest refinements but can show results')
+  promptParts.push('   - If totalCount ≤ 3: Present properties directly')
+  promptParts.push('5. **Use refinements** - The tool provides smart suggestions to narrow results')
+  promptParts.push('6. **Check distances** - When using location filter, always inform users of property distances')
   promptParts.push('')
-  promptParts.push('## Understanding Refinements (IMPORTANT)')
+  promptParts.push('## Handling Results & Refinements')
   promptParts.push('')
-  promptParts.push('**The tool returns up to 3 properties along with a `refinements` array and `totalCount`.**')
+  promptParts.push('The tool returns:')
+  promptParts.push('- Up to 3 matching properties')
+  promptParts.push('- `totalCount` - Total number of matches')
+  promptParts.push('- `refinements` - Suggested filters to narrow results (when totalCount > 3)')
+  promptParts.push('- `distance_km` - Distance from requested location (when using location filter)')
   promptParts.push('')
-  promptParts.push('### When to Use Refinements:')
+  promptParts.push('**When presenting refinements to users:**')
+  promptParts.push('- Be conversational: "I found 45 properties. Would you like to filter by number of bedrooms? I have options for 2 beds (15 properties) or 3 beds (20 properties)."')
+  promptParts.push('- Group similar options naturally')
+  promptParts.push('- Prioritize the most useful refinements (bedrooms, property type, price)')
+  promptParts.push('- Keep narrowing until totalCount ≤ 10')
   promptParts.push('')
-  promptParts.push('- **If totalCount > 10**: You MUST narrow down the search using refinements before presenting properties to the customer')
-  promptParts.push('- **If totalCount between 4-10**: Suggest the customer narrow down further, but you can present the results if they prefer')
-  promptParts.push('- **If totalCount ≤ 3**: Present the properties directly - no refinement needed')
-  promptParts.push('')
-  promptParts.push('### How Refinements Work:')
-  promptParts.push('')
-  promptParts.push('Each refinement suggestion includes:')
-  promptParts.push('- `filterName`: The filter to apply (e.g., "beds", "transaction_type", "property_type")')
-  promptParts.push('- `filterValue`: The value for that filter')
-  promptParts.push('- `resultCount`: How many properties match if this refinement is added')
-  promptParts.push('')
-  promptParts.push('### Example Refinements Response:')
-  promptParts.push('```json')
-  promptParts.push('{')
-  promptParts.push('  "properties": [/* 3 properties */],')
-  promptParts.push('  "totalCount": 45,')
-  promptParts.push('  "refinements": [')
-  promptParts.push('    { "filterName": "beds", "filterValue": 2, "resultCount": 15 },')
-  promptParts.push('    { "filterName": "beds", "filterValue": 3, "resultCount": 20 },')
-  promptParts.push('    { "filterName": "property_type", "filterValue": "Flats", "resultCount": 30 },')
-  promptParts.push('    { "filterName": "furnished_type", "filterValue": "Furnished", "resultCount": 12 }')
-  promptParts.push('  ]')
-  promptParts.push('}')
-  promptParts.push('```')
-  promptParts.push('')
-  promptParts.push('### How to Present Refinements to Users:')
-  promptParts.push('')
-  promptParts.push('When totalCount is high (>10), say something like:')
-  promptParts.push('')
-  promptParts.push('*"I found 45 properties matching your criteria. To help narrow this down, I can filter by:*')
-  promptParts.push('- *Number of bedrooms: 2 beds (15 properties) or 3 beds (20 properties)*')
-  promptParts.push('- *Property type: Flats (30 properties)*')
-  promptParts.push('- *Furnished: Furnished properties (12 properties)*')
-  promptParts.push('')
-  promptParts.push('*Which would you prefer, or would you like to add another criteria like location or price range?"*')
-  promptParts.push('')
-  promptParts.push('### Key Refinement Rules:')
-  promptParts.push('')
-  promptParts.push('1. **Always check totalCount first** - Don\'t present properties if totalCount > 10')
-  promptParts.push('2. **Present refinements conversationally** - Don\'t just dump JSON, make it natural')
-  promptParts.push('3. **Group similar refinements** - e.g., "2, 3, or 4 bedrooms" instead of listing separately')
-  promptParts.push('4. **Prioritize the most useful refinements** - transaction_type, beds, property_type, location are usually most helpful')
-  promptParts.push('5. **Keep narrowing until totalCount ≤ 10** - Once narrowed down enough, present the properties')
-  promptParts.push('6. **If user says "show me what you have" with high count** - Explain you\'re only showing 3 of the total and suggest specific refinements')
-  promptParts.push('')
-  promptParts.push('## Response Format')
-  promptParts.push('')
-  promptParts.push('When you use the location filter, each property in the response will include:')
-  promptParts.push('- **distance_km**: The distance in kilometers from the requested location center')
-  promptParts.push('- All other standard property fields (beds, baths, price, address, etc.)')
-  promptParts.push('')
-  promptParts.push('**Always check and communicate distance information to users** when presenting properties:')
+  promptParts.push('**When presenting distance information:**')
   promptParts.push('- Properties within 5km: "This property is [X]km from [location]"')
   promptParts.push('- Properties 5-15km away: "This property is [X]km from [location], which is a bit further out"')
   promptParts.push('- Properties over 15km away: "Note: This property is [X]km from [location], which is quite far from the area you mentioned. Would you like me to search for properties closer to [location]?"')
   promptParts.push('')
-  promptParts.push('## Example Queries')
+  promptParts.push('## Example Usage')
   promptParts.push('')
-  promptParts.push('- "Find 2 bedroom rental properties in London under £2000/month"')
-  promptParts.push('  → Use: `{ "transaction_type": "rent", "beds": 2, "location": "London", "price": { "filter": "under", "value": 2000 } }`')
+  promptParts.push('**Customer**: "I\'m looking for a 2 bedroom flat to rent in London under £2000 per month"')
   promptParts.push('')
-  promptParts.push('- "Show me 3 bedroom houses for sale in Manchester"')
-  promptParts.push('  → Use: `{ "transaction_type": "sale", "beds": 3, "location": "Manchester", "property_type": "Houses" }`')
+  promptParts.push('**Search with**: ')
+  promptParts.push('- transaction_type: "rent"')
+  promptParts.push('- beds: 2')
+  promptParts.push('- location: "London"')
+  promptParts.push('- property_type: "Flat"')
+  promptParts.push('- price: { "filter": "under", "value": 2000 }')
   promptParts.push('')
-  promptParts.push('- "Properties with 2+ bedrooms, 2 bathrooms, furnished, near a station in Kensington"')
-  promptParts.push('  → Use: `{ "beds": 2, "baths": 2, "furnished_type": "Furnished", "has_nearby_station": true, "location": "Kensington" }`')
-  promptParts.push('')
-  promptParts.push('- "Properties near SW1A postcode"')
-  promptParts.push('  → Use: `{ "location": "SW1A", "location_radius_km": 5 }` (smaller radius for postcode searches)')
-  promptParts.push('')
-
-  // API Endpoint
-  promptParts.push('## API Endpoint')
-  promptParts.push(`POST /api/query/estate-agent/${knowledgeBaseId}`)
-  promptParts.push('')
-  promptParts.push('The tool will return up to 3 matching properties sorted by relevance. Use the filters above to construct your query.')
+  promptParts.push('**If results return 50 properties**, use refinements to ask:')
+  promptParts.push('"I found 50 two-bedroom flats in London under £2000/month. To narrow this down, would you like to specify:')
+  promptParts.push('- A more specific area within London?')
+  promptParts.push('- Furnished or unfurnished?')
+  promptParts.push('- Properties near a train station?"')
   promptParts.push('')
 
   return {

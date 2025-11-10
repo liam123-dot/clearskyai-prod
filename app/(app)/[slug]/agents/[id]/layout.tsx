@@ -13,6 +13,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { PromptEditorButton } from "@/components/agents/prompt-editor-button"
 
 interface AgentLayoutProps {
   params: Promise<{ slug: string; id: string }>
@@ -58,12 +59,15 @@ export default async function AgentLayout({ params, children }: AgentLayoutProps
           <div className="flex items-center gap-2">
             <TestAgentButtonWrapper slug={slug} agentId={id} assistantId={agent.vapi_assistant_id} />
             {isAdmin && (
-              <Button asChild variant="outline">
-                <Link href={vapiDashboardUrl} target="_blank" rel="noopener noreferrer">
-                  View in Vapi
-                  <ExternalLink className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
+              <>
+                <Button asChild variant="outline">
+                  <Link href={vapiDashboardUrl} target="_blank" rel="noopener noreferrer">
+                    View in Vapi
+                    <ExternalLink className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+                <PromptEditorButton agentId={id} slug={slug} />
+              </>
             )}
           </div>
         </div>

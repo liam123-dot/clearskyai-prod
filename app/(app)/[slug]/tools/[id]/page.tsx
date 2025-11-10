@@ -131,7 +131,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
           href={`/${slug}/tools`}
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
         >
-          <IconArrowLeft className="w-4 h-4 mr-1" />
+          <IconArrowLeft className="w-4 h-4 mr-1" />= 
           Back to Tools
         </Link>
 

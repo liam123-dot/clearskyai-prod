@@ -15,64 +15,11 @@ import { formatDistanceToNow } from "date-fns"
 import Image from "next/image"
 import { IconDotsVertical, IconCopy } from "@tabler/icons-react"
 import { toast } from "sonner"
-import { PipedreamActionToolConfig } from "@/lib/tools/types"
+import { getToolTypeBadgeColor, getToolTypeLabel, getToolImageSrc } from "@/lib/tools/display"
 
 interface ToolsTableProps {
   tools: Tool[]
   slug: string
-}
-
-function getToolTypeBadgeColor(type: Tool['type']) {
-  switch (type) {
-    case 'query':
-      return 'bg-purple-100 text-purple-700 hover:bg-purple-100'
-    case 'sms':
-      return 'bg-blue-100 text-blue-700 hover:bg-blue-100'
-    case 'apiRequest':
-      return 'bg-green-100 text-green-700 hover:bg-green-100'
-    case 'transferCall':
-      return 'bg-orange-100 text-orange-700 hover:bg-orange-100'
-    case 'externalApp':
-      return 'bg-gray-100 text-gray-700 hover:bg-gray-100'
-    case 'pipedream_action':
-      return 'bg-gray-100 text-gray-700 hover:bg-gray-100'
-    default:
-      return 'bg-gray-100 text-gray-700 hover:bg-gray-100'
-  }
-}
-
-function getToolTypeLabel(type: Tool['type'], tool?: Tool): string {
-  // For Pipedream actions, show app name and action name
-  if (type === 'pipedream_action' && tool?.config_metadata) {
-    const config = tool.config_metadata as unknown as PipedreamActionToolConfig
-    if (config.pipedreamMetadata?.appName && config.pipedreamMetadata?.actionName) {
-      return `${config.pipedreamMetadata.appName} - ${config.pipedreamMetadata.actionName}`
-    }
-  }
-  
-  // For other types, use standard labels
-  switch (type) {
-    case 'query':
-      return 'Query'
-    case 'sms':
-      return 'SMS'
-    case 'apiRequest':
-      return 'API Request'
-    case 'transferCall':
-      return 'Transfer Call'
-    case 'externalApp':
-      return 'External App'
-    default:
-      return type
-  }
-}
-
-function getToolImageSrc(tool: Tool): string | null {
-  if (tool.type === 'pipedream_action' && tool.config_metadata) {
-    const config = tool.config_metadata as unknown as PipedreamActionToolConfig
-    return config.pipedreamMetadata?.appImgSrc || null
-  }
-  return null
 }
 
 export function ToolsTable({ tools, slug }: ToolsTableProps) {
@@ -143,7 +90,7 @@ export function ToolsTable({ tools, slug }: ToolsTableProps) {
                 <TableCell>
                   <Badge
                     variant="secondary"
-                    className={getToolTypeBadgeColor(tool.type)}
+                    className={`${getToolTypeBadgeColor(tool.type)} hover:opacity-80`}
                   >
                     {typeLabel}
                   </Badge>
