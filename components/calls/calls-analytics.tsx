@@ -75,6 +75,8 @@ const ROUTING_STATUSES = [
 const TIME_GROUPINGS = [
   { value: '15min', label: '15 Min' },
   { value: 'hour', label: 'Hour' },
+  { value: '6h', label: '6 Hours' },
+  { value: '12h', label: '12 Hours' },
   { value: 'day', label: 'Day' },
   { value: 'week', label: 'Week' },
   { value: 'month', label: 'Month' },
@@ -239,18 +241,21 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
   const allowedGroupings = useMemo(() => {
     const hours = (dateRange.to.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60)
     
-    if (hours <= 24) {
-      // 24 hours or less: 15min and hour
-      return ['15min', 'hour']
+    if (hours <= 12) {
+      // 12 hours or less: 15min, 6h, 12h, and hour
+      return ['15min', '6h', '12h', 'hour']
+    } else if (hours <= 24) {
+      // 24 hours or less: 15min, 6h, 12h, and hour
+      return ['15min', '6h', '12h', 'hour']
     } else if (dateRangeDays <= 7) {
-      // Up to 1 week: 15min, hour, and day
-      return ['15min', 'hour', 'day']
+      // Up to 1 week: 15min, 6h, 12h, hour, and day
+      return ['15min', '6h', '12h', 'hour', 'day']
     } else if (dateRangeDays <= 28) {
-      // Up to 4 weeks: hour, day, week
-      return ['hour', 'day', 'week']
+      // Up to 4 weeks: 6h, 12h, hour, day, week
+      return ['6h', '12h', 'hour', 'day', 'week']
     } else {
       // More than 4 weeks: all options except 15min
-      return ['hour', 'day', 'week', 'month']
+      return ['6h', '12h', 'hour', 'day', 'week', 'month']
     }
   }, [dateRangeDays, dateRange.from, dateRange.to])
 
@@ -486,6 +491,9 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
     switch (timeGrouping) {
       case '15min':
         return new Date(period).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      case '6h':
+      case '12h':
+        return new Date(period).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric' })
       case 'hour':
         return new Date(period).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric' })
       case 'day':
@@ -658,14 +666,19 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
               const newRangeHours = (newRange.to.getTime() - newRange.from.getTime()) / (1000 * 60 * 60)
               let appropriateGrouping = timeGrouping
               
-              if (newRangeHours <= 24) {
+              if (newRangeHours <= 12) {
+                // If current is not allowed for <= 12 hours, default to 12h
+                if (!['15min', '6h', '12h', 'hour'].includes(timeGrouping)) {
+                  appropriateGrouping = '12h'
+                }
+              } else if (newRangeHours <= 24) {
                 // If current is not allowed for <= 24 hours, default to hour
-                if (!['15min', 'hour'].includes(timeGrouping)) {
+                if (!['15min', '6h', '12h', 'hour'].includes(timeGrouping)) {
                   appropriateGrouping = 'hour'
                 }
               } else if (newRangeDays <= 7) {
                 // If current is month or week and not allowed, default to day
-                if (!['15min', 'hour', 'day'].includes(timeGrouping)) {
+                if (!['15min', '6h', '12h', 'hour', 'day'].includes(timeGrouping)) {
                   appropriateGrouping = 'day'
                 }
               } else if (newRangeDays <= 28) {
@@ -1000,7 +1013,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                           // Day/week format is YYYY-MM-DD
                           date = new Date(label + 'T00:00:00Z')
                         } else {
-                          // 15min/hour format is full ISO string
+                          // 15min/hour/6h/12h format is full ISO string
                           date = new Date(label)
                         }
                         
@@ -1014,6 +1027,8 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                               minute: '2-digit',
                               hour12: true
                             })
+                          case '6h':
+                          case '12h':
                           case 'hour':
                             return date.toLocaleString('en-US', { 
                               month: 'short', 
@@ -1122,7 +1137,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                           // Day/week format is YYYY-MM-DD
                           date = new Date(label + 'T00:00:00Z')
                         } else {
-                          // 15min/hour format is full ISO string
+                          // 15min/hour/6h/12h format is full ISO string
                           date = new Date(label)
                         }
                         
@@ -1136,6 +1151,8 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                               minute: '2-digit',
                               hour12: true
                             })
+                          case '6h':
+                          case '12h':
                           case 'hour':
                             return date.toLocaleString('en-US', { 
                               month: 'short', 
@@ -1245,7 +1262,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                           // Day/week format is YYYY-MM-DD
                           date = new Date(label + 'T00:00:00Z')
                         } else {
-                          // 15min/hour format is full ISO string
+                          // 15min/hour/6h/12h format is full ISO string
                           date = new Date(label)
                         }
                         
@@ -1259,6 +1276,8 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                               minute: '2-digit',
                               hour12: true
                             })
+                          case '6h':
+                          case '12h':
                           case 'hour':
                             return date.toLocaleString('en-US', { 
                               month: 'short', 
@@ -1369,7 +1388,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                             // Day/week format is YYYY-MM-DD
                             date = new Date(label + 'T00:00:00Z')
                           } else {
-                            // 15min/hour format is full ISO string
+                            // 15min/hour/6h/12h format is full ISO string
                             date = new Date(label)
                           }
                           
@@ -1383,6 +1402,8 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                                 minute: '2-digit',
                                 hour12: true
                               })
+                            case '6h':
+                            case '12h':
                             case 'hour':
                               return date.toLocaleString('en-US', { 
                                 month: 'short', 
@@ -1397,12 +1418,12 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                                 day: 'numeric',
                                 year: 'numeric'
                               })
-                            case 'week':
-                              return `Week of ${date.toLocaleDateString('en-US', { 
-                                month: 'short', 
-                                day: 'numeric',
-                                year: 'numeric'
-                              })}`
+                              case 'week':
+                                return `Week of ${date.toLocaleDateString('en-US', { 
+                                  month: 'short', 
+                                  day: 'numeric',
+                                  year: 'numeric'
+                                })}`
                             case 'month':
                               return date.toLocaleDateString('en-US', { 
                                 month: 'short', 
@@ -1494,7 +1515,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                             // Day/week format is YYYY-MM-DD
                             date = new Date(label + 'T00:00:00Z')
                           } else {
-                            // 15min/hour format is full ISO string
+                            // 15min/hour/6h/12h format is full ISO string
                             date = new Date(label)
                           }
                           
@@ -1508,6 +1529,8 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                                 minute: '2-digit',
                                 hour12: true
                               })
+                            case '6h':
+                            case '12h':
                             case 'hour':
                               return date.toLocaleString('en-US', { 
                                 month: 'short', 

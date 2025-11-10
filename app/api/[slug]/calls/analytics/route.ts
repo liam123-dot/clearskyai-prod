@@ -149,6 +149,20 @@ function groupCallsByTimePeriod(
         min15Date.setMinutes(Math.floor(minutes / 15) * 15, 0, 0)
         periodKey = min15Date.toISOString()
         break
+      case '6h':
+        // Truncate to 6-hour interval (0, 6, 12, 18)
+        const sixHourDate = new Date(date)
+        const sixHour = sixHourDate.getHours()
+        sixHourDate.setHours(Math.floor(sixHour / 6) * 6, 0, 0, 0)
+        periodKey = sixHourDate.toISOString()
+        break
+      case '12h':
+        // Truncate to 12-hour interval (0, 12)
+        const twelveHourDate = new Date(date)
+        const twelveHour = twelveHourDate.getHours()
+        twelveHourDate.setHours(Math.floor(twelveHour / 12) * 12, 0, 0, 0)
+        periodKey = twelveHourDate.toISOString()
+        break
       case 'hour':
         // Truncate to hour
         const hourDate = new Date(date)
@@ -241,6 +255,16 @@ function groupCallsByTimePeriod(
           const minutes = min15Date.getMinutes()
           min15Date.setMinutes(Math.floor(minutes / 15) * 15)
           return min15Date.toISOString()
+        case '6h':
+          const sixHourDate = new Date(date)
+          const sixHour = sixHourDate.getHours()
+          sixHourDate.setHours(Math.floor(sixHour / 6) * 6, 0, 0, 0)
+          return sixHourDate.toISOString()
+        case '12h':
+          const twelveHourDate = new Date(date)
+          const twelveHour = twelveHourDate.getHours()
+          twelveHourDate.setHours(Math.floor(twelveHour / 12) * 12, 0, 0, 0)
+          return twelveHourDate.toISOString()
         case 'hour':
           const hourDate = new Date(date)
           hourDate.setMinutes(0, 0, 0)
@@ -275,6 +299,14 @@ function groupCallsByTimePeriod(
         // For 15min, start from midnight of the start day
         periodStart.setSeconds(0, 0)
         periodStart.setMinutes(0)
+        break
+      case '6h':
+        // For 6h, start from midnight (0:00) of the start day
+        periodStart.setHours(0, 0, 0, 0)
+        break
+      case '12h':
+        // For 12h, start from midnight (0:00) of the start day
+        periodStart.setHours(0, 0, 0, 0)
         break
       case 'hour':
         // For hour, start from midnight of the start day
@@ -313,6 +345,12 @@ function groupCallsByTimePeriod(
       switch (groupBy) {
         case '15min':
           current.setMinutes(current.getMinutes() + 15)
+          break
+        case '6h':
+          current.setHours(current.getHours() + 6)
+          break
+        case '12h':
+          current.setHours(current.getHours() + 12)
           break
         case 'hour':
           current.setHours(current.getHours() + 1)
