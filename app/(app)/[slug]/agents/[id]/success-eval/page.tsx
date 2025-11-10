@@ -16,26 +16,15 @@ export default async function AgentSuccessEvalPage({ params }: SuccessEvalPagePr
   }
 
   // Extract analysisPlan settings - prioritize simple format over plan format
-  const analysisPlan = agent.vapiAssistant.analysisPlan as any
+  const analysisPlan = agent.vapiAssistant?.analysisPlan as any
   
   // Default values
   const DEFAULT_SUCCESS_EVALUATION_PROMPT = "You are an expert call evaluator. You will be given a transcript of a call and the system prompt of the AI participant. Determine if the call was successful based on the objectives inferred from the system prompt."
   const DEFAULT_SUMMARY_PROMPT = "You are an expert note-taker. You will be given a transcript of a call. Summarize the call in 2-3 sentences, if applicable."
   
-  let initialSuccessEvaluationPrompt = ''
-  let initialSummaryPrompt = ''
-  
-  initialSuccessEvaluationPrompt = analysisPlan.successEvaluationPrompt
-  initialSummaryPrompt = analysisPlan.summaryPrompt
-  
-  
-  // Use defaults if nothing was loaded
-  if (!initialSuccessEvaluationPrompt) {
-    initialSuccessEvaluationPrompt = DEFAULT_SUCCESS_EVALUATION_PROMPT
-  }
-  if (!initialSummaryPrompt) {
-    initialSummaryPrompt = DEFAULT_SUMMARY_PROMPT
-  }
+  // Extract prompts from analysisPlan if it exists, otherwise use defaults
+  const initialSuccessEvaluationPrompt = analysisPlan?.successEvaluationPrompt || DEFAULT_SUCCESS_EVALUATION_PROMPT
+  const initialSummaryPrompt = analysisPlan?.summaryPrompt || DEFAULT_SUMMARY_PROMPT
 
   return (
     <div className="space-y-6">

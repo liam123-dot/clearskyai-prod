@@ -268,12 +268,12 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
       <SheetTrigger asChild>
         <Button variant="outline" className="gap-2">
           <Sparkles className="h-4 w-4" />
-          AI Prompt Editor
+          Prompt Editor
         </Button>
       </SheetTrigger>
       <SheetContent side="right" className="w-full sm:max-w-3xl flex flex-col p-0 gap-0">
         <SheetHeader className="px-6 py-4 border-b">
-          <SheetTitle>AI Prompt Editor</SheetTitle>
+          <SheetTitle>Prompt Editor</SheetTitle>
           <SheetDescription>
             Chat with AI to design and edit your agent's system prompt
           </SheetDescription>
