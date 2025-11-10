@@ -127,32 +127,34 @@ export function ApiRequestToolView({ tool }: ApiRequestToolViewProps) {
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Response Schema</CardTitle>
-          <CardDescription>Expected response structure</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {Object.entries(tool.variableExtractionPlan.schema.properties).map(([key, value]) => (
-              <div key={key} className="border-l-2 border-muted pl-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <code className="text-sm font-medium">{key}</code>
-                  {tool.variableExtractionPlan.schema.required?.includes(key) && (
-                    <Badge variant="destructive" className="text-xs">Required</Badge>
+      {tool.variableExtractionPlan?.schema?.properties && Object.keys(tool.variableExtractionPlan.schema.properties).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Response Schema</CardTitle>
+            <CardDescription>Expected response structure</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {Object.entries(tool.variableExtractionPlan.schema.properties).map(([key, value]) => (
+                <div key={key} className="border-l-2 border-muted pl-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <code className="text-sm font-medium">{key}</code>
+                    {tool.variableExtractionPlan.schema.required?.includes(key) && (
+                      <Badge variant="destructive" className="text-xs">Required</Badge>
+                    )}
+                  </div>
+                  {typeof value === 'object' && 'description' in value && (
+                    <p className="text-sm text-muted-foreground">{value.description as string}</p>
+                  )}
+                  {typeof value === 'object' && 'type' in value && (
+                    <p className="text-xs text-muted-foreground mt-1">Type: {value.type as string}</p>
                   )}
                 </div>
-                {typeof value === 'object' && 'description' in value && (
-                  <p className="text-sm text-muted-foreground">{value.description as string}</p>
-                )}
-                {typeof value === 'object' && 'type' in value && (
-                  <p className="text-xs text-muted-foreground mt-1">Type: {value.type as string}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
