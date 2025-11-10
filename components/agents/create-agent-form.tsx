@@ -17,14 +17,20 @@ import { IconLoader2 } from '@tabler/icons-react'
 import type { Organization } from '@/lib/organizations'
 
 interface CreateAgentFormProps {
-  organizations: Organization[]
+  organizations?: Organization[]
+  lockedOrganizationId?: string
+  lockedOrganizationName?: string
 }
 
-export function CreateAgentForm({ organizations }: CreateAgentFormProps) {
+export function CreateAgentForm({ 
+  organizations = [], 
+  lockedOrganizationId,
+  lockedOrganizationName 
+}: CreateAgentFormProps) {
   const router = useRouter()
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
-  const [organizationId, setOrganizationId] = useState<string>('')
+  const [organizationId, setOrganizationId] = useState<string>(lockedOrganizationId || '')
 
   const handleCreate = async () => {
     if (!name.trim()) {
@@ -32,7 +38,8 @@ export function CreateAgentForm({ organizations }: CreateAgentFormProps) {
       return
     }
 
-    if (!organizationId) {
+    const finalOrganizationId = lockedOrganizationId || organizationId
+    if (!finalOrganizationId) {
       toast.error('Please select an organization')
       return
     }
@@ -44,7 +51,7 @@ export function CreateAgentForm({ organizations }: CreateAgentFormProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
-          organization_id: organizationId,
+          organization_id: finalOrganizationId,
         }),
       })
 
@@ -58,7 +65,9 @@ export function CreateAgentForm({ organizations }: CreateAgentFormProps) {
       
       // Reset form
       setName('')
-      setOrganizationId('')
+      if (!lockedOrganizationId) {
+        setOrganizationId('')
+      }
       
       // Redirect to organization's agent page
       if (data.organization_slug && data.agent_id) {
@@ -79,18 +88,24 @@ export function CreateAgentForm({ organizations }: CreateAgentFormProps) {
     <div className="space-y-6">
       <div className="space-y-2">
         <Label htmlFor="organization">Organization</Label>
-        <Select value={organizationId} onValueChange={setOrganizationId}>
-          <SelectTrigger id="organization">
-            <SelectValue placeholder="Select an organization" />
-          </SelectTrigger>
-          <SelectContent>
-            {organizations.map((org) => (
-              <SelectItem key={org.id} value={org.id}>
-                {org.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {lockedOrganizationId ? (
+          <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm text-muted-foreground">
+            {lockedOrganizationName || 'Organization'}
+          </div>
+        ) : (
+          <Select value={organizationId} onValueChange={setOrganizationId}>
+            <SelectTrigger id="organization">
+              <SelectValue placeholder="Select an organization" />
+            </SelectTrigger>
+            <SelectContent>
+              {organizations.map((org) => (
+                <SelectItem key={org.id} value={org.id}>
+                  {org.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       <div className="space-y-2">

@@ -1,5 +1,6 @@
 import { getAgentsByOrganization, type AssignedAgent } from "@/lib/vapi/agents"
 import { createServiceClient } from "@/lib/supabase/server"
+import { getAuthSession } from "@/lib/auth"
 import { Card, CardContent } from "@/components/ui/card"
 import {
   Empty,
@@ -8,8 +9,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { IconRobot } from "@tabler/icons-react"
+import { Button } from "@/components/ui/button"
+import { IconRobot, IconPlus } from "@tabler/icons-react"
 import { AgentsTable } from "@/components/agents/agents-table"
+import Link from "next/link"
 import type { Metadata } from "next"
 
 interface AgentsPageProps {
@@ -24,6 +27,9 @@ export async function generateMetadata({ params }: AgentsPageProps): Promise<Met
 
 export default async function AgentsPage({ params }: AgentsPageProps) {
   const { slug } = await params
+
+  // Check if user is admin
+  const { isAdmin } = await getAuthSession(slug)
 
   // Get organization ID from slug
   const supabase = await createServiceClient()
@@ -71,6 +77,16 @@ export default async function AgentsPage({ params }: AgentsPageProps) {
   if (agents.length === 0) {
     return (
       <div className="space-y-6">
+        {isAdmin && (
+          <div className="flex justify-end">
+            <Button asChild>
+              <Link href={`/${slug}/agents/create`}>
+                <IconPlus className="mr-2 size-4" />
+                Create Agent
+              </Link>
+            </Button>
+          </div>
+        )}
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -88,10 +104,20 @@ export default async function AgentsPage({ params }: AgentsPageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="space-y-4">
+      <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           {agents.length} {agents.length === 1 ? 'agent' : 'agents'} available
         </p>
+        {isAdmin && (
+          <Button asChild>
+            <Link href={`/${slug}/agents/create`}>
+              <IconPlus className="mr-2 size-4" />
+              Create Agent
+            </Link>
+          </Button>
+        )}
+      </div>
+      <div className="space-y-4">
         <AgentsTable agents={agents} slug={slug} />
       </div>
     </div>
