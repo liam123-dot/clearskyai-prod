@@ -348,35 +348,41 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
               {revenueLoading ? (
                 <Card>
                   <CardContent className="pt-6">
-                    <Skeleton className="h-20 w-full" />
+                    <Skeleton className="h-24 w-full" />
                   </CardContent>
                 </Card>
               ) : revenueData && revenueData.hasActiveSubscription ? (
                 <Card>
-                  <CardContent className="pt-4 pb-4 space-y-2">
+                  <CardContent className="pt-4 pb-4 space-y-3">
                     {revenueData.includedMinutesRate && (
-                      <div className="flex items-center justify-between py-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-muted-foreground">Included</span>
-                          <span className="text-xs text-muted-foreground font-mono">
-                            {revenueData.includedMinutesRate.ratePerMinuteFormatted}/min
-                          </span>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Included ({revenueData.includedMinutesRate.ratePerMinuteFormatted}/min)</span>
+                          <Badge 
+                            variant={revenueData.includedMinutesRate.marginCents >= 0 ? 'default' : 'destructive'}
+                            className="text-xs"
+                          >
+                            {revenueData.includedMinutesRate.marginPercentage >= 0 ? '+' : ''}
+                            {revenueData.includedMinutesRate.marginPercentage.toFixed(1)}%
+                          </Badge>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`font-semibold text-sm ${
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Revenue:</span>
+                          <span className="font-mono">{revenueData.includedMinutesRate.revenueFormatted}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Cost:</span>
+                          <span className="font-mono">£{revenueData.totalCost.toFixed(4)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Margin:</span>
+                          <span className={`font-mono font-semibold ${
                             revenueData.includedMinutesRate.marginCents >= 0 
                               ? 'text-green-600' 
                               : 'text-red-600'
                           }`}>
                             {revenueData.includedMinutesRate.marginFormatted}
                           </span>
-                          <Badge 
-                            variant={revenueData.includedMinutesRate.marginCents >= 0 ? 'default' : 'destructive'}
-                            className="text-xs px-1.5 py-0"
-                          >
-                            {revenueData.includedMinutesRate.marginPercentage >= 0 ? '+' : ''}
-                            {revenueData.includedMinutesRate.marginPercentage.toFixed(1)}%
-                          </Badge>
                         </div>
                       </div>
                     )}
@@ -386,28 +392,34 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
                     )}
                     
                     {revenueData.overageRate && (
-                      <div className="flex items-center justify-between py-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-muted-foreground">Overage</span>
-                          <span className="text-xs text-muted-foreground font-mono">
-                            {revenueData.overageRate.pricePerMinuteFormatted}/min
-                          </span>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Overage ({revenueData.overageRate.pricePerMinuteFormatted}/min)</span>
+                          <Badge 
+                            variant={revenueData.overageRate.marginCents >= 0 ? 'default' : 'destructive'}
+                            className="text-xs"
+                          >
+                            {revenueData.overageRate.marginPercentage >= 0 ? '+' : ''}
+                            {revenueData.overageRate.marginPercentage.toFixed(1)}%
+                          </Badge>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`font-semibold text-sm ${
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Revenue:</span>
+                          <span className="font-mono">{revenueData.overageRate.revenueFormatted}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Cost:</span>
+                          <span className="font-mono">£{revenueData.totalCost.toFixed(4)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Margin:</span>
+                          <span className={`font-mono font-semibold ${
                             revenueData.overageRate.marginCents >= 0 
                               ? 'text-green-600' 
                               : 'text-red-600'
                           }`}>
                             {revenueData.overageRate.marginFormatted}
                           </span>
-                          <Badge 
-                            variant={revenueData.overageRate.marginCents >= 0 ? 'default' : 'destructive'}
-                            className="text-xs px-1.5 py-0"
-                          >
-                            {revenueData.overageRate.marginPercentage >= 0 ? '+' : ''}
-                            {revenueData.overageRate.marginPercentage.toFixed(1)}%
-                          </Badge>
                         </div>
                       </div>
                     )}
