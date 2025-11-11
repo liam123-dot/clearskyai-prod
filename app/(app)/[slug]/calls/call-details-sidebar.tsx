@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
@@ -42,6 +43,8 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
+import type { RevenueData } from "@/app/api/admin/calls/[id]/revenue/route"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface CallDetailsSidebarProps {
   call: Call
@@ -97,6 +100,19 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
         label: "Cost",
       },
     } as ChartConfig)
+
+  // Fetch revenue data for admin users
+  const { data: revenueData, isLoading: revenueLoading } = useQuery<RevenueData>({
+    queryKey: ['call-revenue', call.id],
+    queryFn: async () => {
+      const response = await fetch(`/api/admin/calls/${call.id}/revenue`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch revenue data')
+      }
+      return response.json()
+    },
+    enabled: isAdmin && open,
+  })
 
   useEffect(() => {
     const audio = audioRef.current
@@ -322,6 +338,96 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
                   })}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Revenue - Admin Only */}
+          {isAdmin && (
+            <div className="space-y-3">
+              <h3 className="text-lg font-semibold">Revenue</h3>
+              {revenueLoading ? (
+                <Card>
+                  <CardContent className="pt-6">
+                    <Skeleton className="h-20 w-full" />
+                  </CardContent>
+                </Card>
+              ) : revenueData && revenueData.hasActiveSubscription ? (
+                <Card>
+                  <CardContent className="pt-4 pb-4 space-y-2">
+                    {revenueData.includedMinutesRate && (
+                      <div className="flex items-center justify-between py-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">Included</span>
+                          <span className="text-xs text-muted-foreground font-mono">
+                            {revenueData.includedMinutesRate.ratePerMinuteFormatted}/min
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`font-semibold text-sm ${
+                            revenueData.includedMinutesRate.marginCents >= 0 
+                              ? 'text-green-600' 
+                              : 'text-red-600'
+                          }`}>
+                            {revenueData.includedMinutesRate.marginFormatted}
+                          </span>
+                          <Badge 
+                            variant={revenueData.includedMinutesRate.marginCents >= 0 ? 'default' : 'destructive'}
+                            className="text-xs px-1.5 py-0"
+                          >
+                            {revenueData.includedMinutesRate.marginPercentage >= 0 ? '+' : ''}
+                            {revenueData.includedMinutesRate.marginPercentage.toFixed(1)}%
+                          </Badge>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {revenueData.includedMinutesRate && revenueData.overageRate && (
+                      <Separator />
+                    )}
+                    
+                    {revenueData.overageRate && (
+                      <div className="flex items-center justify-between py-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-muted-foreground">Overage</span>
+                          <span className="text-xs text-muted-foreground font-mono">
+                            {revenueData.overageRate.pricePerMinuteFormatted}/min
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`font-semibold text-sm ${
+                            revenueData.overageRate.marginCents >= 0 
+                              ? 'text-green-600' 
+                              : 'text-red-600'
+                          }`}>
+                            {revenueData.overageRate.marginFormatted}
+                          </span>
+                          <Badge 
+                            variant={revenueData.overageRate.marginCents >= 0 ? 'default' : 'destructive'}
+                            className="text-xs px-1.5 py-0"
+                          >
+                            {revenueData.overageRate.marginPercentage >= 0 ? '+' : ''}
+                            {revenueData.overageRate.marginPercentage.toFixed(1)}%
+                          </Badge>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {!revenueData.includedMinutesRate && !revenueData.overageRate && (
+                      <p className="text-sm text-muted-foreground text-center py-2">
+                        No usage-based pricing found for this organization
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              ) : revenueData && !revenueData.hasActiveSubscription ? (
+                <Card>
+                  <CardContent className="pt-6 pb-6">
+                    <p className="text-sm text-muted-foreground text-center">
+                      No active subscription found for this organization
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : null}
             </div>
           )}
 

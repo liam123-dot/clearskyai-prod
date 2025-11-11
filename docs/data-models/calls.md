@@ -165,3 +165,64 @@ GROUP BY a.id, a.vapi_assistant_id
 ORDER BY call_count DESC;
 ```
 
+## Revenue and Margin Calculation
+
+### API Endpoint: `/api/admin/calls/[id]/revenue`
+
+Admin-only endpoint that calculates revenue and profit margin for a specific call based on the organization's active subscription and product pricing.
+
+**Method**: `GET`
+
+**Authentication**: Requires admin privileges
+
+**Response Format**:
+```typescript
+{
+  callDurationMinutes: number
+  totalCost: number
+  includedMinutesRate?: {
+    basePriceCents: number
+    minutesIncluded: number
+    ratePerMinuteCents: number
+    ratePerMinuteFormatted: string
+    revenueCents: number
+    revenueFormatted: string
+    marginCents: number
+    marginFormatted: string
+    marginPercentage: number
+    calculation: string
+  }
+  overageRate?: {
+    pricePerMinuteCents: number
+    pricePerMinuteFormatted: string
+    revenueCents: number
+    revenueFormatted: string
+    marginCents: number
+    marginFormatted: string
+    marginPercentage: number
+  }
+  productName?: string
+  hasActiveSubscription: boolean
+}
+```
+
+**Calculation Logic**:
+
+1. **Included Minutes Rate**: 
+   - Calculates effective rate per minute: `base_price_cents ÷ minutes_included`
+   - Revenue for call: `rate_per_minute × call_duration_minutes`
+   - Margin: `revenue - (total_cost × 100)` (converting cost to cents)
+   - Margin percentage: `(margin ÷ revenue) × 100`
+
+2. **Overage Rate**:
+   - Uses `price_per_minute_cents` from product
+   - Revenue for call: `price_per_minute_cents × call_duration_minutes`
+   - Margin: `revenue - (total_cost × 100)`
+   - Margin percentage: `(margin ÷ revenue) × 100`
+
+**Notes**:
+- Both scenarios are calculated and displayed since the system doesn't yet track which billing tier (included vs overage) each call falls into
+- Cost data comes from VAPI's `call.data.costs` array
+- Only calculates for organizations with active subscriptions and usage-based products
+- Returns `hasActiveSubscription: false` if no active subscription is found
+
