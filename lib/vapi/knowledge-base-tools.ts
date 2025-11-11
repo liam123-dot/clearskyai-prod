@@ -23,7 +23,7 @@ export function createEstateAgentToolData(
     type: "apiRequest",
     function: {
       name: `query_${sanitizedName}_props`,
-      description: `Search and filter properties from ${knowledgeBaseName}. Returns up to 3 matching properties in plain text format with essential details (baths, price, property type, title, address, etc.) and refinement suggestions to narrow down the search.`,
+      description: `Search and filter properties from ${knowledgeBaseName}. Returns up to 3 matching properties by default (or all properties if include_all is true) in plain text format with essential details (baths, price, property type, title, address, etc.) along with the total count of matching properties.`,
       parameters: {
         type: "object",
         properties: {
@@ -79,6 +79,10 @@ export function createEstateAgentToolData(
           location_radius_km: {
             type: "number",
             description: "Search radius in kilometers around the location. Defaults to 25km if not specified. Use smaller values (5-10km) for more precise searches, larger values (25-50km) for broader area searches."
+          },
+          include_all: {
+            type: "boolean",
+            description: "If true, returns ALL matching properties instead of just the first 3. Use this when the user explicitly wants to see all results (e.g., 'show me all properties', 'I want to see everything'). Default is false."
           }
         },
         required: []
@@ -140,6 +144,10 @@ export function createEstateAgentToolData(
         location_radius_km: {
           type: "number",
           description: "Search radius in kilometers (default: 25km)"
+        },
+        include_all: {
+          type: "boolean",
+          description: "If true, returns all matching properties instead of just the first 3"
         }
       }
     }

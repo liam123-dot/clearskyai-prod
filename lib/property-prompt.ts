@@ -354,6 +354,7 @@ export async function generatePropertyQueryPrompt(
   if (properties.filter(p => p.has_nearby_station === true).length > 0) {
     promptParts.push('- `has_nearby_station` - Properties near train/tube stations')
   }
+  promptParts.push('- `include_all` - Set to true to return ALL matching properties instead of just 3 (use when user explicitly asks for all results)')
   promptParts.push('')
   promptParts.push('## How to Use This Tool')
   promptParts.push('')
