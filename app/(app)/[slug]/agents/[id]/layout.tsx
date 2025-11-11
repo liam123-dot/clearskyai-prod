@@ -14,6 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { PromptEditorButton } from "@/components/agents/prompt-editor-button"
+import { EditableAgentName } from "@/components/agents/editable-agent-name"
 
 interface AgentLayoutProps {
   params: Promise<{ slug: string; id: string }>
@@ -49,9 +50,12 @@ export default async function AgentLayout({ params, children }: AgentLayoutProps
       <div className="space-y-6">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              {agent.vapiAssistant.name || "Unnamed Agent"}
-            </h1>
+            <EditableAgentName
+              agentId={id}
+              slug={slug}
+              initialName={agent.vapiAssistant.name || "Unnamed Agent"}
+              variant="h1"
+            />
             {/* <p className="text-muted-foreground mt-2">
               Agent ID: {id}
             </p> */}

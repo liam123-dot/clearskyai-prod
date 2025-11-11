@@ -23,6 +23,8 @@ export async function DELETE(
     const supabase = await createServiceClient()
     
     // Step 1: Get agent details
+    // Note: Agents can exist without an organization_id (unassigned agents)
+    // This deletion process works for both assigned and unassigned agents
     const { data: agent, error: agentError } = await supabase
       .from('agents')
       .select('id, vapi_assistant_id')
