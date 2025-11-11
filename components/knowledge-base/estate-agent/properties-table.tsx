@@ -86,13 +86,13 @@ export function PropertiesTable({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
+        <div className="text-sm text-muted-foreground">
           {loading ? (
             <Skeleton className="h-4 w-48" />
           ) : (
             `Showing ${showingFrom} to ${showingTo} of ${totalCount} ${totalCount === 1 ? 'property' : 'properties'}`
           )}
-        </p>
+        </div>
       </div>
 
       <div className="border rounded-lg overflow-x-auto">

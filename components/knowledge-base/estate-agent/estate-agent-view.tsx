@@ -7,6 +7,7 @@ import { PropertiesTable } from './properties-table'
 import { SyncButton } from './sync-button'
 import { PromptSheet } from './prompt-sheet'
 import { LocationDataSheet } from './location-data-sheet'
+import { TestQuerySheet } from './test-query-sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { Copy, Check } from 'lucide-react'
@@ -173,6 +174,10 @@ export function EstateAgentView({ knowledgeBase, organizationSlug }: EstateAgent
             knowledgeBaseName={knowledgeBase.name}
             organizationSlug={organizationSlug}
           />
+          <TestQuerySheet 
+            knowledgeBaseId={knowledgeBase.id}
+            knowledgeBaseName={knowledgeBase.name}
+          />
           <SyncButton 
             knowledgeBaseId={knowledgeBase.id} 
             organizationSlug={organizationSlug}
@@ -209,6 +214,10 @@ export function EstateAgentView({ knowledgeBase, organizationSlug }: EstateAgent
           knowledgeBaseId={knowledgeBase.id}
           knowledgeBaseName={knowledgeBase.name}
           organizationSlug={organizationSlug}
+        />
+        <TestQuerySheet 
+          knowledgeBaseId={knowledgeBase.id}
+          knowledgeBaseName={knowledgeBase.name}
         />
         <SyncButton 
           knowledgeBaseId={knowledgeBase.id} 

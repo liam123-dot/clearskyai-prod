@@ -51,43 +51,45 @@ function CollapsibleNavItem({
   }, [isChildActive])
 
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen}>
-      <SidebarMenuItem>
-        <Collapsible.Trigger asChild>
-          <SidebarMenuButton 
-            isActive={false}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <item.icon className="size-4" />
-            <span>{item.title}</span>
-            <IconChevronDown className={`ml-auto size-4 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
-          </SidebarMenuButton>
-        </Collapsible.Trigger>
-        <Collapsible.Content>
-          <SidebarMenuSub>
-            {item.items?.map((subItem) => {
-              // Match exact path or subroutes
-              // However, if sub-item URL matches parent URL (like General = Settings), only match exactly
-              // to avoid highlighting General when on sibling routes like /settings/billing
-              const isSameAsParent = subItem.url === item.url
-              const isSubActive = pathname === subItem.url || (!isSameAsParent && pathname.startsWith(subItem.url + '/'))
-              return (
-                <SidebarMenuSubItem key={subItem.title}>
-                  <SidebarMenuSubButton
-                    asChild
-                    isActive={isSubActive}
-                  >
-                    <Link href={subItem.url}>
-                      <span>{subItem.title}</span>
-                    </Link>
-                  </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
-              )
-            })}
-          </SidebarMenuSub>
-        </Collapsible.Content>
-      </SidebarMenuItem>
-    </Collapsible.Root>
+    <div suppressHydrationWarning>
+      <Collapsible.Root open={open} onOpenChange={setOpen}>
+        <SidebarMenuItem>
+          <Collapsible.Trigger asChild>
+            <SidebarMenuButton 
+              isActive={false}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <item.icon className="size-4" />
+              <span>{item.title}</span>
+              <IconChevronDown className={`ml-auto size-4 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+            </SidebarMenuButton>
+          </Collapsible.Trigger>
+          <Collapsible.Content>
+            <SidebarMenuSub>
+              {item.items?.map((subItem) => {
+                // Match exact path or subroutes
+                // However, if sub-item URL matches parent URL (like General = Settings), only match exactly
+                // to avoid highlighting General when on sibling routes like /settings/billing
+                const isSameAsParent = subItem.url === item.url
+                const isSubActive = pathname === subItem.url || (!isSameAsParent && pathname.startsWith(subItem.url + '/'))
+                return (
+                  <SidebarMenuSubItem key={subItem.title}>
+                    <SidebarMenuSubButton
+                      asChild
+                      isActive={isSubActive}
+                    >
+                      <Link href={subItem.url}>
+                        <span>{subItem.title}</span>
+                      </Link>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                )
+              })}
+            </SidebarMenuSub>
+          </Collapsible.Content>
+        </SidebarMenuItem>
+      </Collapsible.Root>
+    </div>
   )
 }
 

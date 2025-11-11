@@ -5,47 +5,170 @@ import { queryProperties, PropertyQueryFilters, PropertyQueryResponse, PriceFilt
 /**
  * Format property query results as plain text
  */
-function formatPropertiesAsText(result: PropertyQueryResponse): string {
+function formatPropertiesAsText(result: PropertyQueryResponse, filters: PropertyQueryFilters): string {
   const lines: string[] = [];
+  
+  // Filter out refinements that don't narrow results (resultCount === totalCount)
+  const narrowingRefinements = result.refinements.filter(r => r.resultCount < result.totalCount);
+  
+  // Find implied filters (refinements where resultCount === totalCount)
+  const impliedFilters = result.refinements.filter(r => r.resultCount === result.totalCount);
+  
+  // Build summary of active filters
+  const activeFilters: string[] = [];
+  
+  // Add explicit filters from request
+  if (filters.transaction_type) {
+    activeFilters.push(`Transaction Type: ${filters.transaction_type}`);
+  }
+  if (filters.beds !== undefined) {
+    activeFilters.push(`${filters.beds} ${filters.beds === 1 ? 'bed' : 'beds'}`);
+  }
+  if (filters.baths !== undefined) {
+    activeFilters.push(`${filters.baths} ${filters.baths === 1 ? 'bath' : 'baths'}`);
+  }
+  if (filters.city) {
+    activeFilters.push(`City: ${filters.city}`);
+  }
+  if (filters.district) {
+    activeFilters.push(`District: ${filters.district}`);
+  }
+  if (filters.postcode) {
+    activeFilters.push(`Postcode: ${filters.postcode}`);
+  }
+  if (filters.location) {
+    const radius = filters.location_radius_km || 25;
+    activeFilters.push(`Location: ${filters.location} (within ${radius}km)`);
+  }
+  if (filters.property_type) {
+    activeFilters.push(`Property Type: ${filters.property_type}`);
+  }
+  if (filters.furnished_type) {
+    activeFilters.push(`Furnished Type: ${filters.furnished_type}`);
+  }
+  if (filters.has_nearby_station !== undefined) {
+    activeFilters.push(`Has Nearby Station: ${filters.has_nearby_station ? 'Yes' : 'No'}`);
+  }
+  if (filters.price) {
+    const priceFilter = filters.price;
+    if (priceFilter.filter === 'under') {
+      activeFilters.push(`Price: under £${priceFilter.value.toLocaleString()}`);
+    } else if (priceFilter.filter === 'over') {
+      activeFilters.push(`Price: over £${priceFilter.value.toLocaleString()}`);
+    } else if (priceFilter.filter === 'between' && priceFilter.max_value !== undefined) {
+      activeFilters.push(`Price: £${priceFilter.value.toLocaleString()} - £${priceFilter.max_value.toLocaleString()}`);
+    }
+  }
+  
+  // Add implied filters (where all results match)
+  // Only add if not already explicitly filtered
+  impliedFilters.forEach(refinement => {
+    // Skip if this filter is already explicitly set
+    if (refinement.filterName === 'transaction_type' && filters.transaction_type) return;
+    if (refinement.filterName === 'beds' && filters.beds !== undefined) return;
+    if (refinement.filterName === 'baths' && filters.baths !== undefined) return;
+    if (refinement.filterName === 'city' && filters.city) return;
+    if (refinement.filterName === 'district' && filters.district) return;
+    if (refinement.filterName === 'postcode' && filters.postcode) return;
+    if (refinement.filterName === 'property_type' && filters.property_type) return;
+    if (refinement.filterName === 'furnished_type' && filters.furnished_type) return;
+    if (refinement.filterName === 'has_nearby_station' && filters.has_nearby_station !== undefined) return;
+    if (refinement.filterName === 'price' && filters.price) return;
+    
+    const filterLabel = refinement.filterName
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+    
+    let valueStr: string;
+    
+    // Handle PriceFilter objects
+    if (refinement.filterName === 'price' && typeof refinement.filterValue === 'object' && refinement.filterValue !== null) {
+      const priceFilter = refinement.filterValue as PriceFilter;
+      if (priceFilter.filter === 'under') {
+        valueStr = `under £${priceFilter.value.toLocaleString()}`;
+      } else if (priceFilter.filter === 'over') {
+        valueStr = `over £${priceFilter.value.toLocaleString()}`;
+      } else if (priceFilter.filter === 'between' && priceFilter.max_value !== undefined) {
+        valueStr = `£${priceFilter.value.toLocaleString()} - £${priceFilter.max_value.toLocaleString()}`;
+      } else {
+        valueStr = JSON.stringify(priceFilter);
+      }
+    } else if (typeof refinement.filterValue === 'string') {
+      valueStr = refinement.filterValue;
+    } else if (typeof refinement.filterValue === 'boolean') {
+      valueStr = refinement.filterValue ? 'Yes' : 'No';
+    } else if (typeof refinement.filterValue === 'number') {
+      valueStr = refinement.filterValue.toString();
+    } else {
+      valueStr = String(refinement.filterValue);
+    }
+    
+    // Format based on filter type
+    if (refinement.filterName === 'transaction_type') {
+      activeFilters.push(`All properties are ${valueStr}`);
+    } else if (refinement.filterName === 'beds') {
+      activeFilters.push(`All properties have ${valueStr} ${valueStr === '1' ? 'bed' : 'beds'}`);
+    } else if (refinement.filterName === 'baths') {
+      activeFilters.push(`All properties have ${valueStr} ${valueStr === '1' ? 'bath' : 'baths'}`);
+    } else {
+      activeFilters.push(`All properties: ${filterLabel} ${valueStr}`);
+    }
+  });
   
   // Header with total count
   lines.push(`PROPERTIES (Total: ${result.totalCount})`);
   lines.push('---');
   lines.push('');
   
-  // Format each property
-  result.properties.forEach((prop, index) => {
-    lines.push(`Property ${index + 1}:`);
-    lines.push(`Baths: ${prop.baths ?? 'Not specified'}`);
-    lines.push(`Price: £${prop.price ?? 'Not specified'}`);
-    lines.push(`Property Type: ${prop.property_type ?? 'Not specified'}`);
-    lines.push(`Property Subtype: ${prop.property_subtype ?? 'Not specified'}`);
-    lines.push(`Title: ${prop.title ?? 'Not specified'}`);
-    lines.push(`Transaction Type: ${prop.transaction_type ?? 'Not specified'}`);
-    lines.push(`Full Address: ${prop.full_address ?? 'Not specified'}`);
-    lines.push(`City: ${prop.city ?? 'Not specified'}`);
-    lines.push(`Furnished Type: ${prop.furnished_type ?? 'Not specified'}`);
-    lines.push(`Has Nearby Station: ${prop.has_nearby_station ? 'Yes' : 'No'}`);
-    lines.push(`Has Online Viewing: ${prop.has_online_viewing ? 'Yes' : 'No'}`);
-    lines.push(`Pets Allowed: ${prop.pets_allowed === null ? 'Not specified' : prop.pets_allowed ? 'Yes' : 'No'}`);
-    lines.push(`Description: ${prop.description ?? 'Not specified'}`);
-    
-    // Only include distance if it exists (location-based search)
-    if (prop.distance_km !== undefined) {
-      lines.push(`Distance: ${prop.distance_km} km`);
-    }
-    
+  // Display active filters summary
+  if (activeFilters.length > 0) {
+    lines.push('ACTIVE FILTERS:');
+    activeFilters.forEach(filter => {
+      lines.push(`- ${filter}`);
+    });
     lines.push('');
-  });
+  }
   
-  // Format refinements
+  // Handle case where no properties are returned (only refinements)
+  if (result.properties.length === 0) {
+    lines.push('No properties returned. Please use the refinements below to narrow your search.');
+    lines.push('');
+  } else {
+    // Format each property
+    result.properties.forEach((prop, index) => {
+      lines.push(`Property ${index + 1}:`);
+      lines.push(`Baths: ${prop.baths ?? 'Not specified'}`);
+      lines.push(`Price: £${prop.price ?? 'Not specified'}`);
+      lines.push(`Property Type: ${prop.property_type ?? 'Not specified'}`);
+      lines.push(`Property Subtype: ${prop.property_subtype ?? 'Not specified'}`);
+      lines.push(`Title: ${prop.title ?? 'Not specified'}`);
+      lines.push(`Transaction Type: ${prop.transaction_type ?? 'Not specified'}`);
+      lines.push(`Full Address: ${prop.full_address ?? 'Not specified'}`);
+      lines.push(`City: ${prop.city ?? 'Not specified'}`);
+      lines.push(`Furnished Type: ${prop.furnished_type ?? 'Not specified'}`);
+      lines.push(`Has Nearby Station: ${prop.has_nearby_station ? 'Yes' : 'No'}`);
+      lines.push(`Has Online Viewing: ${prop.has_online_viewing ? 'Yes' : 'No'}`);
+      lines.push(`Pets Allowed: ${prop.pets_allowed === null ? 'Not specified' : prop.pets_allowed ? 'Yes' : 'No'}`);
+      lines.push(`Description: ${prop.description ?? 'Not specified'}`);
+      
+      // Only include distance if it exists (location-based search)
+      if (prop.distance_km !== undefined) {
+        lines.push(`Distance: ${prop.distance_km} km`);
+      }
+      
+      lines.push('');
+    });
+  }
+  
+  // Format refinements (only show those that can narrow results)
   lines.push('REFINEMENTS');
   lines.push('---');
   
-  if (result.refinements.length === 0) {
+  if (narrowingRefinements.length === 0) {
     lines.push('No refinements available');
   } else {
-    result.refinements.forEach(refinement => {
+    narrowingRefinements.forEach(refinement => {
       const filterLabel = refinement.filterName
         .split('_')
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -113,7 +236,11 @@ export async function POST(
       postcode: body.postcode,
       location: body.location,
       location_radius_km: body.location_radius_km,
+      include_all: body.include_all ?? false,
     };
+
+    // Check if request is from test query component
+    const fromTestQuery = body._fromTestQuery === true;
 
     // Validate knowledge base exists and is of type estate_agent
     const supabase = await createServiceClient();
@@ -141,9 +268,19 @@ export async function POST(
     const result = await queryProperties(id, filters);
 
     // Format as plain text and wrap in JSON response
-    const textResponse = formatPropertiesAsText(result);
+    const textResponse = formatPropertiesAsText(result, filters);
 
-    return NextResponse.json({ response: textResponse }, { status: 200 });
+    // Only include refinements if request is from test query component
+    const response: { response: string; refinements?: typeof result.refinements; totalCount?: number } = {
+      response: textResponse,
+    };
+
+    if (fromTestQuery) {
+      response.refinements = result.refinements;
+      response.totalCount = result.totalCount;
+    }
+
+    return NextResponse.json(response, { status: 200 });
   } catch (error) {
     console.error("Error querying properties:", error);
     return NextResponse.json(

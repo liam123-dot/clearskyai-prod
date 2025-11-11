@@ -41,6 +41,7 @@ export interface PropertyQueryFilters {
   postcode?: string
   location?: string // General location search (e.g., "London")
   location_radius_km?: number // Radius in kilometers (default: 25km)
+  include_all?: boolean // If true, return all matching properties; if false, return only when <= 3 matches or return refinements
 }
 
 // Simplified property result (only key fields)
@@ -279,53 +280,138 @@ export async function queryProperties(
 
   console.log('Total count after filters:', totalCount)
 
-  // Get top 3 results, ordered by newest first
-  const { data: properties, error } = await query
-    .order('added_on', { ascending: false })
-    .limit(3)
+  const includeAll = filters.include_all ?? false
+  const finalTotalCount = totalCount || 0
 
-  if (error) {
-    console.error('Error fetching properties:', error)
-    throw error
-  }
-
-  // Map to simplified result format
-  const results: PropertySearchResult[] = (properties || []).map(prop => ({
-    id: prop.id,
-    url: prop.url,
-    beds: prop.beds,
-    baths: prop.baths,
-    price: prop.price,
-    property_type: prop.property_type,
-    property_subtype: prop.property_subtype,
-    title: prop.title,
-    transaction_type: prop.transaction_type,
-    full_address: prop.full_address,
-    city: prop.city,
-    district: prop.district,
-    postcode: prop.postcode,
-    furnished_type: prop.furnished_type,
-    has_nearby_station: prop.has_nearby_station,
-    has_online_viewing: prop.has_online_viewing,
-    is_retirement: prop.is_retirement,
-    pets_allowed: prop.pets_allowed,
-    image_count: prop.image_count,
-    has_floorplan: prop.has_floorplan,
-    description: prop.description,
-    added_on: prop.added_on,
-  }))
-
-  // Generate refinement suggestions
+  // Generate refinement suggestions first (needed to determine if we should return properties)
   const refinements = await generateRefinements(
     supabase,
     knowledgeBaseId,
     filters,
-    totalCount || 0
+    finalTotalCount
   )
 
+  // Determine if we should return properties or just refinements
+  let propertiesToReturn: PropertySearchResult[] = []
+
+  if (includeAll) {
+    // Return ALL matching properties when include_all is true
+    const { data: properties, error } = await query
+      .order('added_on', { ascending: false })
+
+    if (error) {
+      console.error('Error fetching properties:', error)
+      throw error
+    }
+
+    propertiesToReturn = (properties || []).map(prop => ({
+      id: prop.id,
+      url: prop.url,
+      beds: prop.beds,
+      baths: prop.baths,
+      price: prop.price,
+      property_type: prop.property_type,
+      property_subtype: prop.property_subtype,
+      title: prop.title,
+      transaction_type: prop.transaction_type,
+      full_address: prop.full_address,
+      city: prop.city,
+      district: prop.district,
+      postcode: prop.postcode,
+      furnished_type: prop.furnished_type,
+      has_nearby_station: prop.has_nearby_station,
+      has_online_viewing: prop.has_online_viewing,
+      is_retirement: prop.is_retirement,
+      pets_allowed: prop.pets_allowed,
+      image_count: prop.image_count,
+      has_floorplan: prop.has_floorplan,
+      description: prop.description,
+      added_on: prop.added_on,
+    }))
+  } else {
+    // If include_all is false (default)
+    if (finalTotalCount <= 3) {
+      // Return all properties when count is 3 or less
+      const { data: properties, error } = await query
+        .order('added_on', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching properties:', error)
+        throw error
+      }
+
+      propertiesToReturn = (properties || []).map(prop => ({
+        id: prop.id,
+        url: prop.url,
+        beds: prop.beds,
+        baths: prop.baths,
+        price: prop.price,
+        property_type: prop.property_type,
+        property_subtype: prop.property_subtype,
+        title: prop.title,
+        transaction_type: prop.transaction_type,
+        full_address: prop.full_address,
+        city: prop.city,
+        district: prop.district,
+        postcode: prop.postcode,
+        furnished_type: prop.furnished_type,
+        has_nearby_station: prop.has_nearby_station,
+        has_online_viewing: prop.has_online_viewing,
+        is_retirement: prop.is_retirement,
+        pets_allowed: prop.pets_allowed,
+        image_count: prop.image_count,
+        has_floorplan: prop.has_floorplan,
+        description: prop.description,
+        added_on: prop.added_on,
+      }))
+    } else {
+      // If more than 3 results, check if refinements can narrow results
+      const refinementsThatNarrow = refinements.filter(r => r.resultCount < finalTotalCount)
+      
+      if (refinementsThatNarrow.length > 0) {
+        // Return empty properties array - refinements can help narrow down
+        propertiesToReturn = []
+      } else {
+        // No useful refinements - return all properties (cannot narrow further)
+        const { data: properties, error } = await query
+          .order('added_on', { ascending: false })
+
+        if (error) {
+          console.error('Error fetching properties:', error)
+          throw error
+        }
+
+        propertiesToReturn = (properties || []).map(prop => ({
+          id: prop.id,
+          url: prop.url,
+          beds: prop.beds,
+          baths: prop.baths,
+          price: prop.price,
+          property_type: prop.property_type,
+          property_subtype: prop.property_subtype,
+          title: prop.title,
+          transaction_type: prop.transaction_type,
+          full_address: prop.full_address,
+          city: prop.city,
+          district: prop.district,
+          postcode: prop.postcode,
+          furnished_type: prop.furnished_type,
+          has_nearby_station: prop.has_nearby_station,
+          has_online_viewing: prop.has_online_viewing,
+          is_retirement: prop.is_retirement,
+          pets_allowed: prop.pets_allowed,
+          image_count: prop.image_count,
+          has_floorplan: prop.has_floorplan,
+          description: prop.description,
+          added_on: prop.added_on,
+        }))
+      }
+    }
+  }
+
   return {
-    properties: results,
-    totalCount: totalCount || 0,
+    properties: propertiesToReturn,
+    totalCount: finalTotalCount,
     refinements,
   }
 }
@@ -433,37 +519,9 @@ async function queryPropertiesWithLocation(
   // Get total count BEFORE slicing
   const totalCount = propertiesWithDistance.length
 
-  // Take top 3 for results
-  const topProperties = propertiesWithDistance.slice(0, 3)
+  const includeAll = filters.include_all ?? false
 
-  // Map to simplified result format
-  const results: PropertySearchResult[] = topProperties.map((prop: any) => ({
-    id: prop.id,
-    url: prop.url,
-    beds: prop.beds,
-    baths: prop.baths,
-    price: prop.price,
-    property_type: prop.property_type,
-    property_subtype: prop.property_subtype,
-    title: prop.title,
-    transaction_type: prop.transaction_type,
-    full_address: prop.full_address,
-    city: prop.city,
-    district: prop.district,
-    postcode: prop.postcode,
-    furnished_type: prop.furnished_type,
-    has_nearby_station: prop.has_nearby_station,
-    has_online_viewing: prop.has_online_viewing,
-    is_retirement: prop.is_retirement,
-    pets_allowed: prop.pets_allowed,
-    image_count: prop.image_count,
-    has_floorplan: prop.has_floorplan,
-    description: prop.description,
-    added_on: prop.added_on,
-    distance_km: prop.distance_km,
-  }))
-
-  // Generate refinement suggestions from the filtered properties
+  // Generate refinement suggestions from the filtered properties first
   const refinements = await generateRefinements(
     supabase,
     knowledgeBaseId,
@@ -472,8 +530,105 @@ async function queryPropertiesWithLocation(
     propertiesWithDistance // Pass the filtered properties
   )
 
+  // Determine if we should return properties or just refinements
+  let propertiesToReturn: PropertySearchResult[] = []
+
+  if (includeAll) {
+    // Return ALL matching properties when include_all is true
+    propertiesToReturn = propertiesWithDistance.map((prop: any) => ({
+      id: prop.id,
+      url: prop.url,
+      beds: prop.beds,
+      baths: prop.baths,
+      price: prop.price,
+      property_type: prop.property_type,
+      property_subtype: prop.property_subtype,
+      title: prop.title,
+      transaction_type: prop.transaction_type,
+      full_address: prop.full_address,
+      city: prop.city,
+      district: prop.district,
+      postcode: prop.postcode,
+      furnished_type: prop.furnished_type,
+      has_nearby_station: prop.has_nearby_station,
+      has_online_viewing: prop.has_online_viewing,
+      is_retirement: prop.is_retirement,
+      pets_allowed: prop.pets_allowed,
+      image_count: prop.image_count,
+      has_floorplan: prop.has_floorplan,
+      description: prop.description,
+      added_on: prop.added_on,
+      distance_km: prop.distance_km,
+    }))
+  } else {
+    // If include_all is false (default)
+    if (totalCount <= 3) {
+      // Return all properties when count is 3 or less
+      propertiesToReturn = propertiesWithDistance.map((prop: any) => ({
+        id: prop.id,
+        url: prop.url,
+        beds: prop.beds,
+        baths: prop.baths,
+        price: prop.price,
+        property_type: prop.property_type,
+        property_subtype: prop.property_subtype,
+        title: prop.title,
+        transaction_type: prop.transaction_type,
+        full_address: prop.full_address,
+        city: prop.city,
+        district: prop.district,
+        postcode: prop.postcode,
+        furnished_type: prop.furnished_type,
+        has_nearby_station: prop.has_nearby_station,
+        has_online_viewing: prop.has_online_viewing,
+        is_retirement: prop.is_retirement,
+        pets_allowed: prop.pets_allowed,
+        image_count: prop.image_count,
+        has_floorplan: prop.has_floorplan,
+        description: prop.description,
+        added_on: prop.added_on,
+        distance_km: prop.distance_km,
+      }))
+    } else {
+      // If more than 3 results, check if refinements can narrow results
+      const refinementsThatNarrow = refinements.filter(r => r.resultCount < totalCount)
+      
+      if (refinementsThatNarrow.length > 0) {
+        // Return empty properties array - refinements can help narrow down
+        propertiesToReturn = []
+      } else {
+        // No useful refinements - return all properties (cannot narrow further)
+        propertiesToReturn = propertiesWithDistance.map((prop: any) => ({
+          id: prop.id,
+          url: prop.url,
+          beds: prop.beds,
+          baths: prop.baths,
+          price: prop.price,
+          property_type: prop.property_type,
+          property_subtype: prop.property_subtype,
+          title: prop.title,
+          transaction_type: prop.transaction_type,
+          full_address: prop.full_address,
+          city: prop.city,
+          district: prop.district,
+          postcode: prop.postcode,
+          furnished_type: prop.furnished_type,
+          has_nearby_station: prop.has_nearby_station,
+          has_online_viewing: prop.has_online_viewing,
+          is_retirement: prop.is_retirement,
+          pets_allowed: prop.pets_allowed,
+          image_count: prop.image_count,
+          has_floorplan: prop.has_floorplan,
+          description: prop.description,
+          added_on: prop.added_on,
+          distance_km: prop.distance_km,
+        }))
+      }
+    }
+  }
+
   return {
-    properties: results,
+    properties: propertiesToReturn,
     totalCount: totalCount,
     refinements,
   }
@@ -705,7 +860,7 @@ function generateRefinementsFromArray(
     }
   }
 
-  // Count transaction types (only if not already filtered)
+  // Priority 1: Transaction type (rent/sale)
   if (!filters.transaction_type) {
     const transactionCounts: Record<string, number> = {}
     properties.forEach(prop => {
@@ -718,7 +873,7 @@ function generateRefinementsFromArray(
     })
   }
 
-  // Count beds (only if not already filtered)
+  // Priority 2: Beds
   if (filters.beds === undefined) {
     const bedsCounts: Record<number, number> = {}
     properties.forEach(prop => {
@@ -734,7 +889,7 @@ function generateRefinementsFromArray(
       })
   }
 
-  // Count baths (only if not already filtered)
+  // Priority 3: Baths
   if (filters.baths === undefined) {
     const bathsCounts: Record<number, number> = {}
     properties.forEach(prop => {
@@ -750,55 +905,7 @@ function generateRefinementsFromArray(
       })
   }
 
-  // Count property types (only if not already filtered)
-  if (!filters.property_type) {
-    const typeCounts: Record<string, number> = {}
-    properties.forEach(prop => {
-      if (prop.property_type) {
-        typeCounts[prop.property_type] = (typeCounts[prop.property_type] || 0) + 1
-      }
-    })
-    // Sort by count (most common first)
-    Object.entries(typeCounts)
-      .sort(([, a], [, b]) => b - a)
-      .forEach(([type, count]) => {
-        addRefinement('property_type', type, count)
-      })
-  }
-
-  // Count furnished types (only if not already filtered)
-  if (!filters.furnished_type) {
-    const furnishedCounts: Record<string, number> = {}
-    properties.forEach(prop => {
-      if (prop.furnished_type) {
-        furnishedCounts[prop.furnished_type] = (furnishedCounts[prop.furnished_type] || 0) + 1
-      }
-    })
-    // Sort by count (most common first)
-    Object.entries(furnishedCounts)
-      .sort(([, a], [, b]) => b - a)
-      .forEach(([type, count]) => {
-        addRefinement('furnished_type', type, count)
-      })
-  }
-
-  // Count has_nearby_station (only if not already filtered)
-  if (filters.has_nearby_station === undefined) {
-    const stationCounts: Record<string, number> = { 'true': 0, 'false': 0 }
-    properties.forEach(prop => {
-      if (prop.has_nearby_station !== null && prop.has_nearby_station !== undefined) {
-        const key = prop.has_nearby_station ? 'true' : 'false'
-        stationCounts[key] = (stationCounts[key] || 0) + 1
-      }
-    })
-    Object.entries(stationCounts).forEach(([hasStation, count]) => {
-      if (count > 0) {
-        addRefinement('has_nearby_station', hasStation === 'true', count)
-      }
-    })
-  }
-
-  // Count cities (only if not already filtered)
+  // Priority 4: City
   if (!filters.city) {
     const cityCounts: Record<string, number> = {}
     properties.forEach(prop => {
@@ -814,7 +921,7 @@ function generateRefinementsFromArray(
       })
   }
 
-  // Count districts (only if not already filtered)
+  // Priority 5: District
   if (!filters.district) {
     const districtCounts: Record<string, number> = {}
     properties.forEach(prop => {
@@ -830,7 +937,7 @@ function generateRefinementsFromArray(
       })
   }
 
-  // Price range refinements
+  // Priority 6: Price ranges
   if (filters.transaction_type && !(filters.price && filters.price.filter)) {
     const prices = properties
       .map(p => Number(p.price))
@@ -895,7 +1002,55 @@ function generateRefinementsFromArray(
     }
   }
 
-  // If no refinements would narrow the results, add street addresses
+  // Priority 7: Property type
+  if (!filters.property_type) {
+    const typeCounts: Record<string, number> = {}
+    properties.forEach(prop => {
+      if (prop.property_type) {
+        typeCounts[prop.property_type] = (typeCounts[prop.property_type] || 0) + 1
+      }
+    })
+    // Sort by count (most common first)
+    Object.entries(typeCounts)
+      .sort(([, a], [, b]) => b - a)
+      .forEach(([type, count]) => {
+        addRefinement('property_type', type, count)
+      })
+  }
+
+  // Priority 8: Furnished type
+  if (!filters.furnished_type) {
+    const furnishedCounts: Record<string, number> = {}
+    properties.forEach(prop => {
+      if (prop.furnished_type) {
+        furnishedCounts[prop.furnished_type] = (furnishedCounts[prop.furnished_type] || 0) + 1
+      }
+    })
+    // Sort by count (most common first)
+    Object.entries(furnishedCounts)
+      .sort(([, a], [, b]) => b - a)
+      .forEach(([type, count]) => {
+        addRefinement('furnished_type', type, count)
+      })
+  }
+
+  // Priority 9: Has nearby station
+  if (filters.has_nearby_station === undefined) {
+    const stationCounts: Record<string, number> = { 'true': 0, 'false': 0 }
+    properties.forEach(prop => {
+      if (prop.has_nearby_station !== null && prop.has_nearby_station !== undefined) {
+        const key = prop.has_nearby_station ? 'true' : 'false'
+        stationCounts[key] = (stationCounts[key] || 0) + 1
+      }
+    })
+    Object.entries(stationCounts).forEach(([hasStation, count]) => {
+      if (count > 0) {
+        addRefinement('has_nearby_station', hasStation === 'true', count)
+      }
+    })
+  }
+
+  // Priority 10: Street addresses (fallback when no other refinements narrow results)
   const refinementsThatNarrow = suggestions.filter(s => s.resultCount < totalCount)
   if (refinementsThatNarrow.length === 0 && totalCount > 1) {
     const streetCounts: Record<string, number> = {}
@@ -1006,7 +1161,7 @@ async function generateRefinements(
     }
   }
 
-  // Get refinements for transaction_type (only if not already filtered)
+  // Priority 1: Transaction type (rent/sale)
   if (!filters.transaction_type) {
     const { data: transactionData } = await buildBaseQuery()
       .select('transaction_type')
@@ -1025,7 +1180,7 @@ async function generateRefinements(
     }
   }
 
-  // Get refinements for beds (only if not already filtered)
+  // Priority 2: Beds
   if (filters.beds === undefined) {
     const { data: bedsData } = await buildBaseQuery()
       .select('beds')
@@ -1047,7 +1202,7 @@ async function generateRefinements(
     }
   }
 
-  // Get refinements for baths (only if not already filtered)
+  // Priority 3: Baths
   if (filters.baths === undefined) {
     const { data: bathsData } = await buildBaseQuery()
       .select('baths')
@@ -1069,73 +1224,7 @@ async function generateRefinements(
     }
   }
 
-  // Get refinements for property_type (only if not already filtered)
-  if (!filters.property_type) {
-    const { data: typeData } = await buildBaseQuery()
-      .select('property_type')
-      .not('property_type', 'is', null)
-
-    if (typeData) {
-      const typeCounts = typeData.reduce((acc: Record<string, number>, prop: any) => {
-        const type = prop.property_type
-        acc[type] = (acc[type] || 0) + 1
-        return acc
-      }, {})
-
-      // Sort by count (most common first)
-      Object.entries(typeCounts)
-        .sort(([, a], [, b]) => (b as number) - (a as number))
-        .forEach(([type, count]) => {
-          addRefinement('property_type', type, count as number)
-        })
-    }
-  }
-
-  // Get refinements for furnished_type (only if not already filtered)
-  if (!filters.furnished_type) {
-    const { data: furnishedData } = await buildBaseQuery()
-      .select('furnished_type')
-      .not('furnished_type', 'is', null)
-
-    if (furnishedData) {
-      const furnishedCounts = furnishedData.reduce((acc: Record<string, number>, prop: any) => {
-        const type = prop.furnished_type
-        acc[type] = (acc[type] || 0) + 1
-        return acc
-      }, {})
-
-      // Sort by count (most common first)
-      Object.entries(furnishedCounts)
-        .sort(([, a], [, b]) => (b as number) - (a as number))
-        .forEach(([type, count]) => {
-          addRefinement('furnished_type', type, count as number)
-        })
-    }
-  }
-
-  // Get refinements for has_nearby_station (only if not already filtered)
-  if (filters.has_nearby_station === undefined) {
-    const { data: stationData } = await buildBaseQuery()
-      .select('has_nearby_station')
-      .not('has_nearby_station', 'is', null)
-
-    if (stationData) {
-      const stationCounts = stationData.reduce(
-        (acc: Record<string, number>, prop: any) => {
-          const hasStation = prop.has_nearby_station ? 'true' : 'false'
-          acc[hasStation] = (acc[hasStation] || 0) + 1
-          return acc
-        },
-        {}
-      )
-
-      Object.entries(stationCounts).forEach(([hasStation, count]) => {
-        addRefinement('has_nearby_station', hasStation === 'true', count as number)
-      })
-    }
-  }
-
-  // Get refinements for city (only if not already filtered)
+  // Priority 4: City
   if (!filters.city) {
     const { data: cityData } = await buildBaseQuery()
       .select('city')
@@ -1157,7 +1246,7 @@ async function generateRefinements(
     }
   }
 
-  // Get refinements for district (only if not already filtered)
+  // Priority 5: District
   if (!filters.district) {
     const { data: districtData } = await buildBaseQuery()
       .select('district')
@@ -1179,7 +1268,7 @@ async function generateRefinements(
     }
   }
 
-  // Get price range refinements (only if transaction_type is filtered and no price already applied)
+  // Priority 6: Price ranges (only if transaction_type is filtered and no price already applied)
   // Price ranges only make sense within a single transaction type (rent vs sale)
   if (filters.transaction_type && !(filters.price && filters.price.filter)) {
     const { data: priceData } = await buildBaseQuery()
@@ -1259,7 +1348,73 @@ async function generateRefinements(
     }
   }
 
-  // If no refinements would narrow the results, add street addresses
+  // Priority 7: Property type
+  if (!filters.property_type) {
+    const { data: typeData } = await buildBaseQuery()
+      .select('property_type')
+      .not('property_type', 'is', null)
+
+    if (typeData) {
+      const typeCounts = typeData.reduce((acc: Record<string, number>, prop: any) => {
+        const type = prop.property_type
+        acc[type] = (acc[type] || 0) + 1
+        return acc
+      }, {})
+
+      // Sort by count (most common first)
+      Object.entries(typeCounts)
+        .sort(([, a], [, b]) => (b as number) - (a as number))
+        .forEach(([type, count]) => {
+          addRefinement('property_type', type, count as number)
+        })
+    }
+  }
+
+  // Priority 8: Furnished type
+  if (!filters.furnished_type) {
+    const { data: furnishedData } = await buildBaseQuery()
+      .select('furnished_type')
+      .not('furnished_type', 'is', null)
+
+    if (furnishedData) {
+      const furnishedCounts = furnishedData.reduce((acc: Record<string, number>, prop: any) => {
+        const type = prop.furnished_type
+        acc[type] = (acc[type] || 0) + 1
+        return acc
+      }, {})
+
+      // Sort by count (most common first)
+      Object.entries(furnishedCounts)
+        .sort(([, a], [, b]) => (b as number) - (a as number))
+        .forEach(([type, count]) => {
+          addRefinement('furnished_type', type, count as number)
+        })
+    }
+  }
+
+  // Priority 9: Has nearby station
+  if (filters.has_nearby_station === undefined) {
+    const { data: stationData } = await buildBaseQuery()
+      .select('has_nearby_station')
+      .not('has_nearby_station', 'is', null)
+
+    if (stationData) {
+      const stationCounts = stationData.reduce(
+        (acc: Record<string, number>, prop: any) => {
+          const hasStation = prop.has_nearby_station ? 'true' : 'false'
+          acc[hasStation] = (acc[hasStation] || 0) + 1
+          return acc
+        },
+        {}
+      )
+
+      Object.entries(stationCounts).forEach(([hasStation, count]) => {
+        addRefinement('has_nearby_station', hasStation === 'true', count as number)
+      })
+    }
+  }
+
+  // Priority 10: Street addresses (fallback when no other refinements narrow results)
   const refinementsThatNarrow = suggestions.filter(s => s.resultCount < totalCount)
   if (refinementsThatNarrow.length === 0 && totalCount > 1) {
     const { data: streetData } = await buildBaseQuery()
