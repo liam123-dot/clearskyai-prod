@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import type { LocationKeywords } from '@/lib/property-prompt'
+import { deleteToolWithCleanup, getToolByExternalId } from '@/lib/tools'
 
 // Knowledge base types
 export type KnowledgeBaseType = 'general' | 'estate_agent'
@@ -194,10 +196,60 @@ export async function updateKnowledgeBase(
 
 /**
  * Delete a knowledge base
+ * This function performs cascading deletion:
+ * - Finds all tools created for this knowledge base (via agent_knowledge_bases.vapi_tool_id)
+ * - Deletes each tool (which removes it from VAPI and all agents)
+ * - Deletes the knowledge base (CASCADE deletes agent_knowledge_bases records)
  */
 export async function deleteKnowledgeBase(id: string): Promise<void> {
-  const supabase = await createClient()
+  const supabase = await createServiceClient()
 
+  // Find all agent_knowledge_bases records with vapi_tool_id for this knowledge base
+  const { data: assignments, error: assignmentsError } = await supabase
+    .from('agent_knowledge_bases')
+    .select('vapi_tool_id')
+    .eq('knowledge_base_id', id)
+    .not('vapi_tool_id', 'is', null)
+
+  if (assignmentsError) {
+    console.error('Error fetching knowledge base assignments:', assignmentsError)
+    throw assignmentsError
+  }
+
+  // Delete all tools associated with this knowledge base
+  if (assignments && assignments.length > 0) {
+    console.log(`Found ${assignments.length} tool(s) associated with knowledge base ${id}`)
+    
+    // Collect unique vapi_tool_ids (same tool might be referenced multiple times)
+    const uniqueToolIds = new Set<string>()
+    for (const assignment of assignments) {
+      if (assignment.vapi_tool_id) {
+        uniqueToolIds.add(assignment.vapi_tool_id)
+      }
+    }
+
+    // For each unique tool, find it in the tools table and delete it
+    for (const vapiToolId of uniqueToolIds) {
+      try {
+        // Find the tool by external_tool_id
+        const tool = await getToolByExternalId(vapiToolId)
+        
+        if (tool) {
+          console.log(`Deleting tool ${tool.id} (VAPI tool ID: ${vapiToolId}) for knowledge base ${id}`)
+          // This will remove the tool from VAPI and all agents, then delete from DB
+          await deleteToolWithCleanup(tool.id)
+        } else {
+          console.warn(`Tool with external_tool_id ${vapiToolId} not found in database, skipping`)
+        }
+      } catch (error) {
+        console.error(`Error deleting tool with VAPI ID ${vapiToolId}:`, error)
+        // Continue with other tools even if one fails
+        // The knowledge base deletion will still proceed
+      }
+    }
+  }
+
+  // Delete the knowledge base (CASCADE will handle agent_knowledge_bases deletion)
   const { error } = await supabase
     .from('knowledge_bases')
     .delete()

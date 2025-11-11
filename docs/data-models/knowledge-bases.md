@@ -29,6 +29,21 @@ The `knowledge_bases` table stores knowledge base configurations for different t
 - `organization_id` references `organisations(id)` with ON DELETE CASCADE
   - If an organization is deleted, all their knowledge bases are deleted
 
+## Cascading Deletion
+
+When a knowledge base is deleted, the system performs cascading cleanup:
+
+1. **Tools Cleanup**: The system finds all tools created for this knowledge base (stored in `agent_knowledge_bases.vapi_tool_id`). For each tool:
+   - Removes the tool from all agents in VAPI (removes from assistant's `toolIds`)
+   - Deletes the tool from VAPI
+   - Deletes the tool from the `tools` table (CASCADE deletes `agent_tools` records)
+
+2. **Agent Assignments**: The `agent_knowledge_bases` table has a foreign key with ON DELETE CASCADE, so all assignment records are automatically deleted when the knowledge base is deleted.
+
+3. **Properties**: Properties linked via `properties.knowledge_base_id` are not automatically deleted (no CASCADE), but they will have an orphaned `knowledge_base_id` reference.
+
+This ensures that when a knowledge base is deleted, all associated tools are properly cleaned up from both the database and VAPI, preventing orphaned tool references.
+
 ## Knowledge Base Types
 
 ### General
@@ -68,6 +83,8 @@ Location data is automatically extracted and cached after properties are synced 
 - For estate_agent type, URLs point to RightMove search results that will be scraped
 - Re-sync schedules trigger background jobs to refresh property data
 - Properties are linked via the `properties` table using `knowledge_base_id`
+- When an estate agent knowledge base is assigned to an agent, a VAPI tool is automatically created and stored in the `tools` table
+- The relationship between knowledge bases and tools is tracked via `agent_knowledge_bases.vapi_tool_id`
 
 ## Example Queries
 

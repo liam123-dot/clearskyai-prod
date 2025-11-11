@@ -104,6 +104,7 @@ export default async function AdminAgentsPage() {
                   <TableHead className="font-semibold">Model</TableHead>
                   <TableHead className="font-semibold">Organization</TableHead>
                   <TableHead className="font-semibold">Slug</TableHead>
+                  <TableHead className="font-semibold">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <AgentsTableBody agents={agents} organizations={organizations} />

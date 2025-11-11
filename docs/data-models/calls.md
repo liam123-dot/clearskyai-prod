@@ -8,7 +8,7 @@ The `calls` table stores call records from VAPI end-of-call reports, linking the
 |--------|------|-------------|-------------|
 | `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Internal database ID |
 | `organization_id` | UUID | NOT NULL, REFERENCES organisations(id) ON DELETE CASCADE | Organization that owns this call |
-| `agent_id` | UUID | NOT NULL, REFERENCES agents(id) ON DELETE CASCADE | Agent that handled this call |
+| `agent_id` | UUID | REFERENCES agents(id) ON DELETE SET NULL | Agent that handled this call |
 | `phone_number_id` | UUID | REFERENCES phone_numbers(id) ON DELETE SET NULL | Phone number that received this call |
 | `call_sid` | TEXT | NULL | Twilio Call SID for matching call records across endpoints |
 | `caller_number` | TEXT | NULL | Phone number of the caller |
@@ -32,7 +32,7 @@ The `calls` table stores call records from VAPI end-of-call reports, linking the
 ## Relationships
 
 - **organizations**: Many-to-one relationship. When an organization is deleted, all their calls are deleted (CASCADE)
-- **agents**: Many-to-one relationship. When an agent is deleted, all their calls are deleted (CASCADE)
+- **agents**: Many-to-one relationship. When an agent is deleted, calls are kept but agent_id is set to NULL (SET NULL)
 - **phone_numbers**: Many-to-one relationship. When a phone number is deleted, calls are kept but phone_number_id is set to NULL (SET NULL)
 
 ## Webhook Flow

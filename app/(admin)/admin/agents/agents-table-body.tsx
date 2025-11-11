@@ -11,8 +11,20 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { toast } from "sonner"
-import { IconRobot } from "@tabler/icons-react"
+import { IconRobot, IconTrash, IconLoader2 } from "@tabler/icons-react"
 import type { AgentWithDetails } from "@/lib/vapi/agents"
 
 interface AgentsTableBodyProps {
@@ -28,6 +40,8 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
       return acc
     }, {} as Record<string, string | null>)
   )
+  const [agentToDelete, setAgentToDelete] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   const handleOrganizationChange = async (vapiAssistantId: string, organizationId: string | null) => {
     const previousValue = assignedOrgs[vapiAssistantId]
@@ -71,6 +85,30 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
         [vapiAssistantId]: previousValue
       }))
       toast.error('Failed to assign agent')
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!agentToDelete) return
+
+    setIsDeleting(true)
+    try {
+      const response = await fetch(`/api/admin/agents/${agentToDelete}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete agent')
+      }
+
+      toast.success('Agent deleted successfully')
+      router.refresh()
+      setAgentToDelete(null)
+    } catch (error) {
+      console.error('Error deleting agent:', error)
+      toast.error('Failed to delete agent')
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -152,6 +190,51 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
                 </Badge>
               ) : (
                 <span className="text-muted-foreground text-sm">—</span>
+              )}
+            </TableCell>
+            <TableCell onClick={(e) => e.stopPropagation()}>
+              {agent.id && (
+                <AlertDialog 
+                  open={agentToDelete === agent.id} 
+                  onOpenChange={(open) => !open && setAgentToDelete(null)}
+                >
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setAgentToDelete(agent.id!)
+                      }}
+                      disabled={isDeleting}
+                    >
+                      {isDeleting && agentToDelete === agent.id ? (
+                        <IconLoader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <IconTrash className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently delete the agent &quot;{agent.vapiAssistant.name}&quot;. This will remove all tool and knowledge base assignments, but call history will be preserved. This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={handleDelete}
+                        className="bg-destructive text-destructive-foreground"
+                        disabled={isDeleting}
+                      >
+                        {isDeleting ? 'Deleting...' : 'Delete'}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
             </TableCell>
           </TableRow>

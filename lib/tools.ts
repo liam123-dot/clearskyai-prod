@@ -191,6 +191,118 @@ export async function deleteToolByExternalId(externalToolId: string): Promise<vo
 }
 
 /**
+ * Deletes a tool with full cleanup (removes from VAPI and all agents)
+ * This function handles the complete deletion process including:
+ * - Removing tool from all agents in VAPI
+ * - Deleting tool from VAPI
+ * - Deleting tool from database (CASCADE handles agent_tools)
+ */
+export async function deleteToolWithCleanup(toolId: string): Promise<void> {
+  const supabase = await createServiceClient()
+
+  // Get the tool to retrieve its external_tool_id
+  const { data: tool, error: fetchError } = await supabase
+    .from('tools')
+    .select('external_tool_id')
+    .eq('id', toolId)
+    .single()
+
+  if (fetchError || !tool) {
+    throw new Error('Tool not found')
+  }
+
+  // Find all agents with this tool attached via agent_tools
+  const { data: agentToolsRecords, error: agentToolsError } = await supabase
+    .from('agent_tools')
+    .select('agent_id, is_vapi_attached, agents!inner(vapi_assistant_id)')
+    .eq('tool_id', toolId)
+
+  if (agentToolsError) {
+    console.error('Error fetching agent_tools:', agentToolsError)
+    throw agentToolsError
+  }
+
+  // Remove tool from all agents in VAPI (for is_vapi_attached=true)
+  if (tool.external_tool_id && agentToolsRecords && agentToolsRecords.length > 0) {
+    console.log(`Removing tool ${toolId} from ${agentToolsRecords.length} agent(s)`)
+    
+    for (const record of agentToolsRecords) {
+      const agentRecord = record as any
+      if (!agentRecord.is_vapi_attached) {
+        // Skip preemptive-only tools
+        continue
+      }
+
+      const vapiAssistantId = agentRecord.agents?.vapi_assistant_id
+      if (!vapiAssistantId) {
+        console.warn(`Agent ${agentRecord.agent_id} has no vapi_assistant_id`)
+        continue
+      }
+
+      try {
+        // Fetch current assistant
+        const assistant = await vapiClient.assistants.get(vapiAssistantId)
+        const currentToolIds = assistant.model?.toolIds || []
+
+        // Remove tool from toolIds
+        const updatedToolIds = currentToolIds.filter(toolId => toolId !== tool.external_tool_id)
+
+        // Update assistant
+        await vapiClient.assistants.update(vapiAssistantId, {
+          model: {
+            ...assistant.model,
+            toolIds: updatedToolIds
+          } as any
+        })
+        
+        console.log(`Removed tool from agent ${agentRecord.agent_id} in VAPI`)
+      } catch (vapiError: any) {
+        // Check if it's a 404 error (tool or assistant not found)
+        if (vapiError?.statusCode === 404 || vapiError?.status === 404) {
+          console.log(`Tool or assistant not found in VAPI (404), continuing with deletion`)
+        } else {
+          // Other errors should fail the deletion
+          console.error(`Error removing tool from agent ${agentRecord.agent_id}:`, vapiError)
+          throw new Error(`Failed to remove tool from agents in VAPI: ${vapiError.message}`)
+        }
+      }
+    }
+  }
+
+  // Delete tool from VAPI (only if tool has external_tool_id)
+  if (tool.external_tool_id) {
+    try {
+      console.log('Deleting VAPI tool:', tool.external_tool_id)
+      await vapiClient.tools.delete(tool.external_tool_id)
+      console.log('VAPI tool deleted successfully')
+    } catch (vapiError: any) {
+      // If 404, the tool was already deleted, which is fine
+      if (vapiError?.statusCode === 404 || vapiError?.status === 404) {
+        console.log('VAPI tool already deleted (404)')
+      } else {
+        console.error('Error deleting VAPI tool:', vapiError)
+        // Continue with DB deletion even if VAPI deletion fails
+      }
+    }
+  } else {
+    console.log('No VAPI tool to delete (preemptive-only tool)')
+  }
+
+  // Delete from DB (CASCADE will handle agent_tools deletion)
+  const { error: deleteError } = await supabase
+    .from('tools')
+    .delete()
+    .eq('id', toolId)
+
+  if (deleteError) {
+    console.error('Error deleting tool from DB:', deleteError)
+    throw deleteError
+  }
+
+  console.log('Tool deleted:', toolId)
+}
+
+/**
  * Gets all tools across all organizations (for admin use)
  */
 export async function getAllTools(): Promise<Tool[]> {
