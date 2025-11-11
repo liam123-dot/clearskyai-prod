@@ -193,49 +193,47 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
               )}
             </TableCell>
             <TableCell onClick={(e) => e.stopPropagation()}>
-              {agent.id && (
-                <AlertDialog 
-                  open={agentToDelete === agent.id} 
-                  onOpenChange={(open) => !open && setAgentToDelete(null)}
-                >
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setAgentToDelete(agent.id!)
-                      }}
+              <AlertDialog 
+                open={agentToDelete === (agent.id || agent.vapi_assistant_id)} 
+                onOpenChange={(open) => !open && setAgentToDelete(null)}
+              >
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setAgentToDelete(agent.id || agent.vapi_assistant_id)
+                    }}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting && agentToDelete === (agent.id || agent.vapi_assistant_id) ? (
+                      <IconLoader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <IconTrash className="h-4 w-4" />
+                    )}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete the agent &quot;{agent.vapiAssistant.name}&quot;. This will remove all tool and knowledge base assignments, but call history will be preserved. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDelete}
+                      className="bg-destructive text-destructive-foreground"
                       disabled={isDeleting}
                     >
-                      {isDeleting && agentToDelete === agent.id ? (
-                        <IconLoader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <IconTrash className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        This will permanently delete the agent &quot;{agent.vapiAssistant.name}&quot;. This will remove all tool and knowledge base assignments, but call history will be preserved. This action cannot be undone.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={handleDelete}
-                        className="bg-destructive text-destructive-foreground"
-                        disabled={isDeleting}
-                      >
-                        {isDeleting ? 'Deleting...' : 'Delete'}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              )}
+                      {isDeleting ? 'Deleting...' : 'Delete'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </TableCell>
           </TableRow>
         )
