@@ -19,7 +19,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Loader2, Info, Clock } from 'lucide-react'
+import { Loader2, Info, Clock, RefreshCw } from 'lucide-react'
 import { IconPhone, IconRobot, IconUsers, IconRotateClockwise } from '@tabler/icons-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { CardDescription } from '@/components/ui/card'
@@ -200,7 +200,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
   }, [])
 
   // Fetch first call date
-  const { data: firstCallData } = useQuery<{ firstCallDate: string | null }>({
+  const { data: firstCallData, refetch: refetchFirstCall } = useQuery<{ firstCallDate: string | null }>({
     queryKey: ['first-call-date', isAdmin ? 'admin' : slug, selectedOrganizationId],
     queryFn: async () => {
       const baseUrl = isAdmin ? '/api/admin/calls/analytics' : `/api/${slug}/calls/analytics`
@@ -213,6 +213,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
       return response.json()
     },
     enabled: isAdmin ? true : !!slug,
+    refetchInterval: 30000, // Refresh every 30 seconds
   })
 
   // Adjust date range if it goes before the first call
@@ -349,7 +350,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
   }, [searchParams, isAdmin]) // Only depend on searchParams and isAdmin to avoid loops
 
   // Fetch agents
-  const { data: agents = [], isLoading: agentsLoading } = useQuery<Agent[]>({
+  const { data: agents = [], isLoading: agentsLoading, refetch: refetchAgents, isFetching: isFetchingAgents } = useQuery<Agent[]>({
     queryKey: ['agents', isAdmin ? 'admin' : slug, selectedOrganizationId],
     queryFn: async () => {
       const baseUrl = isAdmin ? '/api/admin/agents' : `/api/${slug}/agents`
@@ -363,6 +364,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
       return response.json()
     },
     enabled: isAdmin ? true : !!slug,
+    refetchInterval: 30000, // Refresh every 30 seconds
   })
 
   // Set all agents as selected by default when agents load (if not in URL)
@@ -386,7 +388,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
   }, [selectedStatuses.length, searchParams, updateURL])
 
       // Fetch analytics data
-      const { data: analyticsData, isLoading: analyticsLoading, error } = useQuery<AnalyticsData>({
+      const { data: analyticsData, isLoading: analyticsLoading, error, refetch: refetchAnalytics, isFetching: isFetchingAnalytics } = useQuery<AnalyticsData>({
         queryKey: ['calls-analytics', isAdmin ? 'admin' : slug, selectedOrganizationId, dateRange.from.toISOString(), dateRange.to.toISOString(), selectedAgents, selectedStatuses, timeGrouping],
         queryFn: async () => {
           // Normalize date range: start from midnight of start day, end at end of day for end day
@@ -419,6 +421,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
       return response.json()
     },
     enabled: agents.length > 0 || selectedAgents.length > 0,
+    refetchInterval: 30000, // Refresh every 30 seconds
   })
 
   const toggleAgent = (agentId: string) => {
@@ -625,6 +628,18 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
     }, 0)
   }
 
+  // Handle manual refresh
+  const handleRefresh = useCallback(async () => {
+    await Promise.all([
+      refetchFirstCall(),
+      refetchAgents(),
+      refetchAnalytics(),
+    ])
+  }, [refetchFirstCall, refetchAgents, refetchAnalytics])
+
+  // Determine if any query is fetching
+  const isRefreshing = isFetchingAnalytics || isFetchingAgents
+
 
   return (
     <div className="space-y-4">
@@ -648,6 +663,17 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
             <div className="h-4 w-px bg-border" />
           </>
         )}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8"
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
+        <div className="h-4 w-px bg-border" />
         <DateRangePicker
           initialDateFrom={dateRange.from}
           initialDateTo={dateRange.to}
