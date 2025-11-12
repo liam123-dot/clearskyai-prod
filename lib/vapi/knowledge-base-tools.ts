@@ -72,18 +72,6 @@ export function createEstateAgentToolData(
             type: "boolean",
             description: "Filter properties with nearby train/tube stations"
           },
-          city: {
-            type: "string",
-            description: "City name to filter properties by. Uses fuzzy matching to find the closest city if exact match not found. If no match found, returns available cities as refinements."
-          },
-          district: {
-            type: "string",
-            description: "District name to filter properties by. Uses fuzzy matching to find the closest district if exact match not found. If no match found, returns available districts as refinements."
-          },
-          county: {
-            type: "string",
-            description: "County name to filter properties by. Uses fuzzy matching to find the closest county if exact match not found. If no match found, returns available counties as refinements."
-          },
           location: {
             type: "string",
             description: "General location search - street name, area, district, or landmark. Uses intelligent multi-strategy matching: (1) Searches full addresses for exact/fuzzy/phonetic matches, (2) Uses Google Places API to understand area boundaries (e.g., 'central Edinburgh', 'Spinningfields'), (3) Returns properties within the specified area bounds. Examples: 'Baker Street', 'Spinningfields', 'central Edinburgh', 'Kensington', 'left bank'. If no match found, returns top 10-15 most similar locations as refinements."
@@ -144,18 +132,6 @@ export function createEstateAgentToolData(
         },
         has_nearby_station: {
           type: "boolean"
-        },
-        city: {
-          type: "string",
-          description: "City name to filter properties by"
-        },
-        district: {
-          type: "string",
-          description: "District name to filter properties by"
-        },
-        county: {
-          type: "string",
-          description: "County name to filter properties by"
         },
         location: {
           type: "string",

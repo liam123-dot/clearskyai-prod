@@ -1,6 +1,6 @@
 
 import { getAgentById } from "@/lib/vapi/agents"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 import { AgentPromptsForm } from "@/components/agents/agent-prompts-form"
 import type { Metadata } from "next"
 
@@ -33,7 +33,7 @@ export default async function AgentConfigurationPage({ params }: { params: Promi
   const agent = await getAgentById(id)
 
   if (!agent) {
-    notFound()
+    redirect(`/${slug}/agents`)
   }
 
   // Extract firstMessage
