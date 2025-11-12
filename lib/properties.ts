@@ -548,58 +548,64 @@ async function fuzzyMatchStreet(
     return null
   }
 
-  // Collect all unique street addresses
-  const streetAddresses = new Set<string>()
+  // Build a map of full_address -> street_address for lookup after matching
+  const addressMap = new Map<string, string>()
   properties.forEach((p: any) => {
-    if (p.street_address) streetAddresses.add(p.street_address)
+    if (p.full_address && p.street_address) {
+      addressMap.set(p.full_address, p.street_address)
+    }
   })
 
-  const uniqueStreets = Array.from(streetAddresses)
+  const uniqueFullAddresses = Array.from(addressMap.keys())
   const normalizedSearch = searchTerm.toLowerCase().trim()
 
   // Stage 1: Try exact match (case-insensitive)
-  const exactMatches = uniqueStreets.filter(
-    (street) => street.toLowerCase().trim() === normalizedSearch
+  const exactMatches = uniqueFullAddresses.filter(
+    (addr) => addr.toLowerCase().trim() === normalizedSearch
   )
   if (exactMatches.length > 0) {
-    return exactMatches
+    // Return the corresponding street_address values
+    return [...new Set(exactMatches.map(addr => addressMap.get(addr)!).filter(s => s))]
   }
 
-  // Stage 2: Try substring match - return ALL streets that match
-  const substringMatches = uniqueStreets.filter(
-    (street) => {
-      const normalizedStreet = street.toLowerCase().trim()
-      return normalizedStreet.includes(normalizedSearch) || normalizedSearch.includes(normalizedStreet)
+  // Stage 2: Try substring match - return ALL addresses that match
+  const substringMatches = uniqueFullAddresses.filter(
+    (addr) => {
+      const normalizedAddr = addr.toLowerCase().trim()
+      return normalizedAddr.includes(normalizedSearch) || normalizedSearch.includes(normalizedAddr)
     }
   )
   if (substringMatches.length > 0) {
-    return substringMatches
+    // Return the corresponding street_address values
+    return [...new Set(substringMatches.map(addr => addressMap.get(addr)!).filter(s => s))]
   }
 
   // Stage 3 & 4: Try fuzzy match and phonetic match - return ALL above threshold
-  const matchedStreets: Map<string, number> = new Map()
+  const matchedAddresses: Map<string, number> = new Map()
 
-  for (const street of uniqueStreets) {
-    const normalizedStreet = street.toLowerCase().trim()
+  for (const addr of uniqueFullAddresses) {
+    const normalizedAddr = addr.toLowerCase().trim()
 
     // Fuzzy match using Levenshtein distance (60% threshold - more forgiving)
-    const similarity = stringSimilarity(normalizedSearch, normalizedStreet)
+    const similarity = stringSimilarity(normalizedSearch, normalizedAddr)
     if (similarity >= 0.6) {
-      matchedStreets.set(street, Math.max(matchedStreets.get(street) || 0, similarity))
+      matchedAddresses.set(addr, Math.max(matchedAddresses.get(addr) || 0, similarity))
     }
 
     // Phonetic match using Soundex (handles similar-sounding names)
-    if (phoneticMatch(searchTerm, street)) {
+    if (phoneticMatch(searchTerm, addr)) {
       const phoneticScore = 0.75 // Give phonetic matches a decent score
-      matchedStreets.set(street, Math.max(matchedStreets.get(street) || 0, phoneticScore))
+      matchedAddresses.set(addr, Math.max(matchedAddresses.get(addr) || 0, phoneticScore))
     }
   }
 
-  if (matchedStreets.size > 0) {
-    // Return all streets that matched, sorted by score (best first)
-    return Array.from(matchedStreets.entries())
+  if (matchedAddresses.size > 0) {
+    // Return the corresponding street_address values, sorted by score (best first)
+    const sortedFullAddresses = Array.from(matchedAddresses.entries())
       .sort((a, b) => b[1] - a[1])
-      .map(([street]) => street)
+      .map(([addr]) => addr)
+    
+    return [...new Set(sortedFullAddresses.map(addr => addressMap.get(addr)!).filter(s => s))]
   }
 
   return null
@@ -681,7 +687,7 @@ async function generateStreetRefinements(
   // Build query with other filters applied (excluding street)
   let query = supabase
     .from('properties')
-    .select('street_address')
+    .select('street_address, full_address')
     .eq('knowledge_base_id', knowledgeBaseId)
     .not('street_address', 'is', null)
 
@@ -734,17 +740,19 @@ async function generateStreetRefinements(
     return suggestions
   }
 
-  // Count occurrences and calculate similarity scores
+  // Count occurrences and calculate similarity scores (using full_address for matching)
   const streetScores: Map<string, { count: number; score: number }> = new Map()
   const normalizedSearch = searchTerm.toLowerCase().trim()
 
   properties.forEach((prop: any) => {
     const street = prop.street_address
-    if (street) {
+    const fullAddress = prop.full_address || prop.street_address
+    
+    if (street && fullAddress) {
       if (!streetScores.has(street)) {
-        // Calculate combined similarity score
-        const fuzzyScore = stringSimilarity(normalizedSearch, street.toLowerCase().trim())
-        const phoneticScore = phoneticMatch(searchTerm, street) ? 0.8 : 0
+        // Calculate combined similarity score using full_address for matching
+        const fuzzyScore = stringSimilarity(normalizedSearch, fullAddress.toLowerCase().trim())
+        const phoneticScore = phoneticMatch(searchTerm, fullAddress) ? 0.8 : 0
         const combinedScore = Math.max(fuzzyScore, phoneticScore)
         
         streetScores.set(street, { count: 1, score: combinedScore })
