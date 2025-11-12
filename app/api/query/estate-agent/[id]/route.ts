@@ -36,9 +36,11 @@ function formatPropertiesAsText(result: PropertyQueryResponse, filters: Property
   if (filters.postcode) {
     activeFilters.push(`Postcode: ${filters.postcode}`);
   }
-  if (filters.location) {
-    const radius = filters.location_radius_km || 25;
-    activeFilters.push(`Location: ${filters.location} (within ${radius}km)`);
+  if (filters.county) {
+    activeFilters.push(`County: ${filters.county}`);
+  }
+  if (filters.street) {
+    activeFilters.push(`Street: ${filters.street}`);
   }
   if (filters.property_type) {
     activeFilters.push(`Property Type: ${filters.property_type}`);
@@ -69,6 +71,8 @@ function formatPropertiesAsText(result: PropertyQueryResponse, filters: Property
     if (refinement.filterName === 'baths' && filters.baths !== undefined) return;
     if (refinement.filterName === 'city' && filters.city) return;
     if (refinement.filterName === 'district' && filters.district) return;
+    if (refinement.filterName === 'county' && filters.county) return;
+    if (refinement.filterName === 'street' && filters.street) return;
     if (refinement.filterName === 'postcode' && filters.postcode) return;
     if (refinement.filterName === 'property_type' && filters.property_type) return;
     if (refinement.filterName === 'furnished_type' && filters.furnished_type) return;
@@ -152,11 +156,6 @@ function formatPropertiesAsText(result: PropertyQueryResponse, filters: Property
       lines.push(`Pets Allowed: ${prop.pets_allowed === null ? 'Not specified' : prop.pets_allowed ? 'Yes' : 'No'}`);
       lines.push(`Description: ${prop.description ?? 'Not specified'}`);
       
-      // Only include distance if it exists (location-based search)
-      if (prop.distance_km !== undefined) {
-        lines.push(`Distance: ${prop.distance_km} km`);
-      }
-      
       lines.push('');
     });
   }
@@ -233,9 +232,9 @@ export async function POST(
       has_nearby_station: body.has_nearby_station,
       city: body.city,
       district: body.district,
+      county: body.county,
+      street: body.street,
       postcode: body.postcode,
-      location: body.location,
-      location_radius_km: body.location_radius_km,
       include_all: body.include_all ?? false,
     };
 

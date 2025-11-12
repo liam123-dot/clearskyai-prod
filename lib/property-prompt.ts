@@ -272,14 +272,16 @@ export async function generatePropertyQueryPrompt(
     }
     promptParts.push('')
     promptParts.push('The tool uses intelligent location matching:')
-    promptParts.push('- Searches by city names, district names, postcodes, or street names')
-    promptParts.push('- Uses Google Maps geocoding to find locations and searches within a specified radius (default 25km)')
-    promptParts.push('- Automatically filters out non-UK locations')
-    promptParts.push('- If no exact matches found, performs fuzzy search against property addresses')
-    promptParts.push('- Returns properties sorted by distance (nearest first)')
-    promptParts.push('- **Important**: Always inform users of the distance when properties are significantly far from their requested location')
+    promptParts.push('- Searches by exact city, district, county, and street address names')
+    promptParts.push('- Uses fuzzy matching to find closest match if exact name not found (60% similarity threshold - forgiving for typos)')
+    promptParts.push('- Street search uses phonetic matching to handle similar-sounding names and misspellings')
+    promptParts.push('- If no match found, returns all available options (or top 15 similar streets) as refinements')
+    promptParts.push('- Example: User says "Londn" → system matches to "London" automatically')
+    promptParts.push('- Example: User says "Sherrif Street" → system matches to "Sheriff Street" (handles typos)')
+    promptParts.push('- Example: User says "Baeker Street" → system matches to "Baker Street" using phonetic matching')
+    promptParts.push('- Example: User says "XYZ City" (not in database) → system returns list of available cities')
   } else {
-    promptParts.push('Location data not yet available. Use the location filter to search by any UK city, district, postcode, or street name.')
+    promptParts.push('Location data not yet available. Use city, district, or county filters to search by location.')
   }
   promptParts.push('')
   
@@ -292,20 +294,43 @@ export async function generatePropertyQueryPrompt(
   const rentalCount = properties.filter(p => p.transaction_type === 'rent').length
   const saleCount = properties.filter(p => p.transaction_type === 'sale').length
   
+  // Determine if properties are rent-only, sale-only, or mixed
+  const isRentOnly = rentalCount > 0 && saleCount === 0
+  const isSaleOnly = saleCount > 0 && rentalCount === 0
+  const isMixed = rentalCount > 0 && saleCount > 0
+  
   if (rentalCount > 0 || saleCount > 0) {
     promptParts.push('')
     promptParts.push('### Transaction Types')
-    if (rentalCount > 0) {
-      promptParts.push(`- **Rentals**: ${rentalCount} properties`)
+    
+    // Highlight if all properties are of one type
+    if (isRentOnly) {
+      promptParts.push(`- **ALL PROPERTIES ARE FOR RENT** (${rentalCount} rental properties)`)
+      promptParts.push('  - ⚠️ DO NOT ask if customer wants to rent or buy - all properties are rentals')
       if (rentalMin !== null && rentalMax !== null) {
         promptParts.push(`  - Price range: ${formatPrice(rentalMin, true)} - ${formatPrice(rentalMax, true)}`)
       }
-    }
-    if (saleCount > 0) {
-      promptParts.push(`- **Sales**: ${saleCount} properties`)
+    } else if (isSaleOnly) {
+      promptParts.push(`- **ALL PROPERTIES ARE FOR SALE** (${saleCount} sale properties)`)
+      promptParts.push('  - ⚠️ DO NOT ask if customer wants to rent or buy - all properties are for sale')
       if (saleMin !== null && saleMax !== null) {
         promptParts.push(`  - Price range: ${formatPrice(saleMin, false)} - ${formatPrice(saleMax, false)}`)
       }
+    } else if (isMixed) {
+      promptParts.push(`- **Mixed inventory** - both rentals and sales available`)
+      if (rentalCount > 0) {
+        promptParts.push(`  - **Rentals**: ${rentalCount} properties`)
+        if (rentalMin !== null && rentalMax !== null) {
+          promptParts.push(`    - Price range: ${formatPrice(rentalMin, true)} - ${formatPrice(rentalMax, true)}`)
+        }
+      }
+      if (saleCount > 0) {
+        promptParts.push(`  - **Sales**: ${saleCount} properties`)
+        if (saleMin !== null && saleMax !== null) {
+          promptParts.push(`    - Price range: ${formatPrice(saleMin, false)} - ${formatPrice(saleMax, false)}`)
+        }
+      }
+      promptParts.push('  - ⚠️ ALWAYS ask if customer wants to rent or buy as first question')
     }
   }
   
@@ -340,9 +365,20 @@ export async function generatePropertyQueryPrompt(
   promptParts.push('The property search tool allows you to filter properties using multiple criteria:')
   promptParts.push('')
   promptParts.push('**Available Filters:**')
-  promptParts.push('- `transaction_type` - "rent" or "sale" (ALWAYS use this first)')
-  promptParts.push('- `location` - Any UK city, district, postcode, or street name')
-  promptParts.push('- `location_radius_km` - Search radius in km (default: 25km, range: 5-50km)')
+  
+  // Only mention transaction_type if inventory is mixed
+  if (isMixed) {
+    promptParts.push('- `transaction_type` - "rent" or "sale" (⚠️ ALWAYS ask and use this first since inventory is mixed)')
+  } else if (isRentOnly) {
+    promptParts.push('- `transaction_type` - Always set to "rent" (all properties are rentals - DO NOT ask customer)')
+  } else if (isSaleOnly) {
+    promptParts.push('- `transaction_type` - Always set to "sale" (all properties are for sale - DO NOT ask customer)')
+  }
+  
+  promptParts.push('- `city` - City name (uses fuzzy matching, returns available cities if no match)')
+  promptParts.push('- `district` - District name (uses fuzzy matching, returns available districts if no match)')
+  promptParts.push('- `county` - County name (uses fuzzy matching, returns available counties if no match)')
+  promptParts.push('- `street` - Street name or address (uses fuzzy + phonetic matching, returns top 15 similar streets if no match)')
   promptParts.push('- `beds` - Number of bedrooms')
   promptParts.push('- `baths` - Number of bathrooms')
   promptParts.push('- `property_type` - Type of property (e.g., "House", "Flat")')
@@ -361,7 +397,16 @@ export async function generatePropertyQueryPrompt(
   promptParts.push('')
   promptParts.push('## How to Use This Tool')
   promptParts.push('')
-  promptParts.push('1. **Start with transaction type** - Always ask if they\'re looking to rent or buy')
+  
+  // Conditional first step based on inventory type
+  if (isMixed) {
+    promptParts.push('1. **Start with transaction type** - Always ask if they\'re looking to rent or buy (inventory is mixed)')
+  } else if (isRentOnly) {
+    promptParts.push('1. **Skip transaction type** - All properties are rentals, automatically use transaction_type="rent" in queries')
+  } else if (isSaleOnly) {
+    promptParts.push('1. **Skip transaction type** - All properties are for sale, automatically use transaction_type="sale" in queries')
+  }
+  
   promptParts.push('2. **Gather key criteria** - Location, bedrooms, and budget are most important')
   promptParts.push('3. **Use filters strategically** - Start broad, then narrow down with additional filters')
   promptParts.push('4. **Watch the totalCount** - The tool returns up to 3 properties plus a totalCount:')
@@ -369,19 +414,20 @@ export async function generatePropertyQueryPrompt(
   promptParts.push('   - If totalCount 4-10: Can show results or ask if they want to narrow further')
   promptParts.push('   - If totalCount ≤ 3: Present properties directly')
   promptParts.push('5. **Narrow conversationally** - Ask natural questions about location, beds, budget, etc.')
-  promptParts.push('6. **Check distances** - When using location filter, always inform users of property distances')
+  promptParts.push('6. **Handle location mismatches** - If user provides a location not in the database, the tool will return available options as refinements. Present these options to the user conversationally.')
   promptParts.push('')
   promptParts.push('## Handling Results')
   promptParts.push('')
   promptParts.push('The tool returns:')
   promptParts.push('- Up to 3 matching properties by default')
   promptParts.push('- `totalCount` - Total number of matches in the database')
-  promptParts.push('- `distance_km` - Distance from requested location (when using location filter)')
+  promptParts.push('- `refinements` - Available filter options to narrow results')
   promptParts.push('')
   promptParts.push('**Response strategy based on totalCount:**')
   promptParts.push('- If totalCount > 10: ALWAYS ask clarifying questions to narrow down (location, bedrooms, price range) - DO NOT use include_all')
   promptParts.push('- If totalCount 4-10: Ask if they want to narrow further OR use include_all only if they explicitly want to hear all details')
   promptParts.push('- If totalCount ≤ 3: Present properties directly (include_all can be used safely here if they want full details)')
+  promptParts.push('- If totalCount = 0 and refinements exist: User\'s location didn\'t match - present the available location options conversationally')
   promptParts.push('')
   promptParts.push('**Natural conversation flow:**')
   promptParts.push('- "I found 45 properties. Let me help narrow this down. What area are you interested in?"')
@@ -389,10 +435,10 @@ export async function generatePropertyQueryPrompt(
   promptParts.push('- "What\'s your budget range?"')
   promptParts.push('- Keep asking until you have enough filters to get a manageable number of results')
   promptParts.push('')
-  promptParts.push('**When presenting distance information:**')
-  promptParts.push('- Properties within 5km: "This property is [X]km from [location]"')
-  promptParts.push('- Properties 5-15km away: "This property is [X]km from [location], which is a bit further out"')
-  promptParts.push('- Properties over 15km away: "Note: This property is [X]km from [location], which is quite far from the area you mentioned. Would you like me to search for properties closer to [location]?"')
+  promptParts.push('**When location doesn\'t match:**')
+  promptParts.push('- "I don\'t have properties in [user\'s location]. However, I have properties in: [list available cities/districts]"')
+  promptParts.push('- "Did you mean one of these areas?"')
+  promptParts.push('- Be helpful and conversational when presenting alternatives')
   promptParts.push('')
   promptParts.push('## Example Usage')
   promptParts.push('')
@@ -401,17 +447,34 @@ export async function generatePropertyQueryPrompt(
   promptParts.push('**Search with**: ')
   promptParts.push('- transaction_type: "rent"')
   promptParts.push('- beds: 2')
-  promptParts.push('- location: "London"')
+  promptParts.push('- city: "London"')
   promptParts.push('- property_type: "Flat"')
   promptParts.push('- price: { "filter": "under", "value": 2000 }')
   promptParts.push('')
   promptParts.push('**If results return 50 properties**, ask natural follow-up questions:')
   promptParts.push('"I found 50 two-bedroom flats in London under £2000/month. To help narrow this down:')
-  promptParts.push('- Which specific area in London are you interested in?')
+  promptParts.push('- Which specific district in London are you interested in?')
   promptParts.push('- Would you prefer furnished or unfurnished?')
   promptParts.push('- Are you looking to be near a train station?"')
   promptParts.push('')
-  promptParts.push('Then call the tool again with the additional filters they specify.')
+  promptParts.push('**If user provides unknown location**, the tool returns available options:')
+  promptParts.push('"I don\'t have properties in [location]. I have properties in these cities: [city list from refinements]."')
+  promptParts.push('')
+  promptParts.push('**Customer**: "Do you have any properties on Main Street?"')
+  promptParts.push('')
+  promptParts.push('**Search with**:')
+  promptParts.push('- transaction_type: "rent" (or "sale", depending on earlier conversation)')
+  promptParts.push('- street: "Main Street"')
+  promptParts.push('')
+  promptParts.push('**Note**: Street search uses multi-stage matching:')
+  promptParts.push('1. Exact match: "Baker Street" → "Baker Street" ✓')
+  promptParts.push('2. Substring: "Baker" → "Baker Street" ✓')
+  promptParts.push('3. Fuzzy: "Bker Street" → "Baker Street" ✓ (if 60%+ similar - handles typos)')
+  promptParts.push('4. Phonetic: "Baeker Street" → "Baker Street" ✓ (sounds similar)')
+  promptParts.push('')
+  promptParts.push('If no match found, tool returns top 10-15 most similar streets by fuzzy/phonetic score.')
+  promptParts.push('')
+  promptParts.push('Then call the tool again with the additional filters they specify or the corrected location.')
   promptParts.push('')
 
   return {

@@ -1,5 +1,4 @@
 import { createClient } from '@/lib/supabase/server'
-import { geocodeLocation } from '@/lib/geocoding'
 
 // Price filter structure
 export interface PriceFilter {
@@ -38,9 +37,9 @@ export interface PropertyQueryFilters {
   has_nearby_station?: boolean
   city?: string
   district?: string
+  county?: string
+  street?: string
   postcode?: string
-  location?: string // General location search (e.g., "London")
-  location_radius_km?: number // Radius in kilometers (default: 25km)
   include_all?: boolean // If true, return all matching properties; if false, return only when <= 3 matches or return refinements
 }
 
@@ -68,7 +67,6 @@ export interface PropertySearchResult {
   has_floorplan: boolean | null
   description: string | null
   added_on: string | null
-  distance_km?: number | null // Distance from location center (if location filter used)
 }
 
 // Refinement suggestion for narrowing results
@@ -96,84 +94,80 @@ export async function queryProperties(
 
   console.log('Query filters:', filters)
 
-  // Geocode location if provided
-  let locationCoords: { latitude: number; longitude: number } | null = null
-  if (filters.location) {
-    try {
-      const geocodeResult = await geocodeLocation(filters.location)
-      if (geocodeResult) {
-        // Check if the geocoded location is in the UK (rough bounds check)
-        // UK bounds: Latitude ~50-60°N, Longitude ~-8°E to 2°E
-        const isInUK = geocodeResult.latitude >= 49 && geocodeResult.latitude <= 61 &&
-                       geocodeResult.longitude >= -9 && geocodeResult.longitude <= 3
-        
-        if (isInUK) {
-          locationCoords = {
-            latitude: geocodeResult.latitude,
-            longitude: geocodeResult.longitude,
-          }
-          console.log(`Geocoded "${filters.location}" to UK location:`, locationCoords)
-          
-          // Validate that we can find properties near this location
-          // If geocoding succeeded but no properties found, we'll try fuzzy matching
-        } else {
-          console.warn(`Geocoded "${filters.location}" to location outside UK (${geocodeResult.formattedAddress}), trying fuzzy search`)
-          // Location is outside UK, try fuzzy matching instead
-          const fuzzyMatch = await findFuzzyLocationMatch(supabase, knowledgeBaseId, filters.location)
-          if (fuzzyMatch) {
-            locationCoords = {
-              latitude: fuzzyMatch.latitude,
-              longitude: fuzzyMatch.longitude,
-            }
-            console.log(`Fuzzy matched "${filters.location}" to "${fuzzyMatch.matchedAddress}" at:`, locationCoords)
-          } else {
-            console.warn(`No fuzzy match found for: ${filters.location}, falling back to text search`)
-            filters.city = filters.location
-            filters.location = undefined
-          }
-        }
-      } else {
-        console.warn(`Failed to geocode location: ${filters.location}, trying fuzzy search on property addresses`)
-        // Try fuzzy matching against property addresses
-        const fuzzyMatch = await findFuzzyLocationMatch(supabase, knowledgeBaseId, filters.location)
-        if (fuzzyMatch) {
-          locationCoords = {
-            latitude: fuzzyMatch.latitude,
-            longitude: fuzzyMatch.longitude,
-          }
-          console.log(`Fuzzy matched "${filters.location}" to "${fuzzyMatch.matchedAddress}" at:`, locationCoords)
-        } else {
-          console.warn(`No fuzzy match found for: ${filters.location}, falling back to text search`)
-          // Fallback: treat location as city filter
-          filters.city = filters.location
-          filters.location = undefined
-        }
+  // Apply fuzzy matching for city, district, and county filters
+  if (filters.city) {
+    const matchedCity = await fuzzyMatchLocationField(supabase, knowledgeBaseId, filters.city, 'city')
+    if (matchedCity) {
+      console.log(`Fuzzy matched city "${filters.city}" to "${matchedCity}"`)
+      filters.city = matchedCity
+    } else {
+      // No match found - return empty properties with available cities as refinements
+      console.warn(`No match found for city: ${filters.city}`)
+      const refinements = await generateLocationRefinements(supabase, knowledgeBaseId, filters, 'city')
+      return {
+        properties: [],
+        totalCount: 0,
+        refinements,
       }
-    } catch (error) {
-      console.error('Error geocoding location:', error)
-      // Try fuzzy matching as fallback
-      try {
-        if (filters.location) {
-          const fuzzyMatch = await findFuzzyLocationMatch(supabase, knowledgeBaseId, filters.location)
-          if (fuzzyMatch) {
-            locationCoords = {
-              latitude: fuzzyMatch.latitude,
-              longitude: fuzzyMatch.longitude,
-            }
-            console.log(`Fuzzy matched "${filters.location}" to "${fuzzyMatch.matchedAddress}" at:`, locationCoords)
-          } else {
-            // Fallback: treat location as city filter
-            filters.city = filters.location
-            filters.location = undefined
-          }
-        }
-      } catch (fuzzyError) {
-        console.error('Error in fuzzy matching:', fuzzyError)
-        // Fallback: treat location as city filter
-        if (filters.location) {
-          filters.city = filters.location
-          filters.location = undefined
-        }
+    }
+  }
+
+  if (filters.district) {
+    const matchedDistrict = await fuzzyMatchLocationField(supabase, knowledgeBaseId, filters.district, 'district')
+    if (matchedDistrict) {
+      console.log(`Fuzzy matched district "${filters.district}" to "${matchedDistrict}"`)
+      filters.district = matchedDistrict
+    } else {
+      // No match found - return empty properties with available districts as refinements
+      console.warn(`No match found for district: ${filters.district}`)
+      const refinements = await generateLocationRefinements(supabase, knowledgeBaseId, filters, 'district')
+      return {
+        properties: [],
+        totalCount: 0,
+        refinements,
+      }
+    }
+  }
+
+  if (filters.county) {
+    const matchedCounty = await fuzzyMatchLocationField(supabase, knowledgeBaseId, filters.county, 'county')
+    if (matchedCounty) {
+      console.log(`Fuzzy matched county "${filters.county}" to "${matchedCounty}"`)
+      filters.county = matchedCounty
+    } else {
+      // No match found - return empty properties with available counties as refinements
+      console.warn(`No match found for county: ${filters.county}`)
+      const refinements = await generateLocationRefinements(supabase, knowledgeBaseId, filters, 'county')
+      return {
+        properties: [],
+        totalCount: 0,
+        refinements,
+      }
+    }
+  }
+
+  // Store matched streets array for later use
+  let matchedStreets: string[] | null = null
+  
+  if (filters.street) {
+    // Create a copy of filters without street to pass to fuzzyMatchStreet
+    const { street, include_all, ...otherFilters } = filters
+    matchedStreets = await fuzzyMatchStreet(supabase, knowledgeBaseId, filters.street, otherFilters)
+    if (matchedStreets && matchedStreets.length > 0) {
+      if (matchedStreets.length === 1) {
+        console.log(`Fuzzy/phonetic matched street "${filters.street}" to "${matchedStreets[0]}"`)
+      } else {
+        console.log(`Fuzzy/phonetic matched street "${filters.street}" to ${matchedStreets.length} streets: ${matchedStreets.join(', ')}`)
+      }
+      // Don't set filters.street here - we'll use matchedStreets array directly in the query
+    } else {
+      // No match found - return empty properties with similar streets as refinements
+      console.warn(`No match found for street: ${filters.street}`)
+      const refinements = await generateStreetRefinements(supabase, knowledgeBaseId, filters, filters.street)
+      return {
+        properties: [],
+        totalCount: 0,
+        refinements,
       }
     }
   }
@@ -186,41 +180,6 @@ export async function queryProperties(
     const parsedPrice = parsePriceFilter(filters.price)
     minPrice = parsedPrice.min
     maxPrice = parsedPrice.max
-  }
-
-  const radiusMeters = filters.location_radius_km
-    ? filters.location_radius_km * 1000
-    : 25000 // Default 25km
-
-  // If location filtering is used, we need to use PostGIS with raw SQL
-  if (locationCoords) {
-    const result = await queryPropertiesWithLocation(
-      supabase,
-      knowledgeBaseId,
-      filters,
-      locationCoords,
-      radiusMeters
-    )
-    
-    // If no properties found within radius, try fuzzy matching with a wider search
-    if (result.totalCount === 0 && filters.location) {
-      console.warn(`No properties found within ${radiusMeters / 1000}km of geocoded location, trying fuzzy search`)
-      const fuzzyMatch = await findFuzzyLocationMatch(supabase, knowledgeBaseId, filters.location)
-      if (fuzzyMatch) {
-        // Use fuzzy match coordinates with a larger radius
-        const largerRadius = Math.max(radiusMeters, 50000) // At least 50km
-        console.log(`Using fuzzy match coordinates with larger radius: ${largerRadius / 1000}km`)
-        return await queryPropertiesWithLocation(
-          supabase,
-          knowledgeBaseId,
-          filters,
-          { latitude: fuzzyMatch.latitude, longitude: fuzzyMatch.longitude },
-          largerRadius
-        )
-      }
-    }
-    
-    return result
   }
 
   // Build base query (standard query without location filtering)
@@ -258,12 +217,24 @@ export async function queryProperties(
     query = query.lte('price', maxPrice)
   }
 
-  // Apply fuzzy location filters (case-insensitive partial match)
+  // Apply exact match for location filters (fuzzy matching already applied above)
   if (filters.city) {
-    query = query.ilike('city', `%${filters.city}%`)
+    query = query.eq('city', filters.city)
   }
   if (filters.district) {
-    query = query.ilike('district', `%${filters.district}%`)
+    query = query.eq('district', filters.district)
+  }
+  if (filters.county) {
+    query = query.eq('county', filters.county)
+  }
+  // Use matchedStreets array if available (allows matching multiple streets)
+  if (matchedStreets && matchedStreets.length > 0) {
+    if (matchedStreets.length === 1) {
+      query = query.eq('street_address', matchedStreets[0])
+    } else {
+      // Multiple streets matched - use .in() to match any of them
+      query = query.in('street_address', matchedStreets)
+    }
   }
   if (filters.postcode) {
     query = query.ilike('postcode', `%${filters.postcode}%`)
@@ -417,246 +388,6 @@ export async function queryProperties(
 }
 
 /**
- * Query properties with PostGIS location filtering
- * Uses JavaScript-based distance calculation as fallback
- */
-async function queryPropertiesWithLocation(
-  supabase: any,
-  knowledgeBaseId: string,
-  filters: PropertyQueryFilters,
-  locationCoords: { latitude: number; longitude: number },
-  radiusMeters: number
-): Promise<PropertyQueryResponse> {
-  const radiusKm = radiusMeters / 1000
-
-  // Build base query with all filters except location
-  let query = supabase
-    .from('properties')
-    .select('*', { count: 'exact' })
-    .eq('knowledge_base_id', knowledgeBaseId)
-    .not('location', 'is', null)
-
-  // Apply other filters
-  if (filters.beds !== undefined) {
-    query = query.eq('beds', filters.beds)
-  }
-  if (filters.baths !== undefined) {
-    query = query.eq('baths', filters.baths)
-  }
-  if (filters.transaction_type) {
-    query = query.eq('transaction_type', filters.transaction_type)
-  }
-  if (filters.property_type) {
-    query = query.eq('property_type', filters.property_type)
-  }
-  if (filters.furnished_type) {
-    query = query.eq('furnished_type', filters.furnished_type)
-  }
-  if (filters.has_nearby_station !== undefined) {
-    query = query.eq('has_nearby_station', filters.has_nearby_station)
-  }
-
-  // Parse price filter
-  let minPrice: number | undefined
-  let maxPrice: number | undefined
-  
-  if (filters.price && filters.price.filter) {
-    const parsedPrice = parsePriceFilter(filters.price)
-    minPrice = parsedPrice.min
-    maxPrice = parsedPrice.max
-  }
-
-  if (minPrice !== undefined) {
-    query = query.gte('price', minPrice)
-  }
-  if (maxPrice !== undefined) {
-    query = query.lte('price', maxPrice)
-  }
-  if (filters.city) {
-    query = query.ilike('city', `%${filters.city}%`)
-  }
-  if (filters.district) {
-    query = query.ilike('district', `%${filters.district}%`)
-  }
-  if (filters.postcode) {
-    query = query.ilike('postcode', `%${filters.postcode}%`)
-  }
-
-  // Fetch all properties (we'll filter by distance in JavaScript)
-  // Note: For large datasets, consider using PostGIS RPC function
-  const { data: properties, count: totalCountBeforeFilter, error } = await query
-
-  if (error) {
-    console.error('Error fetching properties:', error)
-    throw error
-  }
-
-  // Filter by distance and sort
-  const propertiesWithDistance = (properties || [])
-    .map((prop: any) => {
-      if (prop.latitude && prop.longitude) {
-        const distance = calculateDistance(
-          locationCoords.latitude,
-          locationCoords.longitude,
-          prop.latitude,
-          prop.longitude
-        )
-        return { ...prop, distance_km: Math.round(distance * 100) / 100 } // Round to 2 decimal places
-      }
-      return null
-    })
-    .filter((prop: any): prop is any => prop !== null && prop.distance_km <= radiusKm)
-    .sort((a: any, b: any) => {
-      // Sort by distance first, then by date added
-      if (a.distance_km !== b.distance_km) {
-        return a.distance_km - b.distance_km
-      }
-      const dateA = a.added_on ? new Date(a.added_on).getTime() : 0
-      const dateB = b.added_on ? new Date(b.added_on).getTime() : 0
-      return dateB - dateA
-    })
-
-  // Get total count BEFORE slicing
-  const totalCount = propertiesWithDistance.length
-
-  const includeAll = filters.include_all ?? false
-
-  // Generate refinement suggestions from the filtered properties first
-  const refinements = await generateRefinements(
-    supabase,
-    knowledgeBaseId,
-    filters,
-    totalCount,
-    propertiesWithDistance // Pass the filtered properties
-  )
-
-  // Determine if we should return properties or just refinements
-  let propertiesToReturn: PropertySearchResult[] = []
-
-  if (includeAll) {
-    // Return ALL matching properties when include_all is true
-    propertiesToReturn = propertiesWithDistance.map((prop: any) => ({
-      id: prop.id,
-      url: prop.url,
-      beds: prop.beds,
-      baths: prop.baths,
-      price: prop.price,
-      property_type: prop.property_type,
-      property_subtype: prop.property_subtype,
-      title: prop.title,
-      transaction_type: prop.transaction_type,
-      full_address: prop.full_address,
-      city: prop.city,
-      district: prop.district,
-      postcode: prop.postcode,
-      furnished_type: prop.furnished_type,
-      has_nearby_station: prop.has_nearby_station,
-      has_online_viewing: prop.has_online_viewing,
-      is_retirement: prop.is_retirement,
-      pets_allowed: prop.pets_allowed,
-      image_count: prop.image_count,
-      has_floorplan: prop.has_floorplan,
-      description: prop.description,
-      added_on: prop.added_on,
-      distance_km: prop.distance_km,
-    }))
-  } else {
-    // If include_all is false (default)
-    if (totalCount <= 3) {
-      // Return all properties when count is 3 or less
-      propertiesToReturn = propertiesWithDistance.map((prop: any) => ({
-        id: prop.id,
-        url: prop.url,
-        beds: prop.beds,
-        baths: prop.baths,
-        price: prop.price,
-        property_type: prop.property_type,
-        property_subtype: prop.property_subtype,
-        title: prop.title,
-        transaction_type: prop.transaction_type,
-        full_address: prop.full_address,
-        city: prop.city,
-        district: prop.district,
-        postcode: prop.postcode,
-        furnished_type: prop.furnished_type,
-        has_nearby_station: prop.has_nearby_station,
-        has_online_viewing: prop.has_online_viewing,
-        is_retirement: prop.is_retirement,
-        pets_allowed: prop.pets_allowed,
-        image_count: prop.image_count,
-        has_floorplan: prop.has_floorplan,
-        description: prop.description,
-        added_on: prop.added_on,
-        distance_km: prop.distance_km,
-      }))
-    } else {
-      // If more than 3 results, check if refinements can narrow results
-      const refinementsThatNarrow = refinements.filter(r => r.resultCount < totalCount)
-      
-      if (refinementsThatNarrow.length > 0) {
-        // Return empty properties array - refinements can help narrow down
-        propertiesToReturn = []
-      } else {
-        // No useful refinements - return all properties (cannot narrow further)
-        propertiesToReturn = propertiesWithDistance.map((prop: any) => ({
-          id: prop.id,
-          url: prop.url,
-          beds: prop.beds,
-          baths: prop.baths,
-          price: prop.price,
-          property_type: prop.property_type,
-          property_subtype: prop.property_subtype,
-          title: prop.title,
-          transaction_type: prop.transaction_type,
-          full_address: prop.full_address,
-          city: prop.city,
-          district: prop.district,
-          postcode: prop.postcode,
-          furnished_type: prop.furnished_type,
-          has_nearby_station: prop.has_nearby_station,
-          has_online_viewing: prop.has_online_viewing,
-          is_retirement: prop.is_retirement,
-          pets_allowed: prop.pets_allowed,
-          image_count: prop.image_count,
-          has_floorplan: prop.has_floorplan,
-          description: prop.description,
-          added_on: prop.added_on,
-          distance_km: prop.distance_km,
-        }))
-      }
-    }
-  }
-
-  return {
-    properties: propertiesToReturn,
-    totalCount: totalCount,
-    refinements,
-  }
-}
-
-/**
- * Calculate distance between two coordinates using Haversine formula
- */
-function calculateDistance(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-): number {
-  const R = 6371 // Radius of the Earth in km
-  const dLat = (lat2 - lat1) * (Math.PI / 180)
-  const dLon = (lon2 - lon1) * (Math.PI / 180)
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) *
-      Math.cos(lat2 * (Math.PI / 180)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  return R * c
-}
-
-/**
  * Calculate Levenshtein distance between two strings
  */
 function levenshteinDistance(str1: string, str2: string): number {
@@ -700,138 +431,410 @@ function stringSimilarity(str1: string, str2: string): number {
 }
 
 /**
- * Extract street name from address (removes common street types)
+ * Generate Soundex code for phonetic matching
+ * Soundex algorithm converts names to a code based on sound
+ * Useful for matching similar-sounding street names
  */
-function extractStreetName(address: string): string {
-  const streetTypes = ['street', 'road', 'lane', 'avenue', 'avenue', 'drive', 'way', 'close', 'court', 'crescent', 'grove', 'place', 'square', 'terrace', 'walk', 'gardens', 'park', 'hill', 'rise', 'vale', 'view']
-  let normalized = address.toLowerCase().trim()
+function getSoundexCode(str: string): string {
+  if (!str) return ''
   
-  // Remove common street type suffixes
-  for (const type of streetTypes) {
-    const regex = new RegExp(`\\s+${type}\\s*$`, 'i')
-    normalized = normalized.replace(regex, '').trim()
+  // Convert to uppercase and remove non-letters
+  const cleaned = str.toUpperCase().replace(/[^A-Z]/g, '')
+  if (cleaned.length === 0) return ''
+  
+  // Keep first letter
+  let soundex = cleaned[0]
+  
+  // Soundex digit mapping
+  const mapping: Record<string, string> = {
+    'B': '1', 'F': '1', 'P': '1', 'V': '1',
+    'C': '2', 'G': '2', 'J': '2', 'K': '2', 'Q': '2', 'S': '2', 'X': '2', 'Z': '2',
+    'D': '3', 'T': '3',
+    'L': '4',
+    'M': '5', 'N': '5',
+    'R': '6'
   }
   
-  return normalized
+  let prevCode = mapping[cleaned[0]] || ''
+  
+  // Process remaining letters
+  for (let i = 1; i < cleaned.length && soundex.length < 4; i++) {
+    const code = mapping[cleaned[i]] || ''
+    
+    // Skip vowels and H, W, Y
+    if (code === '') continue
+    
+    // Skip if same as previous code (avoid doubles)
+    if (code !== prevCode) {
+      soundex += code
+      prevCode = code
+    }
+  }
+  
+  // Pad with zeros to length 4
+  while (soundex.length < 4) {
+    soundex += '0'
+  }
+  
+  return soundex.substring(0, 4)
 }
 
 /**
- * Check if two addresses match by street name (ignoring street type)
+ * Calculate phonetic similarity between two strings using Soundex
+ * Returns true if they sound similar
  */
-function matchStreetName(address1: string, address2: string): boolean {
-  const street1 = extractStreetName(address1)
-  const street2 = extractStreetName(address2)
-  
-  // Exact match on street name
-  if (street1 === street2) return true
-  
-  // Check if one contains the other (partial match)
-  if (street1.includes(street2) || street2.includes(street1)) {
-    return true
-  }
-  
-  // Check similarity with Levenshtein distance
-  const similarity = stringSimilarity(street1, street2)
-  return similarity > 0.85 // Higher threshold for street name matching
+function phoneticMatch(str1: string, str2: string): boolean {
+  const code1 = getSoundexCode(str1)
+  const code2 = getSoundexCode(str2)
+  return code1 !== '' && code1 === code2
 }
 
 /**
- * Find fuzzy match for location query against property addresses
+ * Find fuzzy and phonetic match for street address
+ * Multi-stage matching: exact, substring, fuzzy, and phonetic
+ * Returns array of matched street addresses or null if no match found
+ * Returns multiple streets if they match equally well (e.g., searching "gardens" matches both "Craig House Gardens" and "Portland Gardens")
+ * Applies other filters first to only search within properties that match those criteria
  */
-async function findFuzzyLocationMatch(
+async function fuzzyMatchStreet(
   supabase: any,
   knowledgeBaseId: string,
-  searchLocation: string
-): Promise<{ latitude: number; longitude: number; matchedAddress: string } | null> {
-  // Fetch all properties with addresses to search against
-  const { data: properties, error } = await supabase
+  searchTerm: string,
+  otherFilters?: Omit<PropertyQueryFilters, 'street' | 'include_all'>
+): Promise<string[] | null> {
+  // Build query with other filters applied first
+  let query = supabase
     .from('properties')
-    .select('street_address, full_address, district, city, latitude, longitude')
+    .select('street_address, full_address')
     .eq('knowledge_base_id', knowledgeBaseId)
-    .not('latitude', 'is', null)
-    .not('longitude', 'is', null)
-    .limit(1000) // Limit to avoid performance issues
+    .not('street_address', 'is', null)
+
+  // Apply other filters if provided
+  if (otherFilters) {
+    if (otherFilters.beds !== undefined) {
+      query = query.eq('beds', otherFilters.beds)
+    }
+    if (otherFilters.baths !== undefined) {
+      query = query.eq('baths', otherFilters.baths)
+    }
+    if (otherFilters.transaction_type) {
+      query = query.eq('transaction_type', otherFilters.transaction_type)
+    }
+    if (otherFilters.property_type) {
+      query = query.eq('property_type', otherFilters.property_type)
+    }
+    if (otherFilters.furnished_type) {
+      query = query.eq('furnished_type', otherFilters.furnished_type)
+    }
+    if (otherFilters.has_nearby_station !== undefined) {
+      query = query.eq('has_nearby_station', otherFilters.has_nearby_station)
+    }
+    if (otherFilters.city) {
+      query = query.eq('city', otherFilters.city)
+    }
+    if (otherFilters.district) {
+      query = query.eq('district', otherFilters.district)
+    }
+    if (otherFilters.county) {
+      query = query.eq('county', otherFilters.county)
+    }
+    if (otherFilters.postcode) {
+      query = query.ilike('postcode', `%${otherFilters.postcode}%`)
+    }
+    
+    // Apply price filters if provided
+    if (otherFilters.price && otherFilters.price.filter) {
+      const { min, max } = parsePriceFilter(otherFilters.price)
+      if (min !== undefined) {
+        query = query.gte('price', min)
+      }
+      if (max !== undefined) {
+        query = query.lte('price', max)
+      }
+    }
+  }
+
+  const { data: properties, error } = await query
 
   if (error || !properties || properties.length === 0) {
     return null
   }
 
-  const normalizedSearch = searchLocation.toLowerCase().trim()
-  let bestMatch: {
-    property: any
-    score: number
-    matchedField: string
-    matchedValue: string
-  } | null = null
+  // Collect all unique street addresses
+  const streetAddresses = new Set<string>()
+  properties.forEach((p: any) => {
+    if (p.street_address) streetAddresses.add(p.street_address)
+  })
 
-  // Search through street_address, full_address, district, and city
-  for (const prop of properties) {
-    const fields = [
-      { name: 'street_address', value: prop.street_address },
-      { name: 'full_address', value: prop.full_address },
-      { name: 'district', value: prop.district },
-      { name: 'city', value: prop.city },
-    ]
+  const uniqueStreets = Array.from(streetAddresses)
+  const normalizedSearch = searchTerm.toLowerCase().trim()
 
-    for (const field of fields) {
-      if (!field.value) continue
+  // Stage 1: Try exact match (case-insensitive)
+  const exactMatches = uniqueStreets.filter(
+    (street) => street.toLowerCase().trim() === normalizedSearch
+  )
+  if (exactMatches.length > 0) {
+    return exactMatches
+  }
 
-      const fieldValue = String(field.value).toLowerCase().trim()
-      
-      // For street addresses, check street name match (ignoring street type)
-      if (field.name === 'street_address' || field.name === 'full_address') {
-        if (matchStreetName(normalizedSearch, fieldValue)) {
-          const street1 = extractStreetName(normalizedSearch)
-          const street2 = extractStreetName(fieldValue)
-          const score = street1 === street2 ? 1.0 : stringSimilarity(street1, street2)
-          if (!bestMatch || score > bestMatch.score) {
-            bestMatch = {
-              property: prop,
-              score,
-              matchedField: field.name,
-              matchedValue: field.value,
-            }
-          }
-          continue // Skip to next field if street name matched
-        }
-      }
-      
-      // Check for exact substring match first (higher priority)
-      if (fieldValue.includes(normalizedSearch) || normalizedSearch.includes(fieldValue)) {
-        const score = normalizedSearch.length / Math.max(fieldValue.length, normalizedSearch.length)
-        if (!bestMatch || score > bestMatch.score) {
-          bestMatch = {
-            property: prop,
-            score,
-            matchedField: field.name,
-            matchedValue: field.value,
-          }
-        }
-      } else {
-        // Use Levenshtein distance for fuzzy matching
-        const similarity = stringSimilarity(normalizedSearch, fieldValue)
-        // Only consider matches with similarity > 0.7 (70% similar)
-        if (similarity > 0.7 && (!bestMatch || similarity > bestMatch.score)) {
-          bestMatch = {
-            property: prop,
-            score: similarity,
-            matchedField: field.name,
-            matchedValue: field.value,
-          }
-        }
-      }
+  // Stage 2: Try substring match - return ALL streets that match
+  const substringMatches = uniqueStreets.filter(
+    (street) => {
+      const normalizedStreet = street.toLowerCase().trim()
+      return normalizedStreet.includes(normalizedSearch) || normalizedSearch.includes(normalizedStreet)
+    }
+  )
+  if (substringMatches.length > 0) {
+    return substringMatches
+  }
+
+  // Stage 3 & 4: Try fuzzy match and phonetic match - return ALL above threshold
+  const matchedStreets: Map<string, number> = new Map()
+
+  for (const street of uniqueStreets) {
+    const normalizedStreet = street.toLowerCase().trim()
+
+    // Fuzzy match using Levenshtein distance (60% threshold - more forgiving)
+    const similarity = stringSimilarity(normalizedSearch, normalizedStreet)
+    if (similarity >= 0.6) {
+      matchedStreets.set(street, Math.max(matchedStreets.get(street) || 0, similarity))
+    }
+
+    // Phonetic match using Soundex (handles similar-sounding names)
+    if (phoneticMatch(searchTerm, street)) {
+      const phoneticScore = 0.75 // Give phonetic matches a decent score
+      matchedStreets.set(street, Math.max(matchedStreets.get(street) || 0, phoneticScore))
     }
   }
 
-  if (bestMatch && bestMatch.score > 0.7) {
-    return {
-      latitude: bestMatch.property.latitude,
-      longitude: bestMatch.property.longitude,
-      matchedAddress: bestMatch.matchedValue,
-    }
+  if (matchedStreets.size > 0) {
+    // Return all streets that matched, sorted by score (best first)
+    return Array.from(matchedStreets.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([street]) => street)
   }
 
   return null
+}
+
+/**
+ * Find fuzzy match for a location field (city, district, or county)
+ * Returns the matched value from the database or null if no match found
+ */
+async function fuzzyMatchLocationField(
+  supabase: any,
+  knowledgeBaseId: string,
+  searchTerm: string,
+  fieldName: 'city' | 'district' | 'county'
+): Promise<string | null> {
+  // Get all unique values for the field
+  const { data: properties, error } = await supabase
+    .from('properties')
+    .select(fieldName)
+    .eq('knowledge_base_id', knowledgeBaseId)
+    .not(fieldName, 'is', null)
+
+  if (error || !properties || properties.length === 0) {
+    return null
+  }
+
+  // Get unique values and filter out nulls
+  const allValues = properties
+    .map((p: any) => p[fieldName])
+    .filter((v: any): v is string => typeof v === 'string' && v !== null)
+  const uniqueValues: string[] = [...new Set<string>(allValues)]
+  const normalizedSearch = searchTerm.toLowerCase().trim()
+
+  // Try exact match first (case-insensitive)
+  const exactMatch = uniqueValues.find(
+    (value) => value.toLowerCase().trim() === normalizedSearch
+  )
+  if (exactMatch) {
+    return exactMatch
+  }
+
+  // Try fuzzy match with 60% similarity threshold (more forgiving for typos)
+  let bestMatch: { value: string; score: number } | null = null
+  
+  for (const value of uniqueValues) {
+    const normalizedValue = value.toLowerCase().trim()
+    
+    // Check for substring match first (higher priority)
+    if (normalizedValue.includes(normalizedSearch) || normalizedSearch.includes(normalizedValue)) {
+      const score = normalizedSearch.length / Math.max(normalizedValue.length, normalizedSearch.length)
+      if (!bestMatch || score > bestMatch.score) {
+        bestMatch = { value, score }
+      }
+    } else {
+      // Use Levenshtein distance for fuzzy matching
+      const similarity = stringSimilarity(normalizedSearch, normalizedValue)
+      if (similarity >= 0.6 && (!bestMatch || similarity > bestMatch.score)) {
+        bestMatch = { value, score: similarity }
+      }
+    }
+  }
+
+  return bestMatch && bestMatch.score >= 0.6 ? bestMatch.value : null
+}
+
+/**
+ * Generate street refinements when no match is found
+ * Returns top 10-15 most similar streets sorted by phonetic/fuzzy similarity
+ * Only considers streets with properties matching other filter criteria
+ */
+async function generateStreetRefinements(
+  supabase: any,
+  knowledgeBaseId: string,
+  filters: PropertyQueryFilters,
+  searchTerm: string
+): Promise<RefinementSuggestion[]> {
+  const suggestions: RefinementSuggestion[] = []
+
+  // Build query with other filters applied (excluding street)
+  let query = supabase
+    .from('properties')
+    .select('street_address')
+    .eq('knowledge_base_id', knowledgeBaseId)
+    .not('street_address', 'is', null)
+
+  // Apply other filters (excluding street)
+  if (filters.beds !== undefined) {
+    query = query.eq('beds', filters.beds)
+  }
+  if (filters.baths !== undefined) {
+    query = query.eq('baths', filters.baths)
+  }
+  if (filters.transaction_type) {
+    query = query.eq('transaction_type', filters.transaction_type)
+  }
+  if (filters.property_type) {
+    query = query.eq('property_type', filters.property_type)
+  }
+  if (filters.furnished_type) {
+    query = query.eq('furnished_type', filters.furnished_type)
+  }
+  if (filters.has_nearby_station !== undefined) {
+    query = query.eq('has_nearby_station', filters.has_nearby_station)
+  }
+  if (filters.city) {
+    query = query.eq('city', filters.city)
+  }
+  if (filters.district) {
+    query = query.eq('district', filters.district)
+  }
+  if (filters.county) {
+    query = query.eq('county', filters.county)
+  }
+  if (filters.postcode) {
+    query = query.ilike('postcode', `%${filters.postcode}%`)
+  }
+  
+  // Apply price filters if provided
+  if (filters.price && filters.price.filter) {
+    const { min, max } = parsePriceFilter(filters.price)
+    if (min !== undefined) {
+      query = query.gte('price', min)
+    }
+    if (max !== undefined) {
+      query = query.lte('price', max)
+    }
+  }
+
+  const { data: properties, error } = await query
+
+  if (error || !properties || properties.length === 0) {
+    return suggestions
+  }
+
+  // Count occurrences and calculate similarity scores
+  const streetScores: Map<string, { count: number; score: number }> = new Map()
+  const normalizedSearch = searchTerm.toLowerCase().trim()
+
+  properties.forEach((prop: any) => {
+    const street = prop.street_address
+    if (street) {
+      if (!streetScores.has(street)) {
+        // Calculate combined similarity score
+        const fuzzyScore = stringSimilarity(normalizedSearch, street.toLowerCase().trim())
+        const phoneticScore = phoneticMatch(searchTerm, street) ? 0.8 : 0
+        const combinedScore = Math.max(fuzzyScore, phoneticScore)
+        
+        streetScores.set(street, { count: 1, score: combinedScore })
+      } else {
+        const existing = streetScores.get(street)!
+        existing.count++
+      }
+    }
+  })
+
+  // Sort by similarity score (best matches first), then by count
+  const sortedStreets = Array.from(streetScores.entries())
+    .sort((a, b) => {
+      // First sort by score (descending)
+      if (b[1].score !== a[1].score) {
+        return b[1].score - a[1].score
+      }
+      // Then by count (descending)
+      return b[1].count - a[1].count
+    })
+    .slice(0, 15) // Limit to top 15 results
+
+  // Create refinement suggestions
+  sortedStreets.forEach(([street, data]) => {
+    suggestions.push({
+      filterName: 'street',
+      filterValue: street,
+      resultCount: data.count,
+    })
+  })
+
+  return suggestions
+}
+
+/**
+ * Generate location refinements when no match is found
+ * Returns all available values for the specified location field
+ */
+async function generateLocationRefinements(
+  supabase: any,
+  knowledgeBaseId: string,
+  filters: PropertyQueryFilters,
+  fieldName: 'city' | 'district' | 'county'
+): Promise<RefinementSuggestion[]> {
+  const suggestions: RefinementSuggestion[] = []
+
+  // Get all unique values for the field
+  const { data: properties, error } = await supabase
+    .from('properties')
+    .select(fieldName)
+    .eq('knowledge_base_id', knowledgeBaseId)
+    .not(fieldName, 'is', null)
+
+  if (error || !properties || properties.length === 0) {
+    return suggestions
+  }
+
+  // Count occurrences of each value
+  const valueCounts: Record<string, number> = {}
+  properties.forEach((prop: any) => {
+    const value = prop[fieldName]
+    if (value) {
+      valueCounts[value] = (valueCounts[value] || 0) + 1
+    }
+  })
+
+  // Create refinement suggestions sorted by count
+  Object.entries(valueCounts)
+    .sort(([, a], [, b]) => (b as number) - (a as number))
+    .forEach(([value, count]) => {
+      suggestions.push({
+        filterName: fieldName,
+        filterValue: value,
+        resultCount: count as number,
+      })
+    })
+
+  return suggestions
 }
 
 /**
@@ -937,8 +940,13 @@ function generateRefinementsFromArray(
       })
   }
 
-  // Priority 6: Price ranges
-  if (filters.transaction_type && !(filters.price && filters.price.filter)) {
+  // Priority 6: Price ranges - show when transaction_type is set OR all properties are of one type
+  // Determine the transaction type to use for rounding logic
+  const uniqueTransactionTypes = [...new Set(properties.map(p => p.transaction_type).filter(t => t))]
+  const hasOnlyOneTransactionType = uniqueTransactionTypes.length === 1
+  const effectiveTransactionType = filters.transaction_type || (hasOnlyOneTransactionType ? uniqueTransactionTypes[0] : null)
+  
+  if (effectiveTransactionType) {
     const prices = properties
       .map(p => Number(p.price))
       .filter(p => !isNaN(p))
@@ -950,14 +958,13 @@ function generateRefinementsFromArray(
       const priceRange = maxPrice - minPrice
 
       if (priceRange > 0) {
-        // Create dynamic buckets based on quartiles
-        const q1 = prices[Math.floor(prices.length * 0.25)]
-        const q2 = prices[Math.floor(prices.length * 0.5)] // median
-        const q3 = prices[Math.floor(prices.length * 0.75)]
+        // Create three even buckets based on tertiles (33rd and 66th percentiles)
+        const tertile1 = prices[Math.floor(prices.length * 0.33)] // 33rd percentile
+        const tertile2 = prices[Math.floor(prices.length * 0.66)] // 66th percentile
 
         // Round to nice numbers
         const roundToNice = (num: number) => {
-          if (filters.transaction_type === 'rent') {
+          if (effectiveTransactionType === 'rent') {
             if (num < 1000) return Math.round(num / 50) * 50
             if (num < 5000) return Math.round(num / 100) * 100
             return Math.round(num / 500) * 500
@@ -967,30 +974,55 @@ function generateRefinementsFromArray(
           return Math.round(num / 100000) * 100000
         }
 
-        const roundedQ2 = roundToNice(q2)
-        const roundedQ3 = roundToNice(q3)
+        let roundedTertile1 = roundToNice(tertile1)
+        let roundedTertile2 = roundToNice(tertile2)
 
-        // Create buckets
-        const buckets: Array<{ filter: PriceFilter; min?: number; max?: number }> = [
-          { filter: { filter: 'under', value: roundedQ2 }, max: roundedQ2 },
-          { filter: { filter: 'between', value: roundedQ2, max_value: roundedQ3 }, min: roundedQ2, max: roundedQ3 },
-          { filter: { filter: 'over', value: roundedQ3 }, min: roundedQ3 }
-        ]
+        // Ensure tertile2 is greater than tertile1 after rounding
+        // If they're the same, adjust to ensure three distinct buckets
+        if (roundedTertile1 === roundedTertile2) {
+          // Find the next price point above tertile1 for the middle bucket
+          const pricesAboveTertile1 = prices.filter(p => p > roundedTertile1)
+          if (pricesAboveTertile1.length > 0) {
+            // Use the actual price at 66th percentile without rounding if rounding caused collision
+            roundedTertile2 = Math.ceil(tertile2)
+          }
+        }
+
+        // Only create buckets if we have distinct values
+        const buckets: Array<{ filter: PriceFilter; min?: number; max?: number }> = []
+        
+        if (roundedTertile1 < roundedTertile2) {
+          // We have three distinct buckets
+          buckets.push({ filter: { filter: 'under', value: roundedTertile1 }, max: roundedTertile1 })
+          buckets.push({ filter: { filter: 'between', value: roundedTertile1, max_value: roundedTertile2 }, min: roundedTertile1, max: roundedTertile2 })
+          buckets.push({ filter: { filter: 'over', value: roundedTertile2 }, min: roundedTertile2 })
+        } else {
+          // Fallback: split into two buckets if we can't create three distinct ones
+          buckets.push({ filter: { filter: 'under', value: roundedTertile1 }, max: roundedTertile1 })
+          buckets.push({ filter: { filter: 'over', value: roundedTertile1 }, min: roundedTertile1 })
+        }
 
         // Count properties in each bucket
+        // Under: exclusive (p < tertile1)
+        // Between: inclusive on both ends (p >= tertile1 && p <= tertile2)
+        // Over: exclusive (p > tertile2)
         for (const bucket of buckets) {
           const countInBucket = prices.filter(p => {
             if (bucket.min !== undefined && bucket.max !== undefined) {
+              // Between bucket: inclusive on both ends
               return p >= bucket.min && p <= bucket.max
             } else if (bucket.max !== undefined) {
-              return p <= bucket.max
+              // Under bucket: exclusive (strictly less than)
+              return p < bucket.max
             } else if (bucket.min !== undefined) {
-              return p >= bucket.min
+              // Over bucket: exclusive (strictly greater than)
+              return p > bucket.min
             }
             return false
           }).length
 
-          if (countInBucket > 0 && countInBucket < totalCount) {
+          // Always show price buckets when transaction_type is present
+          if (countInBucket > 0) {
             suggestions.push({
               filterName: 'price',
               filterValue: bucket.filter,
@@ -1133,10 +1165,13 @@ async function generateRefinements(
       query = query.lte('price', maxPriceForRefinements)
     }
     if (filters.city) {
-      query = query.ilike('city', `%${filters.city}%`)
+      query = query.eq('city', filters.city)
     }
     if (filters.district) {
-      query = query.ilike('district', `%${filters.district}%`)
+      query = query.eq('district', filters.district)
+    }
+    if (filters.county) {
+      query = query.eq('county', filters.county)
     }
     if (filters.postcode) {
       query = query.ilike('postcode', `%${filters.postcode}%`)
@@ -1268,9 +1303,40 @@ async function generateRefinements(
     }
   }
 
-  // Priority 6: Price ranges (only if transaction_type is filtered and no price already applied)
-  // Price ranges only make sense within a single transaction type (rent vs sale)
-  if (filters.transaction_type && !(filters.price && filters.price.filter)) {
+  // Priority 6: County
+  if (!filters.county) {
+    const { data: countyData } = await buildBaseQuery()
+      .select('county')
+      .not('county', 'is', null)
+
+    if (countyData) {
+      const countyCounts = countyData.reduce((acc: Record<string, number>, prop: any) => {
+        const county = prop.county
+        acc[county] = (acc[county] || 0) + 1
+        return acc
+      }, {})
+
+      // Show ALL counties sorted by count to ensure they add up
+      Object.entries(countyCounts)
+        .sort(([, a], [, b]) => (b as number) - (a as number))
+        .forEach(([county, count]) => {
+          addRefinement('county', county, count as number)
+        })
+    }
+  }
+
+  // Priority 7: Price ranges - show when transaction_type is set OR all properties are of one type
+  // First check if we should show price refinements
+  const { data: allPropsForPriceCheck } = await buildBaseQuery()
+    .select('transaction_type')
+  
+  const uniqueTransactionTypes = allPropsForPriceCheck 
+    ? [...new Set(allPropsForPriceCheck.map((p: any) => p.transaction_type).filter((t: any) => t))]
+    : []
+  const hasOnlyOneTransactionType = uniqueTransactionTypes.length === 1
+  const effectiveTransactionType = filters.transaction_type || (hasOnlyOneTransactionType ? uniqueTransactionTypes[0] : null)
+  
+  if (effectiveTransactionType) {
     const { data: priceData } = await buildBaseQuery()
       .select('price, transaction_type')
       .not('price', 'is', null)
@@ -1285,15 +1351,14 @@ async function generateRefinements(
       const priceBuckets: Array<{ filter: PriceFilter; min?: number; max?: number }> = []
 
       if (priceRange > 0) {
-        // Create dynamic buckets based on quartiles
-        const q1 = prices[Math.floor(prices.length * 0.25)]
-        const q2 = prices[Math.floor(prices.length * 0.5)] // median
-        const q3 = prices[Math.floor(prices.length * 0.75)]
+        // Create three even buckets based on tertiles (33rd and 66th percentiles)
+        const tertile1 = prices[Math.floor(prices.length * 0.33)] // 33rd percentile
+        const tertile2 = prices[Math.floor(prices.length * 0.66)] // 66th percentile
 
         // Round to nice numbers based on transaction type
         const roundToNice = (num: number) => {
           // For rentals (typically £500-£5000/month)
-          if (filters.transaction_type === 'rent') {
+          if (effectiveTransactionType === 'rent') {
             if (num < 1000) return Math.round(num / 50) * 50
             if (num < 5000) return Math.round(num / 100) * 100
             return Math.round(num / 500) * 500
@@ -1304,40 +1369,70 @@ async function generateRefinements(
           return Math.round(num / 100000) * 100000
         }
 
-        const roundedQ1 = roundToNice(q1)
-        const roundedQ2 = roundToNice(q2)
-        const roundedQ3 = roundToNice(q3)
+        let roundedTertile1 = roundToNice(tertile1)
+        let roundedTertile2 = roundToNice(tertile2)
 
-        // Create buckets with PriceFilter format
-        priceBuckets.push({ 
-          filter: { filter: 'under', value: roundedQ2 }, 
-          max: roundedQ2 
-        })
-        priceBuckets.push({ 
-          filter: { filter: 'between', value: roundedQ2, max_value: roundedQ3 }, 
-          min: roundedQ2, 
-          max: roundedQ3 
-        })
-        priceBuckets.push({ 
-          filter: { filter: 'over', value: roundedQ3 }, 
-          min: roundedQ3 
-        })
+        // Ensure tertile2 is greater than tertile1 after rounding
+        // If they're the same, adjust to ensure three distinct buckets
+        if (roundedTertile1 === roundedTertile2) {
+          // Find the next price point above tertile1 for the middle bucket
+          const pricesAboveTertile1 = prices.filter((p: number) => p > roundedTertile1)
+          if (pricesAboveTertile1.length > 0) {
+            // Use the actual price at 66th percentile without rounding if rounding caused collision
+            roundedTertile2 = Math.ceil(tertile2)
+          }
+        }
+
+        // Only create buckets if we have distinct values
+        if (roundedTertile1 < roundedTertile2) {
+          // We have three distinct buckets
+          priceBuckets.push({ 
+            filter: { filter: 'under', value: roundedTertile1 }, 
+            max: roundedTertile1 
+          })
+          priceBuckets.push({ 
+            filter: { filter: 'between', value: roundedTertile1, max_value: roundedTertile2 }, 
+            min: roundedTertile1, 
+            max: roundedTertile2 
+          })
+          priceBuckets.push({ 
+            filter: { filter: 'over', value: roundedTertile2 }, 
+            min: roundedTertile2 
+          })
+        } else {
+          // Fallback: split into two buckets if we can't create three distinct ones
+          priceBuckets.push({ 
+            filter: { filter: 'under', value: roundedTertile1 }, 
+            max: roundedTertile1 
+          })
+          priceBuckets.push({ 
+            filter: { filter: 'over', value: roundedTertile1 }, 
+            min: roundedTertile1 
+          })
+        }
       }
 
       // Count properties in each bucket
+      // Under: exclusive (p < tertile1)
+      // Between: inclusive on both ends (p >= tertile1 && p <= tertile2)
+      // Over: exclusive (p > tertile2)
       for (const bucket of priceBuckets) {
         const countInBucket = prices.filter((p: number) => {
           if (bucket.min !== undefined && bucket.max !== undefined) {
+            // Between bucket: inclusive on both ends
             return p >= bucket.min && p <= bucket.max
           } else if (bucket.max !== undefined) {
-            return p <= bucket.max
+            // Under bucket: exclusive (strictly less than)
+            return p < bucket.max
           } else if (bucket.min !== undefined) {
-            return p >= bucket.min
+            // Over bucket: exclusive (strictly greater than)
+            return p > bucket.min
           }
           return false
         }).length
 
-        if (countInBucket > 0 && countInBucket < totalCount) {
+        // Always show price buckets when transaction_type is present
+        if (countInBucket > 0) {
           suggestions.push({
             filterName: 'price',
             filterValue: bucket.filter,

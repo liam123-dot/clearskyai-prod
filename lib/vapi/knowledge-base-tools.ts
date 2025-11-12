@@ -23,7 +23,7 @@ export function createEstateAgentToolData(
     type: "apiRequest",
     function: {
       name: `query_${sanitizedName}_props`,
-      description: `Search and filter properties from ${knowledgeBaseName}. Returns up to 3 matching properties by default (or all properties if include_all is true) in plain text format with essential details (baths, price, property type, title, address, etc.) along with the total count of matching properties.`,
+      description: `Search and filter properties from ${knowledgeBaseName} by city, district, county, street, and other criteria. Returns up to 3 matching properties by default (or all properties if include_all is true) in plain text format with essential details (baths, price, property type, title, address, etc.) along with the total count of matching properties. Uses fuzzy and phonetic matching for location fields - if no match found, returns available options as refinements.`,
       parameters: {
         type: "object",
         properties: {
@@ -72,13 +72,21 @@ export function createEstateAgentToolData(
             type: "boolean",
             description: "Filter properties with nearby train/tube stations"
           },
-          location: {
+          city: {
             type: "string",
-            description: "General location search (e.g., 'London', 'Manchester', 'SW1A 1AA', 'Kensington'). Uses Google Maps geocoding to find properties within a radius of this location. Results are sorted by distance from the location center (nearest first)."
+            description: "City name to filter properties by. Uses fuzzy matching to find the closest city if exact match not found. If no match found, returns available cities as refinements."
           },
-          location_radius_km: {
-            type: "number",
-            description: "Search radius in kilometers around the location. Defaults to 25km if not specified. Use smaller values (5-10km) for more precise searches, larger values (25-50km) for broader area searches."
+          district: {
+            type: "string",
+            description: "District name to filter properties by. Uses fuzzy matching to find the closest district if exact match not found. If no match found, returns available districts as refinements."
+          },
+          county: {
+            type: "string",
+            description: "County name to filter properties by. Uses fuzzy matching to find the closest county if exact match not found. If no match found, returns available counties as refinements."
+          },
+          street: {
+            type: "string",
+            description: "Street name or address to search. Uses multi-stage matching (exact, substring, fuzzy, and phonetic) to find similar streets if exact match not found. If no match found, returns top 10-15 most similar streets as refinements."
           },
           include_all: {
             type: "boolean",
@@ -137,13 +145,21 @@ export function createEstateAgentToolData(
         has_nearby_station: {
           type: "boolean"
         },
-        location: {
+        city: {
           type: "string",
-          description: "General location search (e.g., 'London', 'Manchester')"
+          description: "City name to filter properties by"
         },
-        location_radius_km: {
-          type: "number",
-          description: "Search radius in kilometers (default: 25km)"
+        district: {
+          type: "string",
+          description: "District name to filter properties by"
+        },
+        county: {
+          type: "string",
+          description: "County name to filter properties by"
+        },
+        street: {
+          type: "string",
+          description: "Street name or address to search"
         },
         include_all: {
           type: "boolean",
