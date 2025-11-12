@@ -254,28 +254,32 @@ export async function queryProperties(
   const includeAll = filters.include_all ?? false
   const finalTotalCount = totalCount || 0
 
-  // Generate refinement suggestions first (needed to determine if we should return properties)
+  // Fetch actual filtered properties for refinements (especially important for street matching)
+  // This ensures refinements are based on the exact same properties being returned
+  const { data: propertiesForRefinements, error: refinementsError } = await query
+    .select('*')
+    .order('added_on', { ascending: false })
+
+  if (refinementsError) {
+    console.error('Error fetching properties for refinements:', refinementsError)
+    throw refinementsError
+  }
+
+  // Generate refinement suggestions from actual filtered properties
   const refinements = await generateRefinements(
     supabase,
     knowledgeBaseId,
     filters,
-    finalTotalCount
+    finalTotalCount,
+    propertiesForRefinements || [] // Pass actual filtered properties
   )
 
   // Determine if we should return properties or just refinements
   let propertiesToReturn: PropertySearchResult[] = []
 
   if (includeAll) {
-    // Return ALL matching properties when include_all is true
-    const { data: properties, error } = await query
-      .order('added_on', { ascending: false })
-
-    if (error) {
-      console.error('Error fetching properties:', error)
-      throw error
-    }
-
-    propertiesToReturn = (properties || []).map(prop => ({
+    // Use the properties we already fetched
+    propertiesToReturn = (propertiesForRefinements || []).map(prop => ({
       id: prop.id,
       url: prop.url,
       beds: prop.beds,
@@ -302,16 +306,8 @@ export async function queryProperties(
   } else {
     // If include_all is false (default)
     if (finalTotalCount <= 3) {
-      // Return all properties when count is 3 or less
-      const { data: properties, error } = await query
-        .order('added_on', { ascending: false })
-
-      if (error) {
-        console.error('Error fetching properties:', error)
-        throw error
-      }
-
-      propertiesToReturn = (properties || []).map(prop => ({
+      // Return all properties when count is 3 or less (use already-fetched properties)
+      propertiesToReturn = (propertiesForRefinements || []).map(prop => ({
         id: prop.id,
         url: prop.url,
         beds: prop.beds,
@@ -343,16 +339,8 @@ export async function queryProperties(
         // Return empty properties array - refinements can help narrow down
         propertiesToReturn = []
       } else {
-        // No useful refinements - return all properties (cannot narrow further)
-        const { data: properties, error } = await query
-          .order('added_on', { ascending: false })
-
-        if (error) {
-          console.error('Error fetching properties:', error)
-          throw error
-        }
-
-        propertiesToReturn = (properties || []).map(prop => ({
+        // No useful refinements - return all properties (use already-fetched properties)
+        propertiesToReturn = (propertiesForRefinements || []).map(prop => ({
           id: prop.id,
           url: prop.url,
           beds: prop.beds,
