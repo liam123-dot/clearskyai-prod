@@ -288,7 +288,7 @@ export async function generatePropertyQueryPrompt(
     promptParts.push('- Example: User says "central London" → uses geocoded boundaries to find properties in central London area')
     promptParts.push('- Example: User says "XYZ City" (not in database) → system returns list of available cities/areas')
   } else {
-    promptParts.push('Location data not yet available. Use city, district, or county filters to search by location.')
+    promptParts.push('Location data not yet available. Use the location filter to search by street, area, or landmark.')
   }
   promptParts.push('')
   
@@ -382,14 +382,12 @@ export async function generatePropertyQueryPrompt(
     promptParts.push('- `transaction_type` - Always set to "sale" (all properties are for sale - DO NOT ask customer)')
   }
   
-  promptParts.push('- `city` - City name (uses fuzzy matching, returns available cities if no match)')
-  promptParts.push('- `district` - District name (uses fuzzy matching, returns available districts if no match)')
-  promptParts.push('- `county` - County name (uses fuzzy matching, returns available counties if no match)')
   promptParts.push('- `location` - General location search for streets, areas, districts, or landmarks (intelligent multi-strategy matching)')
   promptParts.push('  - Runs TWO strategies in parallel: (1) fuzzy/phonetic address search + (2) Google Places API boundaries')
   promptParts.push('  - Merges and ranks results by relevance (fuzzy similarity + geographic proximity)')
-  promptParts.push('  - Works for: street names, area names (e.g. "Spinningfields"), districts, landmarks, "central [city]"')
+  promptParts.push('  - Works for: street names, area names (e.g. "Spinningfields"), districts, landmarks, cities, "central [city]"')
   promptParts.push('  - Returns top 10-15 similar locations if no match found')
+  promptParts.push('  - Examples: "Baker Street", "Manchester", "Spinningfields", "central Edinburgh", "Kensington"')
   promptParts.push('- `beds` - Number of bedrooms')
   promptParts.push('- `baths` - Number of bathrooms')
   promptParts.push('- `property_type` - Type of property (e.g., "House", "Flat")')
@@ -418,14 +416,22 @@ export async function generatePropertyQueryPrompt(
     promptParts.push('1. **Skip transaction type** - All properties are for sale, automatically use transaction_type="sale" in queries')
   }
   
-  promptParts.push('2. **Gather key criteria** - Location, bedrooms, and budget are most important')
-  promptParts.push('3. **Use filters strategically** - Start broad, then narrow down with additional filters')
-  promptParts.push('4. **Watch the totalCount** - The tool returns up to 3 properties plus a totalCount:')
+  promptParts.push('2. **Disambiguate location searches** - For ambiguous locations, add city context:')
+  if (locationKeywords.cities.length > 0) {
+    promptParts.push(`   - Available cities: ${locationKeywords.cities.join(', ')}`)
+    promptParts.push(`   - Examples: "Newtown" → "Newtown ${locationKeywords.cities[0]}", "Camden" → "Camden ${locationKeywords.cities[0]}"`)
+    promptParts.push(`   - ALWAYS add city context for unclear area names to ensure accurate geocoding and address matching`)
+  } else {
+    promptParts.push(`   - Add city/region context to ambiguous locations (e.g., "Newtown Edinburgh", "Camden London")`)
+  }
+  promptParts.push('3. **Gather key criteria** - Location, bedrooms, and budget are most important')
+  promptParts.push('4. **Use filters strategically** - Start broad, then narrow down with additional filters')
+  promptParts.push('5. **Watch the totalCount** - The tool returns up to 3 properties plus a totalCount:')
   promptParts.push('   - If totalCount > 10: Ask for more filters to narrow down before showing properties')
   promptParts.push('   - If totalCount 4-10: Can show results or ask if they want to narrow further')
   promptParts.push('   - If totalCount ≤ 3: Present properties directly')
-  promptParts.push('5. **Narrow conversationally** - Ask natural questions about location, beds, budget, etc.')
-  promptParts.push('6. **Handle location mismatches** - If user provides a location not in the database, the tool will return available options as refinements. Present these options to the user conversationally.')
+  promptParts.push('6. **Narrow conversationally** - Ask natural questions about location, beds, budget, etc.')
+  promptParts.push('7. **Handle location mismatches** - If user provides a location not in the database, the tool will return available options as refinements. Present these options to the user conversationally.')
   promptParts.push('')
   promptParts.push('## Handling Results')
   promptParts.push('')
@@ -458,13 +464,13 @@ export async function generatePropertyQueryPrompt(
   promptParts.push('**Search with**: ')
   promptParts.push('- transaction_type: "rent"')
   promptParts.push('- beds: 2')
-  promptParts.push('- city: "London"')
+  promptParts.push('- location: "London"')
   promptParts.push('- property_type: "Flat"')
   promptParts.push('- price: { "filter": "under", "value": 2000 }')
   promptParts.push('')
   promptParts.push('**If results return 50 properties**, ask natural follow-up questions:')
   promptParts.push('"I found 50 two-bedroom flats in London under £2000/month. To help narrow this down:')
-  promptParts.push('- Which specific district in London are you interested in?')
+  promptParts.push('- Which specific area or district in London are you interested in? (use location filter)')
   promptParts.push('- Would you prefer furnished or unfurnished?')
   promptParts.push('- Are you looking to be near a train station?"')
   promptParts.push('')
@@ -482,6 +488,15 @@ export async function generatePropertyQueryPrompt(
   promptParts.push('**Search with**:')
   promptParts.push('- transaction_type: "rent" (or "sale", depending on earlier conversation)')
   promptParts.push('- location: "Spinningfields"')
+  promptParts.push('')
+  promptParts.push('**Customer**: "Are there any properties in Newtown?"')
+  promptParts.push('')
+  promptParts.push('**Search with** (disambiguated):')
+  if (locationKeywords.cities.length > 0) {
+    promptParts.push(`- location: "Newtown ${locationKeywords.cities[0]}" (added city context for clarity)`)
+  } else {
+    promptParts.push('- location: "Newtown [City]" (add city context to disambiguate)')
+  }
   promptParts.push('')
   promptParts.push('**Note**: Location search uses intelligent multi-strategy matching:')
   promptParts.push('**Fuzzy Address Strategy**: Searches full addresses with multi-stage matching')
