@@ -40,20 +40,8 @@ function formatPropertiesAsText(result: PropertyQueryResponse, filters: Property
   if (filters.baths !== undefined) {
     activeFilters.push(`${filters.baths} ${filters.baths === 1 ? 'bath' : 'baths'}`);
   }
-  if (filters.city) {
-    activeFilters.push(`City: ${filters.city}`);
-  }
-  if (filters.district) {
-    activeFilters.push(`District: ${filters.district}`);
-  }
-  if (filters.postcode) {
-    activeFilters.push(`Postcode: ${filters.postcode}`);
-  }
-  if (filters.county) {
-    activeFilters.push(`County: ${filters.county}`);
-  }
-  if (filters.street) {
-    activeFilters.push(`Street: ${filters.street}`);
+  if (filters.location) {
+    activeFilters.push(`Location: ${filters.location}`);
   }
   if (filters.property_type) {
     activeFilters.push(`Property Type: ${filters.property_type}`);
@@ -82,11 +70,7 @@ function formatPropertiesAsText(result: PropertyQueryResponse, filters: Property
     if (refinement.filterName === 'transaction_type' && filters.transaction_type) return;
     if (refinement.filterName === 'beds' && filters.beds !== undefined) return;
     if (refinement.filterName === 'baths' && filters.baths !== undefined) return;
-    if (refinement.filterName === 'city' && filters.city) return;
-    if (refinement.filterName === 'district' && filters.district) return;
-    if (refinement.filterName === 'county' && filters.county) return;
-    if (refinement.filterName === 'street' && filters.street) return;
-    if (refinement.filterName === 'postcode' && filters.postcode) return;
+    if (refinement.filterName === 'location' && filters.location) return;
     if (refinement.filterName === 'property_type' && filters.property_type) return;
     if (refinement.filterName === 'furnished_type' && filters.furnished_type) return;
     if (refinement.filterName === 'has_nearby_station' && filters.has_nearby_station !== undefined) return;
@@ -243,11 +227,7 @@ export async function POST(
       property_type: body.property_type,
       furnished_type: body.furnished_type,
       has_nearby_station: body.has_nearby_station,
-      city: body.city,
-      district: body.district,
-      county: body.county,
-      street: body.street,
-      postcode: body.postcode,
+      location: body.location,
       include_all: body.include_all ?? false,
     };
 

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { PlaceBounds, PlaceResult, getPlaceDetails } from '@/lib/geocoding'
 
 // Price filter structure
 export interface PriceFilter {
@@ -38,7 +39,7 @@ export interface PropertyQueryFilters {
   city?: string
   district?: string
   county?: string
-  street?: string
+  location?: string // Smart location search - street, area, district, or landmark
   postcode?: string
   include_all?: boolean // If true, return all matching properties; if false, return only when <= 3 matches or return refinements
 }
@@ -103,7 +104,7 @@ export async function queryProperties(
     } else {
       // No match found - return empty properties with available cities as refinements
       console.warn(`No match found for city: ${filters.city}`)
-      const refinements = await generateLocationRefinements(supabase, knowledgeBaseId, filters, 'city')
+      const refinements = await generateLocationFieldRefinements(supabase, knowledgeBaseId, filters, 'city')
       return {
         properties: [],
         totalCount: 0,
@@ -120,7 +121,7 @@ export async function queryProperties(
     } else {
       // No match found - return empty properties with available districts as refinements
       console.warn(`No match found for district: ${filters.district}`)
-      const refinements = await generateLocationRefinements(supabase, knowledgeBaseId, filters, 'district')
+      const refinements = await generateLocationFieldRefinements(supabase, knowledgeBaseId, filters, 'district')
       return {
         properties: [],
         totalCount: 0,
@@ -137,7 +138,7 @@ export async function queryProperties(
     } else {
       // No match found - return empty properties with available counties as refinements
       console.warn(`No match found for county: ${filters.county}`)
-      const refinements = await generateLocationRefinements(supabase, knowledgeBaseId, filters, 'county')
+      const refinements = await generateLocationFieldRefinements(supabase, knowledgeBaseId, filters, 'county')
       return {
         properties: [],
         totalCount: 0,
@@ -146,24 +147,21 @@ export async function queryProperties(
     }
   }
 
-  // Store matched streets array for later use
-  let matchedStreets: string[] | null = null
+  // Store location search result for later use
+  let locationSearchResult: LocationSearchResult | null = null
   
-  if (filters.street) {
-    // Create a copy of filters without street to pass to fuzzyMatchStreet
-    const { street, include_all, ...otherFilters } = filters
-    matchedStreets = await fuzzyMatchStreet(supabase, knowledgeBaseId, filters.street, otherFilters)
-    if (matchedStreets && matchedStreets.length > 0) {
-      if (matchedStreets.length === 1) {
-        console.log(`Fuzzy/phonetic matched street "${filters.street}" to "${matchedStreets[0]}"`)
-      } else {
-        console.log(`Fuzzy/phonetic matched street "${filters.street}" to ${matchedStreets.length} streets: ${matchedStreets.join(', ')}`)
-      }
-      // Don't set filters.street here - we'll use matchedStreets array directly in the query
+  if (filters.location) {
+    // Create a copy of filters without location to pass to smartLocationSearch
+    const { location, include_all, ...otherFilters } = filters
+    locationSearchResult = await smartLocationSearch(supabase, knowledgeBaseId, filters.location, otherFilters)
+    
+    if (locationSearchResult.streetAddresses.length > 0) {
+      console.log(`Location search "${filters.location}" found ${locationSearchResult.streetAddresses.length} street(s) using ${locationSearchResult.strategy} strategy`)
+      // Don't modify filters here - we'll use streetAddresses array directly in the query
     } else {
-      // No match found - return empty properties with similar streets as refinements
-      console.warn(`No match found for street: ${filters.street}`)
-      const refinements = await generateStreetRefinements(supabase, knowledgeBaseId, filters, filters.street)
+      // No match found - return empty properties with location suggestions as refinements
+      console.warn(`No match found for location: ${filters.location}`)
+      const refinements = await generateStreetRefinements(supabase, knowledgeBaseId, filters, filters.location, locationSearchResult)
       return {
         properties: [],
         totalCount: 0,
@@ -227,13 +225,13 @@ export async function queryProperties(
   if (filters.county) {
     query = query.eq('county', filters.county)
   }
-  // Use matchedStreets array if available (allows matching multiple streets)
-  if (matchedStreets && matchedStreets.length > 0) {
-    if (matchedStreets.length === 1) {
-      query = query.eq('street_address', matchedStreets[0])
+  // Use location search result if available (allows matching multiple streets from fuzzy/geocode search)
+  if (locationSearchResult && locationSearchResult.streetAddresses.length > 0) {
+    if (locationSearchResult.streetAddresses.length === 1) {
+      query = query.eq('street_address', locationSearchResult.streetAddresses[0])
     } else {
       // Multiple streets matched - use .in() to match any of them
-      query = query.in('street_address', matchedStreets)
+      query = query.in('street_address', locationSearchResult.streetAddresses)
     }
   }
   if (filters.postcode) {
@@ -612,6 +610,227 @@ async function fuzzyMatchStreet(
 }
 
 /**
+ * Result of smart location search combining multiple strategies
+ */
+interface LocationSearchResult {
+  strategy: 'fuzzy_address' | 'geocode_bounds' | 'hybrid'
+  matchedStreets?: string[]
+  geocodeResult?: PlaceResult
+  streetAddresses: string[] // List of street_address values to query
+  relevanceScores: Map<string, number> // street_address -> relevance score
+}
+
+/**
+ * Smart location search that combines fuzzy address matching and geocoding
+ * Runs both strategies in parallel and merges results with relevance scoring
+ */
+async function smartLocationSearch(
+  supabase: any,
+  knowledgeBaseId: string,
+  searchTerm: string,
+  otherFilters: Omit<PropertyQueryFilters, 'location' | 'include_all'>
+): Promise<LocationSearchResult> {
+  console.log(`Smart location search for: "${searchTerm}"`)
+
+  // Run both strategies in parallel
+  const [fuzzyResults, geocodeResult] = await Promise.all([
+    // Strategy 1: Fuzzy/phonetic matching on full_address (reuse existing fuzzyMatchStreet logic)
+    fuzzyMatchStreet(supabase, knowledgeBaseId, searchTerm, otherFilters),
+    // Strategy 2: Geocode to get boundaries and query properties within bounds
+    getPlaceDetails(searchTerm),
+  ])
+
+  // Collect all matched street addresses with their scores
+  const streetScores = new Map<string, number>()
+
+  // Process fuzzy results
+  if (fuzzyResults && fuzzyResults.length > 0) {
+    console.log(`Fuzzy matching found ${fuzzyResults.length} street(s)`)
+    fuzzyResults.forEach((street, index) => {
+      // Score based on rank (first match = highest score)
+      const fuzzyScore = 1.0 - (index * 0.1) // 1.0, 0.9, 0.8, etc.
+      streetScores.set(street, Math.max(streetScores.get(street) || 0, fuzzyScore * 0.6))
+    })
+  }
+
+  // Process geocode results - query properties within bounds
+  let geocodeBoundProperties: any[] = []
+  if (geocodeResult) {
+    console.log(`Geocoding found: ${geocodeResult.formattedAddress}`)
+    const boundsToUse = geocodeResult.bounds || geocodeResult.viewport
+    const { properties, centerPoint } = await queryPropertiesInBounds(
+      supabase,
+      knowledgeBaseId,
+      boundsToUse,
+      otherFilters
+    )
+    geocodeBoundProperties = properties
+
+    // Score properties based on distance from center
+    if (geocodeBoundProperties.length > 0) {
+      console.log(`Geocode bounds found ${geocodeBoundProperties.length} properties`)
+      
+      // Calculate max distance for normalization
+      let maxDistance = 0
+      geocodeBoundProperties.forEach((prop: any) => {
+        if (prop.latitude && prop.longitude) {
+          const distance = Math.sqrt(
+            Math.pow(prop.latitude - centerPoint.lat, 2) +
+            Math.pow(prop.longitude - centerPoint.lng, 2)
+          )
+          maxDistance = Math.max(maxDistance, distance)
+        }
+      })
+
+      // Assign proximity scores
+      geocodeBoundProperties.forEach((prop: any) => {
+        if (prop.street_address && prop.latitude && prop.longitude) {
+          const distance = Math.sqrt(
+            Math.pow(prop.latitude - centerPoint.lat, 2) +
+            Math.pow(prop.longitude - centerPoint.lng, 2)
+          )
+          const proximityScore = maxDistance > 0 ? (1 - distance / maxDistance) : 1.0
+          const currentScore = streetScores.get(prop.street_address) || 0
+          
+          // If property appears in both results, boost significantly
+          const boost = streetScores.has(prop.street_address) ? 0.2 : 0
+          streetScores.set(
+            prop.street_address,
+            currentScore + (proximityScore * 0.4) + boost
+          )
+        }
+      })
+    }
+  }
+
+  // Determine strategy used
+  let strategy: 'fuzzy_address' | 'geocode_bounds' | 'hybrid'
+  if (fuzzyResults && fuzzyResults.length > 0 && geocodeBoundProperties.length > 0) {
+    strategy = 'hybrid'
+  } else if (fuzzyResults && fuzzyResults.length > 0) {
+    strategy = 'fuzzy_address'
+  } else if (geocodeBoundProperties.length > 0) {
+    strategy = 'geocode_bounds'
+  } else {
+    // No results from either strategy
+    return {
+      strategy: 'fuzzy_address',
+      streetAddresses: [],
+      relevanceScores: new Map(),
+    }
+  }
+
+  // Collect all unique street addresses sorted by relevance score
+  const sortedStreets = Array.from(streetScores.entries())
+    .sort((a, b) => b[1] - a[1]) // Sort by score descending
+    .map(([street]) => street)
+
+  console.log(`Smart location search result: ${strategy}, ${sortedStreets.length} street(s)`)
+
+  return {
+    strategy,
+    matchedStreets: fuzzyResults || undefined,
+    geocodeResult: geocodeResult || undefined,
+    streetAddresses: sortedStreets,
+    relevanceScores: streetScores,
+  }
+}
+
+/**
+ * Query properties within geographic bounds using PostGIS
+ * Uses ST_MakeEnvelope to create a bounding box and ST_Intersects to find properties within it
+ */
+async function queryPropertiesInBounds(
+  supabase: any,
+  knowledgeBaseId: string,
+  bounds: PlaceBounds,
+  otherFilters: Omit<PropertyQueryFilters, 'location' | 'include_all'>
+): Promise<{ properties: any[]; centerPoint: { lat: number; lng: number } }> {
+  // Calculate center point for distance scoring
+  const centerLat = (bounds.northeast.lat + bounds.southwest.lat) / 2
+  const centerLng = (bounds.northeast.lng + bounds.southwest.lng) / 2
+
+  // Build query with other filters applied - simple select without complex SQL
+  let query = supabase
+    .from('properties')
+    .select('*')
+    .eq('knowledge_base_id', knowledgeBaseId)
+    .not('latitude', 'is', null)
+    .not('longitude', 'is', null)
+
+  // Apply other filters
+  if (otherFilters.beds !== undefined) {
+    query = query.eq('beds', otherFilters.beds)
+  }
+  if (otherFilters.baths !== undefined) {
+    query = query.eq('baths', otherFilters.baths)
+  }
+  if (otherFilters.transaction_type) {
+    query = query.eq('transaction_type', otherFilters.transaction_type)
+  }
+  if (otherFilters.property_type) {
+    query = query.eq('property_type', otherFilters.property_type)
+  }
+  if (otherFilters.furnished_type) {
+    query = query.eq('furnished_type', otherFilters.furnished_type)
+  }
+  if (otherFilters.has_nearby_station !== undefined) {
+    query = query.eq('has_nearby_station', otherFilters.has_nearby_station)
+  }
+  if (otherFilters.city) {
+    query = query.eq('city', otherFilters.city)
+  }
+  if (otherFilters.district) {
+    query = query.eq('district', otherFilters.district)
+  }
+  if (otherFilters.county) {
+    query = query.eq('county', otherFilters.county)
+  }
+  if (otherFilters.postcode) {
+    query = query.ilike('postcode', `%${otherFilters.postcode}%`)
+  }
+
+  // Apply price filters if provided
+  if (otherFilters.price && otherFilters.price.filter) {
+    const { min, max } = parsePriceFilter(otherFilters.price)
+    if (min !== undefined) {
+      query = query.gte('price', min)
+    }
+    if (max !== undefined) {
+      query = query.lte('price', max)
+    }
+  }
+
+  // Fetch properties with coordinates
+  const { data: properties, error } = await query
+
+  if (error) {
+    console.error('Error querying properties in bounds:', error)
+    return { properties: [], centerPoint: { lat: centerLat, lng: centerLng } }
+  }
+
+  // Filter properties that fall within the bounds (client-side filtering)
+  const propertiesInBounds = (properties || []).filter((prop: any) => {
+    if (!prop.latitude || !prop.longitude) return false
+    
+    const lat = Number(prop.latitude)
+    const lng = Number(prop.longitude)
+    
+    return (
+      lat >= bounds.southwest.lat &&
+      lat <= bounds.northeast.lat &&
+      lng >= bounds.southwest.lng &&
+      lng <= bounds.northeast.lng
+    )
+  })
+
+  return {
+    properties: propertiesInBounds,
+    centerPoint: { lat: centerLat, lng: centerLng },
+  }
+}
+
+/**
  * Find fuzzy match for a location field (city, district, or county)
  * Returns the matched value from the database or null if no match found
  */
@@ -676,22 +895,28 @@ async function fuzzyMatchLocationField(
  * Returns top 10-15 most similar streets sorted by phonetic/fuzzy similarity
  * Only considers streets with properties matching other filter criteria
  */
+/**
+ * Generate street/location refinements when no fuzzy/phonetic/geocode match is found
+ * Returns top 10-15 most similar locations based on combined similarity and count (searching full_address for similarity)
+ * Combines results from fuzzy address matching and geocoded areas
+ */
 async function generateStreetRefinements(
   supabase: any,
   knowledgeBaseId: string,
   filters: PropertyQueryFilters,
-  searchTerm: string
+  searchTerm: string,
+  locationSearchResult?: LocationSearchResult
 ): Promise<RefinementSuggestion[]> {
   const suggestions: RefinementSuggestion[] = []
 
-  // Build query with other filters applied (excluding street)
+  // Build query with other filters applied (excluding location/street)
   let query = supabase
     .from('properties')
     .select('street_address, full_address')
     .eq('knowledge_base_id', knowledgeBaseId)
     .not('street_address', 'is', null)
 
-  // Apply other filters (excluding street)
+  // Apply other filters (excluding location/street)
   if (filters.beds !== undefined) {
     query = query.eq('beds', filters.beds)
   }
@@ -778,20 +1003,30 @@ async function generateStreetRefinements(
   // Create refinement suggestions
   sortedStreets.forEach(([street, data]) => {
     suggestions.push({
-      filterName: 'street',
+      filterName: 'location',
       filterValue: street,
       resultCount: data.count,
     })
   })
 
+  // If geocoding found a result, add it as a suggestion with context
+  if (locationSearchResult?.geocodeResult) {
+    const geocodeResult = locationSearchResult.geocodeResult
+    suggestions.unshift({
+      filterName: 'location',
+      filterValue: geocodeResult.formattedAddress,
+      resultCount: 0, // Unknown count for geocoded areas
+    })
+  }
+
   return suggestions
 }
 
 /**
- * Generate location refinements when no match is found
+ * Generate location field refinements when no match is found for city/district/county
  * Returns all available values for the specified location field
  */
-async function generateLocationRefinements(
+async function generateLocationFieldRefinements(
   supabase: any,
   knowledgeBaseId: string,
   filters: PropertyQueryFilters,

@@ -42,11 +42,7 @@ interface QueryFilters {
   property_type?: string
   furnished_type?: string
   has_nearby_station?: boolean
-  city?: string
-  district?: string
-  postcode?: string
   location?: string
-  location_radius_km?: number
   include_all?: boolean
 }
 
@@ -74,11 +70,7 @@ export function TestQuerySheet({ knowledgeBaseId, knowledgeBaseName }: TestQuery
   const [propertyType, setPropertyType] = useState<string>('')
   const [furnishedType, setFurnishedType] = useState<string>('')
   const [hasNearbyStation, setHasNearbyStation] = useState<boolean | undefined>(undefined)
-  const [city, setCity] = useState<string>('')
-  const [district, setDistrict] = useState<string>('')
-  const [postcode, setPostcode] = useState<string>('')
   const [location, setLocation] = useState<string>('')
-  const [locationRadius, setLocationRadius] = useState<string>('25')
   const [includeAll, setIncludeAll] = useState<boolean>(false)
 
   // Fetch refinements when sheet opens
@@ -186,23 +178,8 @@ export function TestQuerySheet({ knowledgeBaseId, knowledgeBaseName }: TestQuery
     if (hasNearbyStation !== undefined) {
       filters.has_nearby_station = hasNearbyStation
     }
-    if (city) {
-      filters.city = city
-    }
-    if (district) {
-      filters.district = district
-    }
-    if (postcode) {
-      filters.postcode = postcode
-    }
     if (location) {
       filters.location = location
-      if (locationRadius) {
-        const radiusNum = parseFloat(locationRadius)
-        if (!isNaN(radiusNum)) {
-          filters.location_radius_km = radiusNum
-        }
-      }
     }
     if (includeAll) {
       filters.include_all = true
@@ -257,11 +234,7 @@ export function TestQuerySheet({ knowledgeBaseId, knowledgeBaseName }: TestQuery
     setPropertyType('')
     setFurnishedType('')
     setHasNearbyStation(undefined)
-    setCity('')
-    setDistrict('')
-    setPostcode('')
     setLocation('')
-    setLocationRadius('25')
     setIncludeAll(false)
     setResults(null)
     // Reset and refetch refinements after clearing
@@ -480,92 +453,20 @@ export function TestQuerySheet({ knowledgeBaseId, knowledgeBaseName }: TestQuery
             </div>
           </div>
 
-          {/* Location Filters */}
+          {/* Location Filter */}
           <div className="space-y-4">
-            <h3 className="text-sm font-semibold">Location Filters</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="city">City</Label>
-                <Select 
-                  value={city || undefined} 
-                  onValueChange={(value) => setCity(value === 'none' ? '' : value)}
-                >
-                  <SelectTrigger id="city">
-                    <SelectValue placeholder="Select city" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {refinementsByFilter['city']?.map((ref) => {
-                      if (typeof ref.filterValue === 'string') {
-                        return (
-                          <SelectItem key={ref.filterValue} value={ref.filterValue}>
-                            {ref.filterValue}
-                          </SelectItem>
-                        )
-                      }
-                      return null
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="district">District</Label>
-                <Select 
-                  value={district || undefined} 
-                  onValueChange={(value) => setDistrict(value === 'none' ? '' : value)}
-                >
-                  <SelectTrigger id="district">
-                    <SelectValue placeholder="Select district" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {refinementsByFilter['district']?.map((ref) => {
-                      if (typeof ref.filterValue === 'string') {
-                        return (
-                          <SelectItem key={ref.filterValue} value={ref.filterValue}>
-                            {ref.filterValue}
-                          </SelectItem>
-                        )
-                      }
-                      return null
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="postcode">Postcode</Label>
-                <Input
-                  id="postcode"
-                  placeholder="e.g. SW1A"
-                  value={postcode}
-                  onChange={(e) => setPostcode(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="location">Location (Geocoded)</Label>
-                <Input
-                  id="location"
-                  placeholder="e.g. London"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                />
-              </div>
-
-              {location && (
-                <div className="space-y-2">
-                  <Label htmlFor="location-radius">Location Radius (km)</Label>
-                  <Input
-                    id="location-radius"
-                    type="number"
-                    placeholder="25"
-                    value={locationRadius}
-                    onChange={(e) => setLocationRadius(e.target.value)}
-                  />
-                </div>
-              )}
+            <h3 className="text-sm font-semibold">Location Filter</h3>
+            <div className="space-y-2">
+              <Label htmlFor="location">Location (Smart Search)</Label>
+              <Input
+                id="location"
+                placeholder="e.g. Baker Street, Spinningfields, central Edinburgh"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Uses intelligent multi-strategy matching: fuzzy/phonetic address search + Google Places API boundaries
+              </p>
             </div>
           </div>
 

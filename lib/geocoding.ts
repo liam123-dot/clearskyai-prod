@@ -17,6 +17,20 @@ export interface LocationComponents {
   postcodeDistrict: string | null;
 }
 
+export interface PlaceBounds {
+  northeast: { lat: number; lng: number };
+  southwest: { lat: number; lng: number };
+}
+
+export interface PlaceResult {
+  placeId: string;
+  formattedAddress: string;
+  location: { lat: number; lng: number };
+  bounds?: PlaceBounds;
+  viewport: PlaceBounds;
+  types: string[]; // e.g., ["locality", "political"]
+}
+
 /**
  * Geocode a location string (e.g., "London", "Manchester, UK") to coordinates
  * Uses Google Maps Geocoding API
@@ -63,6 +77,88 @@ export async function geocodeLocation(
   } catch (error) {
     console.error("Error geocoding location:", error);
     throw error;
+  }
+}
+
+/**
+ * Get detailed place information including boundaries
+ * Uses Google Maps Geocoding API (which provides bounds/viewport in results)
+ */
+export async function getPlaceDetails(
+  searchQuery: string
+): Promise<PlaceResult | null> {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("GOOGLE_MAPS_API_KEY environment variable not configured");
+  }
+
+  try {
+    const response = await client.geocode({
+      params: {
+        address: searchQuery,
+        key: apiKey,
+        region: "GB", // Bias towards UK addresses
+        components: "country:GB", // Restrict to UK only
+      },
+    });
+
+    if (response.data.status === "OK" && response.data.results.length > 0) {
+      const result = response.data.results[0];
+      const geometry = result.geometry;
+      const location = geometry.location;
+
+      // Extract bounds (prefer bounds, fallback to viewport)
+      let bounds: PlaceBounds | undefined;
+      if (geometry.bounds) {
+        bounds = {
+          northeast: {
+            lat: geometry.bounds.northeast.lat,
+            lng: geometry.bounds.northeast.lng,
+          },
+          southwest: {
+            lat: geometry.bounds.southwest.lat,
+            lng: geometry.bounds.southwest.lng,
+          },
+        };
+      }
+
+      // Viewport is always present as fallback
+      const viewport: PlaceBounds = {
+        northeast: {
+          lat: geometry.viewport.northeast.lat,
+          lng: geometry.viewport.northeast.lng,
+        },
+        southwest: {
+          lat: geometry.viewport.southwest.lat,
+          lng: geometry.viewport.southwest.lng,
+        },
+      };
+
+      return {
+        placeId: result.place_id,
+        formattedAddress: result.formatted_address,
+        location: {
+          lat: location.lat,
+          lng: location.lng,
+        },
+        bounds,
+        viewport,
+        types: result.types || [],
+      };
+    }
+
+    // Handle different API response statuses
+    if (response.data.status === "ZERO_RESULTS") {
+      console.warn(`No place details found for: ${searchQuery}`);
+      return null;
+    }
+
+    console.error(`Geocoding API error: ${response.data.status}`);
+    return null;
+  } catch (error) {
+    console.error("Error getting place details:", error);
+    return null; // Return null instead of throwing to allow fallback strategies
   }
 }
 

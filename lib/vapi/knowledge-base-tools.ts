@@ -23,7 +23,7 @@ export function createEstateAgentToolData(
     type: "apiRequest",
     function: {
       name: `query_${sanitizedName}_props`,
-      description: `Search and filter properties from ${knowledgeBaseName} by city, district, county, street, and other criteria. Returns up to 3 matching properties by default (or all properties if include_all is true) in plain text format with essential details (baths, price, property type, title, address, etc.) along with the total count of matching properties. Uses fuzzy and phonetic matching for location fields - if no match found, returns available options as refinements.`,
+      description: `Search and filter properties from ${knowledgeBaseName} by location (street, area, district, landmark), city, county, and other criteria. Returns up to 3 matching properties by default (or all properties if include_all is true) in plain text format with essential details (baths, price, property type, title, address, etc.) along with the total count of matching properties. Uses intelligent multi-strategy location matching combining fuzzy/phonetic address search AND Google Places API boundaries - if no match found, returns available options as refinements.`,
       parameters: {
         type: "object",
         properties: {
@@ -84,9 +84,9 @@ export function createEstateAgentToolData(
             type: "string",
             description: "County name to filter properties by. Uses fuzzy matching to find the closest county if exact match not found. If no match found, returns available counties as refinements."
           },
-          street: {
+          location: {
             type: "string",
-            description: "Street name or address to search. Uses multi-stage matching (exact, substring, fuzzy, and phonetic) to find similar streets if exact match not found. If no match found, returns top 10-15 most similar streets as refinements."
+            description: "General location search - street name, area, district, or landmark. Uses intelligent multi-strategy matching: (1) Searches full addresses for exact/fuzzy/phonetic matches, (2) Uses Google Places API to understand area boundaries (e.g., 'central Edinburgh', 'Spinningfields'), (3) Returns properties within the specified area bounds. Examples: 'Baker Street', 'Spinningfields', 'central Edinburgh', 'Kensington', 'left bank'. If no match found, returns top 10-15 most similar locations as refinements."
           },
           include_all: {
             type: "boolean",
@@ -157,9 +157,9 @@ export function createEstateAgentToolData(
           type: "string",
           description: "County name to filter properties by"
         },
-        street: {
+        location: {
           type: "string",
-          description: "Street name or address to search"
+          description: "General location search - street, area, district, or landmark"
         },
         include_all: {
           type: "boolean",
