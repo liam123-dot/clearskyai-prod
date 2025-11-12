@@ -12,7 +12,20 @@ function formatPropertiesAsText(result: PropertyQueryResponse, filters: Property
   const narrowingRefinements = result.refinements.filter(r => r.resultCount < result.totalCount);
   
   // Find implied filters (refinements where resultCount === totalCount)
-  const impliedFilters = result.refinements.filter(r => r.resultCount === result.totalCount);
+  // Only show implied filters when:
+  // 1. There's actually a meaningful number of properties (>3)
+  // 2. It's the ONLY option for that filter (no other refinements for same filterName)
+  const impliedFilters = result.totalCount > 3 
+    ? result.refinements.filter(r => {
+        if (r.resultCount !== result.totalCount) return false;
+        
+        // Check if this is the only value for this filter name
+        const sameFilterRefinements = result.refinements.filter(
+          ref => ref.filterName === r.filterName
+        );
+        return sameFilterRefinements.length === 1;
+      })
+    : [];
   
   // Build summary of active filters
   const activeFilters: string[] = [];
