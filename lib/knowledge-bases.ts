@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createNoCookieClient } from '@/lib/supabase/serverNoCookies'
 import type { LocationKeywords } from '@/lib/property-prompt'
 import { deleteToolWithCleanup, getToolByExternalId } from '@/lib/tools'
 
@@ -124,7 +124,7 @@ export async function getKnowledgeBases(
  * Get a single knowledge base by ID
  */
 export async function getKnowledgeBase(id: string): Promise<KnowledgeBase | null> {
-  const supabase = await createClient()
+  const supabase = createNoCookieClient()
 
   const { data, error } = await supabase
     .from('knowledge_bases')
@@ -149,7 +149,7 @@ export async function getKnowledgeBase(id: string): Promise<KnowledgeBase | null
 export async function createKnowledgeBase(
   data: CreateKnowledgeBaseData
 ): Promise<KnowledgeBase> {
-  const supabase = await createClient()
+  const supabase = createNoCookieClient()
 
   const { data: knowledgeBase, error } = await supabase
     .from('knowledge_bases')
@@ -202,7 +202,7 @@ export async function updateKnowledgeBase(
  * - Deletes the knowledge base (CASCADE deletes agent_knowledge_bases records)
  */
 export async function deleteKnowledgeBase(id: string): Promise<void> {
-  const supabase = await createServiceClient()
+  const supabase = createNoCookieClient()
 
   // Find all agent_knowledge_bases records with vapi_tool_id for this knowledge base
   const { data: assignments, error: assignmentsError } = await supabase
@@ -364,7 +364,7 @@ export async function assignKnowledgeBaseToAgent(
   agentId: string,
   knowledgeBaseId: string
 ): Promise<void> {
-  const supabase = await createClient()
+  const supabase = createNoCookieClient()
 
   // Get the knowledge base to check its type
   const knowledgeBase = await getKnowledgeBase(knowledgeBaseId)

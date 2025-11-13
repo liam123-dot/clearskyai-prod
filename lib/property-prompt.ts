@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createNoCookieClient } from '@/lib/supabase/serverNoCookies'
 import { getKnowledgeBase, type Property } from '@/lib/knowledge-bases'
 import { reverseGeocodeLocation, type LocationComponents } from '@/lib/geocoding'
 
@@ -163,7 +164,7 @@ export async function extractLocationKeywords(
 export async function generatePropertyQueryPrompt(
   knowledgeBaseId: string
 ): Promise<{ prompt: string; keywords: LocationKeywords }> {
-  const supabase = await createClient()
+  const supabase = createNoCookieClient()
 
   // Get knowledge base details
   const knowledgeBase = await getKnowledgeBase(knowledgeBaseId)

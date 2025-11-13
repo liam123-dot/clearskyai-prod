@@ -1,6 +1,6 @@
 import { task, logger } from "@trigger.dev/sdk/v3"
 import { ApifyClient } from "apify-client"
-import { createNoCookieClient } from "@/lib/supabase/trigger"
+import { createNoCookieClient } from "@/lib/supabase/serverNoCookies"
 import type { RightmoveProperty } from "@/types/rightmove"
 import type { EstateAgentKnowledgeBaseData, Property } from "@/lib/knowledge-bases"
 import { normalizeAddress } from "@/lib/address-normalization"

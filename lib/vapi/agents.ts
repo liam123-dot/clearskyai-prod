@@ -1,5 +1,6 @@
 import { vapiClient } from "./VapiClients";
 import { createServiceClient } from "../supabase/server";
+import { createNoCookieClient } from "../supabase/serverNoCookies";
 import { Vapi } from "@vapi-ai/server-sdk";
 
 export interface AgentOrganization {
@@ -27,6 +28,18 @@ export interface AssignedAgent {
     organization: AgentOrganization;
     isAssigned: true;
     vapiAssistant: Vapi.Assistant;
+}
+
+export interface AgentUpdateFields {
+    firstMessage?: string;
+    prompt?: string;
+    voiceId?: string;
+    transcriber?: any;
+    serverMessages?: string[];
+    startSpeakingPlan?: any;
+    stopSpeakingPlan?: any;
+    analysisPlan?: any;
+    messagePlan?: any;
 }
 
 export async function getAgents(): Promise<AgentWithDetails[]> {
@@ -241,6 +254,141 @@ export async function updateAgentWebhookWithVapiAssistantId(vapiAssistantId: str
 }
 
 /**
+ * Updates a VAPI assistant with the provided fields
+ * @param vapiAssistantId - The VAPI assistant ID to update
+ * @param updates - Partial object containing fields to update
+ */
+export async function updateAgentAssistant(
+    vapiAssistantId: string,
+    updates: Partial<AgentUpdateFields>
+): Promise<void> {
+    // Fetch current assistant from VAPI
+    const assistant = await vapiClient.assistants.get(vapiAssistantId);
+
+    // Prepare update object
+    const updateData: any = {};
+
+    // Update firstMessage if provided
+    if (updates.firstMessage !== undefined) {
+        updateData.firstMessage = updates.firstMessage;
+    }
+
+    // Update prompt if provided
+    if (updates.prompt !== undefined) {
+        updateData.model = {
+            ...assistant.model,
+            messages: [
+                {
+                    role: 'system',
+                    content: updates.prompt,
+                },
+                ...(assistant.model?.messages?.filter((m: any) => m.role !== 'system') || []),
+            ],
+        };
+    }
+
+    // Update voiceId if provided
+    if (updates.voiceId !== undefined) {
+        updateData.voice = {
+            ...(assistant.voice as any),
+            voiceId: updates.voiceId,
+            provider: '11labs',
+            model: 'eleven_flash_v2_5',
+        };
+    }
+
+    // Update transcriber if provided
+    if (updates.transcriber !== undefined) {
+        updateData.transcriber = {
+            ...(assistant.transcriber as any),
+            ...updates.transcriber,
+        };
+    }
+
+    // Update serverMessages if provided
+    // Always ensure chat.created and end-of-call-report are included
+    if (updates.serverMessages !== undefined) {
+        updateData.serverMessages = ensureRequiredServerMessages(updates.serverMessages);
+    } else {
+        // If serverMessages not provided, check if required ones are missing
+        const existingServerMessages = (assistant.serverMessages as string[]) || [];
+        const requiredMessages = ['chat.created', 'end-of-call-report'];
+        const hasAllRequired = requiredMessages.every(msg => existingServerMessages.includes(msg));
+        
+        // Only update if required messages are missing
+        if (!hasAllRequired) {
+            updateData.serverMessages = ensureRequiredServerMessages(existingServerMessages);
+        }
+    }
+
+    // Update startSpeakingPlan if provided
+    if (updates.startSpeakingPlan !== undefined) {
+        updateData.startSpeakingPlan = {
+            ...(assistant.startSpeakingPlan as any),
+            ...updates.startSpeakingPlan,
+        };
+    }
+
+    // Update stopSpeakingPlan if provided
+    if (updates.stopSpeakingPlan !== undefined) {
+        updateData.stopSpeakingPlan = {
+            ...(assistant.stopSpeakingPlan as any),
+            ...updates.stopSpeakingPlan,
+        };
+    }
+
+    // Update analysisPlan if provided
+    if (updates.analysisPlan !== undefined) {
+        updateData.analysisPlan = {
+            ...(assistant.analysisPlan as any),
+            ...updates.analysisPlan,
+        };
+    }
+
+    // Update messagePlan if provided
+    if (updates.messagePlan !== undefined) {
+        updateData.messagePlan = {
+            ...((assistant as any).messagePlan as any),
+            ...updates.messagePlan,
+        };
+    }
+
+    // Update the assistant (Vapi SDK merges partial updates)
+    await vapiClient.assistants.update(vapiAssistantId, updateData);
+}
+
+/**
+ * Updates an agent by database ID
+ * Fetches the VAPI assistant ID from the database and calls updateAgentAssistant
+ * @param agentId - The database agent ID
+ * @param updates - Partial object containing fields to update
+ */
+export async function updateAgent(
+    agentId: string,
+    updates: Partial<AgentUpdateFields>
+): Promise<void> {
+    const supabase = createNoCookieClient();
+
+    console.log('Updating agent...', agentId, updates)
+    
+    // Fetch the agent from database to get vapi_assistant_id
+    const { data: dbAgent, error } = await supabase
+        .from('agents')
+        .select('vapi_assistant_id')
+        .eq('id', agentId)
+        .single<{ vapi_assistant_id: string }>();
+
+    if (error || !dbAgent) {
+        throw new Error(`Failed to find agent with ID ${agentId}: ${error?.message || 'Agent not found'}`);
+    }
+
+    console.log('Fetched VAPI assistant ID:', dbAgent.vapi_assistant_id)
+
+    // Call updateAgentAssistant with the fetched vapi_assistant_id
+    await updateAgentAssistant(dbAgent.vapi_assistant_id, updates);
+}
+
+/**
  * Assigns or unassigns an agent to/from an organization
  * @param vapi_assistant_id - The VAPI assistant ID
  * @param organization_id - The organization ID to assign to, or null to unassign
@@ -317,6 +465,99 @@ export async function assignAgentToOrganization(
             id: agent.id,
             vapi_assistant_id: agent.vapi_assistant_id,
             organization_id: agent.organization_id,
+        },
+    };
+}
+
+/**
+ * Creates a new agent with default settings and assigns it to an organization
+ * @param name - The name of the agent
+ * @param organization_id - The organization ID to assign the agent to
+ * @returns Object containing the assigned agent data
+ * @throws Error if agent creation or assignment fails
+ */
+export async function createAgent(
+    name: string,
+    organization_id: string
+): Promise<{ agent: { id: string; vapi_assistant_id: string; organization_id: string } }> {
+    // Create VAPI assistant with default settings
+    const vapiAssistant = await vapiClient.assistants.create({
+        name: name.trim(),
+        model: {
+            provider: 'openai',
+            model: 'gpt-4.1-mini',
+            temperature: 0.7,
+        },
+        voice: {
+            voiceId: '2KeyfL6P3j1maB1yEare',
+            provider: '11labs',
+            model: 'eleven_flash_v2_5',
+        },
+        transcriber: {
+            model: 'flux-general-en',
+            provider: 'deepgram',
+            language: 'en',
+            endpointing: 150,
+            eotThreshold: 0.73,
+            eotTimeoutMs: 1900,
+        } as any,
+        startSpeakingPlan: {
+            waitSeconds: 0.1,
+            smartEndpointingEnabled: false,
+            transcriptionEndpointingPlan: {
+                onPunctuationSeconds: 0.8,
+                onNoPunctuationSeconds: 0,
+                onNumberSeconds: 2,
+            },
+        },
+        stopSpeakingPlan: {
+            voiceSeconds: 0.1,
+            numWords: 0,
+            backoffSeconds: 0,
+        },
+        server: {
+            url: process.env.NEXT_PUBLIC_APP_URL + '/api/vapi/webhook',
+        },
+        serverMessages: ['chat.created', 'end-of-call-report'],
+    });
+
+    if (!vapiAssistant.id) {
+        throw new Error('Failed to create VAPI assistant');
+    }
+
+    // Assign agent to organization using shared function
+    let assignmentResult;
+    try {
+        assignmentResult = await assignAgentToOrganization(vapiAssistant.id, organization_id);
+    } catch (assignmentError) {
+        // If assignment fails, try to clean up the VAPI assistant
+        try {
+            await vapiClient.assistants.delete(vapiAssistant.id);
+        } catch (cleanupError) {
+            console.error('Failed to cleanup VAPI assistant:', cleanupError);
+        }
+
+        throw new Error(
+            assignmentError instanceof Error ? assignmentError.message : 'Failed to assign agent'
+        );
+    }
+
+    if (!assignmentResult.success || !assignmentResult.assigned || !assignmentResult.agent) {
+        // If assignment failed, try to clean up the VAPI assistant
+        try {
+            await vapiClient.assistants.delete(vapiAssistant.id);
+        } catch (cleanupError) {
+            console.error('Failed to cleanup VAPI assistant:', cleanupError);
+        }
+
+        throw new Error('Failed to assign agent to organization');
+    }
+
+    return {
+        agent: {
+            id: assignmentResult.agent.id,
+            vapi_assistant_id: assignmentResult.agent.vapi_assistant_id,
+            organization_id: assignmentResult.agent.organization_id,
         },
     };
 }

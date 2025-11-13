@@ -1,5 +1,5 @@
 import { createClient } from './supabase/server'
-import { createServiceClient } from './supabase/server'
+import { createNoCookieClient } from './supabase/serverNoCookies'
 import { vapiClient } from './vapi/VapiClients'
 import { formatLabelForDisplay } from './utils'
 
@@ -35,7 +35,7 @@ export async function createTool(
   data: any,
   label?: string
 ): Promise<Tool> {
-  const supabase = await createServiceClient()
+  const supabase = createNoCookieClient()
 
   // If no label provided, format the name for display
   const displayLabel = label || formatLabelForDisplay(name)
@@ -68,7 +68,7 @@ export async function createTool(
  * Gets a single tool by its database ID
  */
 export async function getTool(toolId: string): Promise<Tool | null> {
-  const supabase = await createClient()
+  const supabase = createNoCookieClient()
 
   const { data: tool, error } = await supabase
     .from('tools')
@@ -88,7 +88,7 @@ export async function getTool(toolId: string): Promise<Tool | null> {
  * Gets a tool by its external VAPI tool ID
  */
 export async function getToolByExternalId(externalToolId: string): Promise<Tool | null> {
-  const supabase = await createServiceClient()
+  const supabase = createNoCookieClient()
 
   const { data: tool, error } = await supabase
     .from('tools')
@@ -112,7 +112,7 @@ export async function getToolByExternalId(externalToolId: string): Promise<Tool 
  * Gets all tools for an organization
  */
 export async function getToolsByOrganization(organizationId: string): Promise<Tool[]> {
-  const supabase = await createClient()
+  const supabase = createNoCookieClient()
 
   const { data: tools, error } = await supabase
     .from('tools')
@@ -139,7 +139,7 @@ export async function updateTool(
     data?: any
   }
 ): Promise<Tool> {
-  const supabase = await createServiceClient()
+  const supabase = createNoCookieClient()
 
   const { data: tool, error } = await supabase
     .from('tools')
@@ -160,7 +160,7 @@ export async function updateTool(
  * Deletes a tool from the database
  */
 export async function deleteTool(toolId: string): Promise<void> {
-  const supabase = await createServiceClient()
+  const supabase = createNoCookieClient()
 
   const { error } = await supabase
     .from('tools')
@@ -177,7 +177,7 @@ export async function deleteTool(toolId: string): Promise<void> {
  * Deletes a tool by its external VAPI tool ID
  */
 export async function deleteToolByExternalId(externalToolId: string): Promise<void> {
-  const supabase = await createServiceClient()
+  const supabase = createNoCookieClient()
 
   const { error } = await supabase
     .from('tools')
@@ -198,7 +198,7 @@ export async function deleteToolByExternalId(externalToolId: string): Promise<vo
  * - Deleting tool from database (CASCADE handles agent_tools)
  */
 export async function deleteToolWithCleanup(toolId: string): Promise<void> {
-  const supabase = await createServiceClient()
+  const supabase = createNoCookieClient()
 
   // Get the tool to retrieve its external_tool_id
   const { data: tool, error: fetchError } = await supabase
@@ -306,7 +306,7 @@ export async function deleteToolWithCleanup(toolId: string): Promise<void> {
  * Gets all tools across all organizations (for admin use)
  */
 export async function getAllTools(): Promise<Tool[]> {
-  const supabase = await createServiceClient()
+  const supabase = createNoCookieClient()
 
   const { data: tools, error } = await supabase
     .from('tools')
@@ -385,7 +385,7 @@ export async function getOrCreateAgentTools(
   agentId: string,
   toolIds: string[]
 ): Promise<Tool[]> {
-  const supabase = await createServiceClient()
+  const supabase = createNoCookieClient()
   
   // Get the agent to access organization
   const { data: agent, error: agentError } = await supabase
@@ -445,7 +445,7 @@ export async function getOrCreateAgentTools(
  * This function reconciles VAPI toolIds with agent_tools table
  */
 export async function getAgentTools(agentId: string): Promise<Tool[]> {
-  const supabase = await createServiceClient()
+  const supabase = createNoCookieClient()
   
   // Get agent and VAPI assistant
   const { data: agent } = await supabase
@@ -583,7 +583,7 @@ export async function isToolAttachedToAgent(
   agentId: string,
   toolId: string
 ): Promise<boolean> {
-  const supabase = await createServiceClient()
+  const supabase = createNoCookieClient()
 
   // Check agent_tools table
   const { data: agentTool, error: agentToolError } = await supabase
@@ -605,7 +605,7 @@ export async function isToolAttachedToAgent(
  * Gets tools attached via agent_tools table (non-VAPI attached)
  */
 export async function getAgentToolsFromTable(agentId: string): Promise<Tool[]> {
-  const supabase = await createServiceClient()
+  const supabase = createNoCookieClient()
 
   const { data: agentToolsRecords, error } = await supabase
     .from('agent_tools')

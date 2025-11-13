@@ -1,5 +1,5 @@
 import { vapiClient } from "./VapiClients"
-import { createServiceClient } from "../supabase/server"
+import { createNoCookieClient } from "../supabase/serverNoCookies"
 import { CreateApiRequestToolDto } from "./ToolTypes"
 import { createTool, deleteToolByExternalId, ToolType } from "../tools"
 import { formatLabelForDisplay } from "../utils"
@@ -11,7 +11,7 @@ export function createEstateAgentToolData(
   knowledgeBaseId: string,
   knowledgeBaseName: string
 ): CreateApiRequestToolDto {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://your-domain.com'
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL!
   
   // Sanitize name for both function name and tool name (must match /^[a-zA-Z0-9_-]{1,40}$/)
   const sanitizedName = knowledgeBaseName
@@ -154,7 +154,7 @@ export async function attachToolToAgent(
   toolData: CreateApiRequestToolDto,
   toolType: ToolType = 'apiRequest'
 ): Promise<{ vapiToolId: string; dbToolId: string }> {
-  const supabase = await createServiceClient()
+  const supabase = createNoCookieClient()
 
   // Get the agent to access the assistant and organization
   const { data: agent, error: agentError } = await supabase
@@ -241,7 +241,7 @@ export async function removeToolFromAgent(
   agentId: string,
   toolId: string
 ): Promise<void> {
-  const supabase = await createServiceClient()
+  const supabase = createNoCookieClient()
 
   // Get the agent to access the assistant
   const { data: agent, error: agentError } = await supabase

@@ -5,7 +5,7 @@ import { getAgentTools } from '@/lib/tools'
 import { getAgentKnowledgeBases } from '@/lib/knowledge-bases'
 import { generatePropertyQueryPrompt } from '@/lib/property-prompt'
 import { generateToolLLMPrompt } from '@/lib/tools/llm-prompt'
-import { convertToModelMessages, streamText } from 'ai'
+import { generateAIText } from '@/lib/ai'
 
 interface RouteContext {
   params: Promise<{
@@ -44,21 +44,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
         { status: 400 }
       )
     }
-
-    // Convert UIMessages to simple message format for streamText
-    // Extract text content from message parts
-    const modelMessages = messages
-      .filter((msg) => {
-        const hasText = msg.parts.some((part: { type: string; text?: string }) => part.type === 'text' && part.text?.trim())
-        return hasText
-      })
-      .map((msg) => ({
-        role: msg.role,
-        content: msg.parts
-          .filter((part: { type: string; text?: string }) => part.type === 'text')
-          .map((part: { type: string; text?: string }) => part.type === 'text' ? part.text : '')
-          .join(''),
-      }))
 
     // Fetch agent details
     const agent = await getAgentById(agentId)
@@ -305,14 +290,17 @@ Guidelines:
 Remember: The user can apply your suggested prompt updates directly, so always provide complete, production-ready prompts.`
 
     console.log('systemPrompt', systemPrompt)
-    // Generate AI response with streaming using Vercel AI Gateway
-    const result = streamText({
+    // Generate AI response with streaming using generalized AI function
+    const result = await generateAIText({
       model: 'anthropic/claude-haiku-4.5',
       system: systemPrompt,
-      messages: convertToModelMessages(messages),
+      messages,
+      stream: true,
     })
 
-    return result.toUIMessageStreamResponse()
+    // When stream=true, generateAIText always returns a Response
+    // Type assertion is safe here because we know stream=true
+    return result as Response
   } catch (error) {
     console.error('Error in /api/[slug]/agents/[id]/prompt-chat POST:', error)
     return NextResponse.json(

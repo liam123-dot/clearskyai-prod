@@ -5,7 +5,7 @@
  * Results are injected into the conversation as system context using VAPI Call Control API.
  */
 
-import { createNoCookieClient } from '@/lib/supabase/trigger'
+import { createNoCookieClient } from '@/lib/supabase/serverNoCookies'
 import { injectSystemContext } from '@/lib/vapi/call-control'
 import { executeToolById } from '@/lib/tools/execute'
 import type { VariableContext } from '@/lib/tools/variables'
