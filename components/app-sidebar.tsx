@@ -13,6 +13,7 @@ import {
   IconShoppingCart,
   IconTools,
   IconUser,
+  IconMessageCircle,
 } from "@tabler/icons-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -100,6 +101,11 @@ export function AppSidebar({ type, slug, orgName, user, ...props }: AppSidebarPr
       title: "Calls",
       url: "/admin/calls",
       icon: IconPhoneCall,
+    },
+    {
+      title: "Call Annotations",
+      url: "/admin/call-annotations",
+      icon: IconMessageCircle,
     },
     {
       title: "Phone Numbers",
