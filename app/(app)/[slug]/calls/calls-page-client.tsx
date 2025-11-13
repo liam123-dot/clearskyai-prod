@@ -129,7 +129,6 @@ export function CallsPageClient({ slug }: CallsPageClientProps) {
             <Table>
               <TableHeader className="bg-muted/50">
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-12"></TableHead>
                   <TableHead className="font-semibold">Assistant & Time</TableHead>
                   <TableHead className="font-semibold">Caller</TableHead>
                   <TableHead className="font-semibold">Number Called</TableHead>
@@ -141,9 +140,6 @@ export function CallsPageClient({ slug }: CallsPageClientProps) {
               <TableBody>
                 {[...Array(5)].map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell className="w-12">
-                      <Skeleton className="size-8 rounded-md" />
-                    </TableCell>
                     <TableCell>
                       <div className="space-y-1">
                         <Skeleton className="h-4 w-40" />
@@ -228,7 +224,6 @@ export function CallsPageClient({ slug }: CallsPageClientProps) {
             <Table>
               <TableHeader className="bg-muted/50">
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="w-12"></TableHead>
                   <TableHead className="font-semibold">Assistant & Time</TableHead>
                   <TableHead className="font-semibold">Caller</TableHead>
                   <TableHead className="font-semibold">Number Called</TableHead>

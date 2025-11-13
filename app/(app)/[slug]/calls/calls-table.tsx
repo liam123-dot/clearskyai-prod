@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { IconPhone, IconPhoneCall, IconAlertCircle } from "@tabler/icons-react"
+import { IconPhone, IconAlertCircle } from "@tabler/icons-react"
 import { formatDuration, getCallDuration, getCallerNumber, getCalledNumber, getAssistantName, getRoutingJourney, isWebCall, type Call } from "@/lib/calls-helpers"
 import { CallDetailsSidebar } from "./call-details-sidebar"
 
@@ -63,13 +63,6 @@ export function CallsTable({ calls, slug }: CallsTableProps) {
                 className="cursor-pointer hover:bg-muted/50"
                 onClick={() => setSelectedCall(call)}
               >
-              <TableCell className="w-12">
-                <div className="flex items-center justify-center">
-                  <div className="bg-muted flex size-8 items-center justify-center rounded-md">
-                    <IconPhoneCall className="text-muted-foreground size-4" />
-                  </div>
-                </div>
-              </TableCell>
               <TableCell>
                 <div className="flex flex-col gap-1">
                   <div className="font-medium">{assistantName}</div>
