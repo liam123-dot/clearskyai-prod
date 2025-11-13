@@ -40,7 +40,23 @@ export const createDemoAgent = task({
                 parts: [
                     {
                         type: 'text',
-                        text: `Take a look at this prompt template: ${estateAgentDemoPrompt}, return a new version of this for ${estateAgentName}, here is the prompt and information for this estate agent. Update the prompt accordingly. If they have rentals and sale properties, then one of the filtering questions should be "Are you looking to buy or rent?" Otherwise, that question is not necessary. Here is the property query prompt: ${propertyQueryPrompt.prompt}`,
+                        text: `You are updating an estate agent AI assistant template for ${estateAgentName}.
+
+CRITICAL: Keep the EXACT same structure, format, headings, sections, and flow as the template provided. DO NOT change the template structure or add/remove sections.
+
+ONLY update these specific data points based on the property information below:
+1. Replace "Southside Property" with "${estateAgentName}" everywhere it appears
+2. Update the service coverage section with the actual cities and districts from the property data
+3. Update the inventory details (number of properties, price ranges, available beds/baths)
+4. Update the available filters section to match the actual property data
+5. If the agent has BOTH rental AND sale properties, add "Are you looking to buy or rent?" as the FIRST qualification question (after bedrooms). If only rentals OR only sales, do NOT include this question.
+6. Update the "Property Search Filters & Strategy" section with the correct inventory count and property types from the data
+
+Here is the property query prompt with all the data about ${estateAgentName}'s properties:
+
+${propertyQueryPrompt.prompt}
+
+Return the complete updated template with the exact same structure, keeping all sections, headings, and formatting identical. Only change the specific data points mentioned above.`,
                     },
                 ],
             },
@@ -50,7 +66,7 @@ export const createDemoAgent = task({
     console.log('Updating agent assistant...')
     
     await updateAgent(agentId, {
-        firstMessage: `Welcome to ${estateAgentName}, how can I help you today?`,
+        firstMessage: `Welcome to ${estateAgentName}, can I get your name, please?`,
         prompt: response.text as string,
     })
 
