@@ -23,6 +23,19 @@ export interface Call {
 
 export type VapiMessage = Vapi.Artifact.Messages.Item;
 
+export interface CallAnnotation {
+  id: string
+  call_id: string
+  organization_id: string
+  created_by_admin: boolean
+  annotation_level: 'call' | 'transcript_item'
+  transcript_item_index: number | null
+  issue_category: string
+  note: string
+  created_at: string
+  updated_at: string
+}
+
 export function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
@@ -152,5 +165,27 @@ export function getCallType(call: Call): string | null {
 
 export function isWebCall(call: Call): boolean {
   return getCallType(call) === 'webCall'
+}
+
+// Annotation helpers
+// Note: These require annotation data to be passed separately since it's not part of the Call object
+export function hasAnnotations(annotationsCount: number): boolean {
+  return annotationsCount > 0
+}
+
+export function getAnnotationCount(annotations: CallAnnotation[]): number {
+  return annotations.length
+}
+
+export function getCallLevelAnnotation(annotations: CallAnnotation[]): CallAnnotation | null {
+  return annotations.find(a => a.annotation_level === 'call') || null
+}
+
+export function getTranscriptAnnotations(annotations: CallAnnotation[]): CallAnnotation[] {
+  return annotations.filter(a => a.annotation_level === 'transcript_item')
+}
+
+export function getAnnotationForTranscriptItem(annotations: CallAnnotation[], index: number): CallAnnotation | null {
+  return annotations.find(a => a.annotation_level === 'transcript_item' && a.transcript_item_index === index) || null
 }
 

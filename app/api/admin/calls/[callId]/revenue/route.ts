@@ -34,14 +34,14 @@ export interface RevenueData {
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ callId: string }> }
 ) {
   try {
     await requireAdmin()
     
-    const { id } = await params
+    const { callId } = await params
     
-    if (!id) {
+    if (!callId) {
       return NextResponse.json(
         { error: 'Call ID is required' },
         { status: 400 }
@@ -54,7 +54,7 @@ export async function GET(
     const { data: call, error: callError } = await supabase
       .from('calls')
       .select('*')
-      .eq('id', id)
+      .eq('id', callId)
       .single()
 
     if (callError || !call) {

@@ -135,6 +135,7 @@ export function CallsPageClient({ slug }: CallsPageClientProps) {
                   <TableHead className="font-semibold">Number Called</TableHead>
                   <TableHead className="font-semibold">Duration</TableHead>
                   <TableHead className="font-semibold">Routing</TableHead>
+                  <TableHead className="w-12"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -166,6 +167,9 @@ export function CallsPageClient({ slug }: CallsPageClientProps) {
                     </TableCell>
                     <TableCell>
                       <Skeleton className="h-5 w-20" />
+                    </TableCell>
+                    <TableCell className="w-12">
+                      <Skeleton className="size-6 rounded" />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -230,9 +234,10 @@ export function CallsPageClient({ slug }: CallsPageClientProps) {
                   <TableHead className="font-semibold">Number Called</TableHead>
                   <TableHead className="font-semibold">Duration</TableHead>
                   <TableHead className="font-semibold">Routing</TableHead>
+                  <TableHead className="w-12"></TableHead>
                 </TableRow>
               </TableHeader>
-              <CallsTable calls={paginatedCalls} />
+              <CallsTable calls={paginatedCalls} slug={slug} />
             </Table>
           </div>
           

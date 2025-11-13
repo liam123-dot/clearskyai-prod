@@ -106,6 +106,7 @@ export function AdminCallsContent() {
                   <TableHead className="font-semibold">Number Called</TableHead>
                   <TableHead className="font-semibold">Duration</TableHead>
                   <TableHead className="font-semibold">Routing</TableHead>
+                  <TableHead className="w-12"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -143,6 +144,9 @@ export function AdminCallsContent() {
                     </TableCell>
                     <TableCell>
                       <Skeleton className="h-5 w-20" />
+                    </TableCell>
+                    <TableCell className="w-12">
+                      <Skeleton className="size-6 rounded" />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -203,20 +207,21 @@ export function AdminCallsContent() {
         />
 
         <div className="rounded-lg border overflow-hidden">
-          <Table>
-            <TableHeader className="bg-muted/50">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="w-12"></TableHead>
-                <TableHead className="font-semibold">Organization</TableHead>
-                <TableHead className="font-semibold">Assistant & Time</TableHead>
-                <TableHead className="font-semibold">Caller</TableHead>
-                <TableHead className="font-semibold">Number Called</TableHead>
-                <TableHead className="font-semibold">Duration</TableHead>
-                <TableHead className="font-semibold">Routing</TableHead>
-              </TableRow>
-            </TableHeader>
-            <AdminCallsTable calls={calls} organizations={organizations} />
-          </Table>
+            <Table>
+              <TableHeader className="bg-muted/50">
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-12"></TableHead>
+                  <TableHead className="font-semibold">Organization</TableHead>
+                  <TableHead className="font-semibold">Assistant & Time</TableHead>
+                  <TableHead className="font-semibold">Caller</TableHead>
+                  <TableHead className="font-semibold">Number Called</TableHead>
+                  <TableHead className="font-semibold">Duration</TableHead>
+                  <TableHead className="font-semibold">Routing</TableHead>
+                  <TableHead className="w-12"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <AdminCallsTable calls={calls} organizations={organizations} />
+            </Table>
         </div>
       </div>
     </div>

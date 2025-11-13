@@ -165,6 +165,71 @@ GROUP BY a.id, a.vapi_assistant_id
 ORDER BY call_count DESC;
 ```
 
+## Call Annotations
+
+### Overview
+
+Call annotations allow users to flag issues with calls at the call level or on specific transcript items (messages, tool calls, tool results). This helps track call quality and identify areas for improvement.
+
+### Call Annotations Table Schema
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Unique annotation ID |
+| `call_id` | UUID | NOT NULL, REFERENCES calls(id) ON DELETE CASCADE | Associated call |
+| `organization_id` | UUID | NOT NULL, REFERENCES organisations(id) ON DELETE CASCADE | Organization that owns this annotation |
+| `created_by_admin` | BOOLEAN | NOT NULL, DEFAULT false | Whether created by an admin user |
+| `annotation_level` | TEXT | NOT NULL, CHECK IN ('call', 'transcript_item') | Level of annotation |
+| `transcript_item_index` | INTEGER | NULL | Index of transcript item (null for call-level) |
+| `issue_category` | TEXT | NOT NULL | Issue category (e.g., "Wrong response", "Routing error") |
+| `note` | TEXT | NOT NULL | Detailed note about the issue |
+| `created_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | When annotation was created |
+| `updated_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | When annotation was last updated |
+
+### Indexes
+
+- `idx_call_annotations_call_id` on `call_id` - Fast lookups by call
+- `idx_call_annotations_org_id` on `organization_id` - Fast lookups by organization
+- `idx_call_annotations_unique_call_level` - UNIQUE constraint on (call_id, organization_id) WHERE annotation_level = 'call'
+
+### Annotation Levels
+
+1. **call**: Annotation applies to the entire call
+   - Only one call-level annotation allowed per call per organization
+   - General feedback about the overall call quality
+
+2. **transcript_item**: Annotation applies to a specific part of the conversation
+   - Multiple transcript-level annotations allowed per call
+   - References specific message index in call.data.artifact.messages array
+   - Can annotate bot messages, user messages, tool calls, or tool results
+
+### Visibility Rules
+
+- **Clients**: Can only view and edit their organization's annotations where `created_by_admin = false`
+- **Admins**: Can view all annotations (both admin and client) and create admin-only annotations
+
+### API Endpoints
+
+**Get annotations for a call**:
+- Client: `GET /api/[slug]/calls/[callId]/annotations`
+- Admin: `GET /api/admin/calls/[callId]/annotations`
+
+**Create annotation**:
+- Client: `POST /api/[slug]/calls/[callId]/annotations`
+- Admin: `POST /api/admin/calls/[callId]/annotations`
+
+**Update annotation**:
+- Client: `PATCH /api/[slug]/calls/[callId]/annotations/[annotationId]`
+- Admin: `PATCH /api/admin/calls/[callId]/annotations/[annotationId]`
+
+**Delete annotation**:
+- Client: `DELETE /api/[slug]/calls/[callId]/annotations/[annotationId]`
+- Admin: `DELETE /api/admin/calls/[callId]/annotations/[annotationId]`
+
+**Get unique issue categories**:
+- Client: `GET /api/[slug]/calls/annotations/categories`
+- Admin: `GET /api/admin/calls/annotations/categories`
+
 ## Revenue and Margin Calculation
 
 ### API Endpoint: `/api/admin/calls/[id]/revenue`

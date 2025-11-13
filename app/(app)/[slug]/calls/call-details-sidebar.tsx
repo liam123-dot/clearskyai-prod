@@ -12,7 +12,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { IconPlayerPlay, IconPlayerPause, IconPhone, IconClock, IconUser, IconRoute, IconTool, IconCheck } from "@tabler/icons-react"
+import { IconPlayerPlay, IconPlayerPause, IconPhone, IconClock, IconUser, IconRoute, IconTool, IconCheck, IconPencil, IconAlertCircle } from "@tabler/icons-react"
 import { 
   formatDuration, 
   getCallDuration, 
@@ -24,8 +24,11 @@ import {
   getSummary,
   getEndedReason,
   getRoutingJourney,
+  getCallLevelAnnotation,
+  getAnnotationForTranscriptItem,
   type Call,
-  type VapiMessage
+  type VapiMessage,
+  type CallAnnotation
 } from "@/lib/calls-helpers"
 import { Vapi } from '@vapi-ai/server-sdk'
 import { Pie, PieChart } from "recharts"
@@ -43,8 +46,10 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
-import type { RevenueData } from "@/app/api/admin/calls/[id]/revenue/route"
+import type { RevenueData } from "@/app/api/admin/calls/[callId]/revenue/route"
 import { Skeleton } from "@/components/ui/skeleton"
+import { CallAnnotationDialog } from "@/components/calls/call-annotation-dialog"
+import { useParams } from "next/navigation"
 
 interface CallDetailsSidebarProps {
   call: Call
@@ -57,6 +62,17 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const audioRef = useRef<HTMLAudioElement>(null)
+  const params = useParams()
+  const slug = params?.slug as string | undefined
+
+  // Annotation dialog state
+  const [annotationDialogOpen, setAnnotationDialogOpen] = useState(false)
+  const [annotationDialogData, setAnnotationDialogData] = useState<{
+    level: 'call' | 'transcript_item'
+    transcriptItemIndex?: number
+    transcriptItemLabel?: string
+    existingAnnotation?: CallAnnotation | null
+  }>({ level: 'call' })
 
   const duration = getCallDuration(call.data)
   const callerNumber = getCallerNumber(call)
@@ -113,6 +129,44 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
     },
     enabled: isAdmin && open,
   })
+
+  // Fetch annotations
+  const { data: annotationsData } = useQuery<{ annotations: CallAnnotation[] }>({
+    queryKey: ['call-annotations', call.id],
+    queryFn: async () => {
+      const url = isAdmin 
+        ? `/api/admin/calls/${call.id}/annotations`
+        : `/api/${slug}/calls/${call.id}/annotations`
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error('Failed to fetch annotations')
+      }
+      return response.json()
+    },
+    enabled: open && (isAdmin || !!slug),
+  })
+
+  const annotations = annotationsData?.annotations || []
+  const callLevelAnnotation = getCallLevelAnnotation(annotations)
+
+  // Helper functions for annotation dialogs
+  const openCallAnnotationDialog = () => {
+    setAnnotationDialogData({
+      level: 'call',
+      existingAnnotation: callLevelAnnotation,
+    })
+    setAnnotationDialogOpen(true)
+  }
+
+  const openTranscriptAnnotationDialog = (index: number, label: string, existingAnnotation?: CallAnnotation | null) => {
+    setAnnotationDialogData({
+      level: 'transcript_item',
+      transcriptItemIndex: index,
+      transcriptItemLabel: label,
+      existingAnnotation,
+    })
+    setAnnotationDialogOpen(true)
+  }
 
   useEffect(() => {
     const audio = audioRef.current
@@ -194,6 +248,42 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
               )}
             </div>
           )}
+
+          {/* Call-Level Annotation */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Call Quality</h3>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={openCallAnnotationDialog}
+              >
+                <IconPencil className="size-4 mr-1" />
+                {callLevelAnnotation ? 'Edit' : 'Add'} Note
+              </Button>
+            </div>
+            {callLevelAnnotation && (
+              <div className="bg-muted/50 border border-border rounded-lg p-4 space-y-2">
+                <div className="flex items-start gap-2">
+                  <IconAlertCircle className="size-4 text-muted-foreground mt-0.5" />
+                  <div className="flex-1 space-y-1">
+                    <div className="font-semibold text-foreground">
+                      {callLevelAnnotation.issue_category}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {callLevelAnnotation.note}
+                    </p>
+                    <div className="text-xs text-muted-foreground">
+                      {callLevelAnnotation.created_by_admin && isAdmin && (
+                        <Badge variant="outline" className="mr-2 text-xs">Admin Note</Badge>
+                      )}
+                      {new Date(callLevelAnnotation.created_at).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Call Information */}
           <div className="space-y-4">
@@ -530,24 +620,42 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
                   const isBot = msg.role === 'bot'
                   const isToolCalls = msg.role === 'tool_calls'
                   const isToolResult = msg.role === 'tool_call_result'
+                  const transcriptAnnotation = getAnnotationForTranscriptItem(annotations, index)
                   
                   // Handle tool calls
                   if (isToolCalls && 'toolCalls' in msg && Array.isArray(msg.toolCalls)) {
                     return (
-                      <div key={index} className="rounded-lg p-4 bg-muted/50">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <IconTool className="size-4 text-muted-foreground" />
-                            <span className="text-xs font-semibold uppercase tracking-wider text-foreground">
-                              Tool Call
-                            </span>
+                      <div key={index} className="group relative">
+                        <div className="rounded-lg p-4 bg-muted/50">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <IconTool className="size-4 text-muted-foreground" />
+                              <span className="text-xs font-semibold uppercase tracking-wider text-foreground">
+                                Tool Call
+                              </span>
+                              {transcriptAnnotation && (
+                                <Badge variant="outline" className="text-xs">
+                                  <IconAlertCircle className="size-3 mr-1" />
+                                  Annotated
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {msg.secondsFromStart !== undefined && (
+                                <span className="text-muted-foreground text-xs font-mono">
+                                  {formatDuration(msg.secondsFromStart)}
+                                </span>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 p-0"
+                                onClick={() => openTranscriptAnnotationDialog(index, 'Tool Call', transcriptAnnotation)}
+                              >
+                                <IconPencil className="size-3" />
+                              </Button>
+                            </div>
                           </div>
-                          {msg.secondsFromStart !== undefined && (
-                            <span className="text-muted-foreground text-xs font-mono">
-                              {formatDuration(msg.secondsFromStart)}
-                            </span>
-                          )}
-                        </div>
                         <div className="space-y-2">
                           {msg.toolCalls.map((toolCall: any, toolIndex: number) => {
                             let args = {}
@@ -580,6 +688,15 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
                             )
                           })}
                         </div>
+                        {transcriptAnnotation && (
+                          <div className="mt-3 pt-3 border-t border-border">
+                            <div className="text-xs text-muted-foreground space-y-1">
+                              <div className="font-semibold">{transcriptAnnotation.issue_category}</div>
+                              <div>{transcriptAnnotation.note}</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                       </div>
                     )
                   }
@@ -610,20 +727,37 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
                     }
                     
                     return (
-                      <div key={index} className="rounded-lg p-4 bg-muted/50">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <IconCheck className="size-4 text-muted-foreground" />
-                            <span className="text-xs font-semibold uppercase tracking-wider text-foreground">
-                              {('name' in msg && msg.name) ? `Tool: ${msg.name}` : 'Tool Result'}
-                            </span>
+                      <div key={index} className="group relative">
+                        <div className="rounded-lg p-4 bg-muted/50">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <IconCheck className="size-4 text-muted-foreground" />
+                              <span className="text-xs font-semibold uppercase tracking-wider text-foreground">
+                                {('name' in msg && msg.name) ? `Tool: ${msg.name}` : 'Tool Result'}
+                              </span>
+                              {transcriptAnnotation && (
+                                <Badge variant="outline" className="text-xs">
+                                  <IconAlertCircle className="size-3 mr-1" />
+                                  Annotated
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {msg.secondsFromStart !== undefined && (
+                                <span className="text-muted-foreground text-xs font-mono">
+                                  {formatDuration(msg.secondsFromStart)}
+                                </span>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 p-0"
+                                onClick={() => openTranscriptAnnotationDialog(index, 'Tool Result', transcriptAnnotation)}
+                              >
+                                <IconPencil className="size-3" />
+                              </Button>
+                            </div>
                           </div>
-                          {msg.secondsFromStart !== undefined && (
-                            <span className="text-muted-foreground text-xs font-mono">
-                              {formatDuration(msg.secondsFromStart)}
-                            </span>
-                          )}
-                        </div>
                         <div className="text-sm text-foreground mb-2 font-medium">
                           {resultSummary}
                         </div>
@@ -649,6 +783,15 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
                             )}
                           </div>
                         )}
+                        {transcriptAnnotation && (
+                          <div className="mt-3 pt-3 border-t border-border">
+                            <div className="text-xs text-muted-foreground space-y-1">
+                              <div className="font-semibold">{transcriptAnnotation.issue_category}</div>
+                              <div>{transcriptAnnotation.note}</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                       </div>
                     )
                   }
@@ -657,27 +800,54 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
                   const messageContent = 'message' in msg ? msg.message : 'Unknown message type'
 
                   return (
-                    <div 
-                      key={index} 
-                      className={`rounded-lg p-4 ${
-                        isBot 
-                          ? 'bg-primary/5 border border-primary/10' 
-                          : 'bg-muted/50'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className={`text-xs font-semibold uppercase tracking-wider ${
-                          isBot ? 'text-primary' : 'text-foreground'
-                        }`}>
-                          {isBot ? 'Assistant' : 'User'}
-                        </span>
-                        {msg.secondsFromStart !== undefined && (
-                          <span className="text-muted-foreground text-xs font-mono">
-                            {formatDuration(msg.secondsFromStart)}
-                          </span>
+                    <div key={index} className="group relative">
+                      <div 
+                        className={`rounded-lg p-4 ${
+                          isBot 
+                            ? 'bg-primary/5 border border-primary/10' 
+                            : 'bg-muted/50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-semibold uppercase tracking-wider ${
+                              isBot ? 'text-primary' : 'text-foreground'
+                            }`}>
+                              {isBot ? 'Assistant' : 'User'}
+                            </span>
+                            {transcriptAnnotation && (
+                              <Badge variant="outline" className="text-xs">
+                                <IconAlertCircle className="size-3 mr-1" />
+                                Annotated
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {msg.secondsFromStart !== undefined && (
+                              <span className="text-muted-foreground text-xs font-mono">
+                                {formatDuration(msg.secondsFromStart)}
+                              </span>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 p-0"
+                              onClick={() => openTranscriptAnnotationDialog(index, isBot ? 'Assistant Message' : 'User Message', transcriptAnnotation)}
+                            >
+                              <IconPencil className="size-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        <p className="text-sm leading-relaxed">{messageContent}</p>
+                        {transcriptAnnotation && (
+                          <div className="mt-3 pt-3 border-t border-border">
+                            <div className="text-xs text-muted-foreground space-y-1">
+                              <div className="font-semibold">{transcriptAnnotation.issue_category}</div>
+                              <div>{transcriptAnnotation.note}</div>
+                            </div>
+                          </div>
                         )}
                       </div>
-                      <p className="text-sm leading-relaxed">{messageContent}</p>
                     </div>
                   )
                 })}
@@ -686,6 +856,19 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
           )}
         </div>
       </SheetContent>
+
+      {/* Annotation Dialog */}
+      <CallAnnotationDialog
+        open={annotationDialogOpen}
+        onClose={() => setAnnotationDialogOpen(false)}
+        callId={call.id}
+        slug={slug}
+        isAdmin={isAdmin}
+        annotationLevel={annotationDialogData.level}
+        transcriptItemIndex={annotationDialogData.transcriptItemIndex}
+        transcriptItemLabel={annotationDialogData.transcriptItemLabel}
+        existingAnnotation={annotationDialogData.existingAnnotation}
+      />
     </Sheet>
   )
 }
