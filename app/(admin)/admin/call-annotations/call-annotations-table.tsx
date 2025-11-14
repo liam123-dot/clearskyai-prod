@@ -1,11 +1,24 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { TableBody, TableCell, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { IconExternalLink } from '@tabler/icons-react'
+import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+import { IconExternalLink, IconTrash } from '@tabler/icons-react'
+import { toast } from 'sonner'
 import { CallDetailsSidebar } from '@/app/(app)/[slug]/calls/call-details-sidebar'
 import type { Call } from '@/lib/calls-helpers'
 
@@ -46,6 +59,8 @@ interface CallAnnotationsTableProps {
 
 export function CallAnnotationsTable({ annotations }: CallAnnotationsTableProps) {
   const [selectedCallId, setSelectedCallId] = useState<string | null>(null)
+  const [deletingAnnotationId, setDeletingAnnotationId] = useState<string | null>(null)
+  const queryClient = useQueryClient()
 
   // Fetch full call data when an annotation is clicked
   const { data: selectedCallData, isLoading: isLoadingCall } = useQuery<{ call: Call }>({
@@ -61,10 +76,39 @@ export function CallAnnotationsTable({ annotations }: CallAnnotationsTableProps)
     enabled: !!selectedCallId,
   })
 
+  // Delete annotation mutation
+  const deleteMutation = useMutation({
+    mutationFn: async ({ callId, annotationId }: { callId: string; annotationId: string }) => {
+      const response = await fetch(`/api/admin/calls/${callId}/annotations/${annotationId}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to delete annotation')
+      }
+      return response.json()
+    },
+    onSuccess: () => {
+      // Invalidate all call-annotations queries to refetch the list
+      queryClient.invalidateQueries({ queryKey: ['call-annotations', 'admin'] })
+      toast.success('Annotation deleted successfully')
+      setDeletingAnnotationId(null)
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete annotation')
+      setDeletingAnnotationId(null)
+    },
+  })
+
   const selectedCall = selectedCallData?.call || null
 
   const handleRowClick = (callId: string) => {
     setSelectedCallId(callId)
+  }
+
+  const handleDelete = (callId: string, annotationId: string) => {
+    setDeletingAnnotationId(annotationId)
+    deleteMutation.mutate({ callId, annotationId })
   }
 
   const truncateNote = (note: string, maxLength: number = 60) => {
@@ -131,6 +175,38 @@ export function CallAnnotationsTable({ annotations }: CallAnnotationsTableProps)
                 <Badge variant={annotation.created_by_admin ? 'default' : 'outline'} className="font-normal">
                   {annotation.created_by_admin ? 'Admin' : 'Client'}
                 </Badge>
+              </TableCell>
+              <TableCell>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => e.stopPropagation()}
+                      disabled={deletingAnnotationId === annotation.id}
+                    >
+                      <IconTrash className="size-4" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete Annotation?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete the annotation.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => handleDelete(annotation.call_id, annotation.id)}
+                        disabled={deletingAnnotationId === annotation.id}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {deletingAnnotationId === annotation.id ? 'Deleting...' : 'Delete'}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </TableCell>
             </TableRow>
           )

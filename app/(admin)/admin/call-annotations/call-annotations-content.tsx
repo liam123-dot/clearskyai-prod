@@ -203,6 +203,7 @@ export function CallAnnotationsContent() {
                   <TableHead className="font-semibold">Call Date</TableHead>
                   <TableHead className="font-semibold">Note</TableHead>
                   <TableHead className="font-semibold">Source</TableHead>
+                  <TableHead className="font-semibold">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -215,6 +216,7 @@ export function CallAnnotationsContent() {
                     <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-48" /></TableCell>
                     <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                    <TableCell><Skeleton className="h-8 w-8" /></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -347,6 +349,7 @@ export function CallAnnotationsContent() {
                   <TableHead className="font-semibold">Call Date</TableHead>
                   <TableHead className="font-semibold">Note</TableHead>
                   <TableHead className="font-semibold">Source</TableHead>
+                  <TableHead className="font-semibold">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <CallAnnotationsTable annotations={annotations} />
