@@ -17,28 +17,26 @@ interface CallsTableProps {
 export function CallsTable({ calls, slug }: CallsTableProps) {
   const [selectedCall, setSelectedCall] = useState<Call | null>(null)
 
-  // Fetch annotation counts for all calls
+  // Fetch annotation counts for all calls in a single batch request
   const callIds = calls.map(c => c.id)
   const { data: annotationCounts } = useQuery<Record<string, number>>({
     queryKey: ['annotation-counts', slug, callIds],
     queryFn: async () => {
-      const counts: Record<string, number> = {}
-      await Promise.all(
-        callIds.map(async (callId) => {
-          try {
-            const response = await fetch(`/api/${slug}/calls/${callId}/annotations`)
-            if (response.ok) {
-              const data = await response.json()
-              counts[callId] = data.annotations?.length || 0
-            } else {
-              counts[callId] = 0
-            }
-          } catch {
-            counts[callId] = 0
-          }
-        })
-      )
-      return counts
+      if (callIds.length === 0) {
+        return {}
+      }
+      
+      try {
+        const response = await fetch(`/api/${slug}/calls/annotation-counts?callIds=${callIds.join(',')}`)
+        if (response.ok) {
+          const data = await response.json()
+          return data.counts || {}
+        } else {
+          return {}
+        }
+      } catch {
+        return {}
+      }
     },
     enabled: callIds.length > 0,
   })

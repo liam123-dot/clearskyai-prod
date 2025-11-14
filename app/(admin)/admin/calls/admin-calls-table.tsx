@@ -26,28 +26,26 @@ export function AdminCallsTable({ calls, organizations }: AdminCallsTableProps) 
   // Create a map for quick organization lookups
   const orgMap = new Map(organizations.map(org => [org.id, org]))
 
-  // Fetch annotation counts for all calls (admin endpoint sees all annotations)
+  // Fetch annotation counts for all calls in a single batch request (admin endpoint sees all annotations)
   const callIds = calls.map(c => c.id)
   const { data: annotationCounts } = useQuery<Record<string, number>>({
     queryKey: ['admin-annotation-counts', callIds],
     queryFn: async () => {
-      const counts: Record<string, number> = {}
-      await Promise.all(
-        callIds.map(async (callId) => {
-          try {
-            const response = await fetch(`/api/admin/calls/${callId}/annotations`)
-            if (response.ok) {
-              const data = await response.json()
-              counts[callId] = data.annotations?.length || 0
-            } else {
-              counts[callId] = 0
-            }
-          } catch {
-            counts[callId] = 0
-          }
-        })
-      )
-      return counts
+      if (callIds.length === 0) {
+        return {}
+      }
+      
+      try {
+        const response = await fetch(`/api/admin/calls/annotation-counts?callIds=${callIds.join(',')}`)
+        if (response.ok) {
+          const data = await response.json()
+          return data.counts || {}
+        } else {
+          return {}
+        }
+      } catch {
+        return {}
+      }
     },
     enabled: callIds.length > 0,
   })
