@@ -3,11 +3,11 @@ import { getAuthSession } from '@/lib/auth'
 import {
   getKnowledgeBases,
   createKnowledgeBase,
+  triggerEstateAgentScraper,
   type KnowledgeBaseType,
   type EstateAgentKnowledgeBaseData,
   type GeneralKnowledgeBaseData,
 } from '@/lib/knowledge-bases'
-import { tasks } from '@trigger.dev/sdk/v3'
 
 export async function GET(
   request: NextRequest,
@@ -77,15 +77,13 @@ export async function POST(
       organization_id: organizationId,
     })
 
-    // Trigger Rightmove scraper for estate agent knowledge bases
+    // Trigger appropriate scraper for estate agent knowledge bases
     if (type === 'estate_agent') {
       try {
-        await tasks.trigger('scrape-rightmove', {
-          knowledgeBaseId: knowledgeBase.id,
-        })
-        console.log('Triggered Rightmove scraper for knowledge base:', knowledgeBase.id)
+        const { platform } = await triggerEstateAgentScraper(knowledgeBase.id)
+        console.log(`Triggered ${platform} scraper for knowledge base:`, knowledgeBase.id)
       } catch (error) {
-        console.error('Failed to trigger Rightmove scraper:', error)
+        console.error('Failed to trigger scraper:', error)
         // Don't fail the request if trigger fails
       }
     }

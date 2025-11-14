@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthSession } from '@/lib/auth'
-import { getKnowledgeBase } from '@/lib/knowledge-bases'
-import { tasks } from '@trigger.dev/sdk/v3'
+import { getKnowledgeBase, triggerEstateAgentScraper } from '@/lib/knowledge-bases'
 
 export async function POST(
   request: NextRequest,
@@ -43,15 +42,13 @@ export async function POST(
       )
     }
 
-    // Trigger the scraper
-    const handle = await tasks.trigger('scrape-rightmove', {
-      knowledgeBaseId: id,
-    })
+    // Trigger the appropriate scraper
+    const { taskId, platform } = await triggerEstateAgentScraper(id)
 
     return NextResponse.json({
       success: true,
-      taskId: handle.id,
-      message: 'Sync started successfully',
+      taskId,
+      message: `${platform === 'zoopla' ? 'Zoopla' : 'Rightmove'} sync started successfully`,
     })
   } catch (error) {
     console.error('Error in POST /api/[slug]/knowledge-bases/[id]/sync:', error)

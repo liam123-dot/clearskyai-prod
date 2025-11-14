@@ -7,6 +7,7 @@ import { tasks } from '@trigger.dev/sdk'
 async function setupDemoAgent(
   agentId: string,
   organizationId: string,
+  platform: 'rightmove' | 'zoopla',
   estateAgentName: string,
   forSaleUrl: string,
   rentalUrl: string
@@ -14,6 +15,7 @@ async function setupDemoAgent(
   await tasks.trigger('create-demo-agent', {
     agentId,
     organizationId,
+    platform,
     estateAgentName,
     forSaleUrl,
     rentalUrl,
@@ -29,6 +31,7 @@ export async function POST(request: NextRequest) {
       organization_id, 
       agent_type,
       demo_type,
+      platform,
       estate_agent_name,
       for_sale_url,
       rental_url,
@@ -58,6 +61,7 @@ export async function POST(request: NextRequest) {
         await setupDemoAgent(
           createResult.agent.id,
           organization_id,
+          platform || 'rightmove',
           estate_agent_name,
           for_sale_url,
           rental_url

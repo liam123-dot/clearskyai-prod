@@ -1,26 +1,52 @@
 import { task, logger } from "@trigger.dev/sdk/v3"
 import { ApifyClient } from "apify-client"
 import { createNoCookieClient } from "@/lib/supabase/serverNoCookies"
-import type { RightmoveProperty } from "@/types/rightmove"
+import type { ZooplaProperty } from "@/types/zoopla"
 import type { EstateAgentKnowledgeBaseData, Property } from "@/lib/knowledge-bases"
 import { normalizeAddress } from "@/lib/address-normalization"
 import { extractLocationKeywords } from "@/lib/property-prompt"
 
-interface ScrapeRightmovePayload {
+interface ScrapeZooplaPayload {
   knowledgeBaseId: string
 }
 
 /**
- * Scrape Rightmove properties and store in database
- * Triggered when an estate agent knowledge base is created or needs re-sync
+ * Parse Zoopla price string (e.g., "£6,900,000") to numeric value
+ * Handles cases where price might be a string, number, or null/undefined
  */
-export const scrapeRightmove = task({
-  id: "scrape-rightmove",
+function parseZooplaPrice(price: string | number | null | undefined): number {
+  // Handle null/undefined
+  if (price == null) {
+    return 0
+  }
+  
+  // If already a number, return it
+  if (typeof price === 'number') {
+    return price
+  }
+  
+  // If it's a string, parse it
+  if (typeof price === 'string') {
+    // Remove £, commas, and any other non-numeric characters except decimal point
+    const numericString = price.replace(/[£,]/g, '')
+    return parseFloat(numericString) || 0
+  }
+  
+  // Fallback for any other type
+  return 0
+}
+
+/**
+ * Scrape Zoopla properties and store in database
+ * Triggered when an estate agent knowledge base with Zoopla platform is created or needs re-sync
+ */
+export const scrapeZoopla = task({
+  id: "scrape-zoopla",
   maxDuration: 300, // 5 minutes
-  run: async (payload: ScrapeRightmovePayload) => {
+  run: async (payload: ScrapeZooplaPayload) => {
     const { knowledgeBaseId } = payload
     
-    logger.info("🏠 Starting Rightmove scraper", { knowledgeBaseId })
+    logger.info("🏠 Starting Zoopla scraper", { knowledgeBaseId })
 
     // Get knowledge base details
     const supabase = createNoCookieClient()
@@ -43,9 +69,9 @@ export const scrapeRightmove = task({
     const { for_sale_url, rental_url } = data
 
     // Build URLs array
-    const urls: string[] = []
-    if (for_sale_url) urls.push(for_sale_url)
-    if (rental_url) urls.push(rental_url)
+    const urls: { url: string }[] = []
+    if (for_sale_url) urls.push({ url: for_sale_url })
+    if (rental_url) urls.push({ url: rental_url })
 
     if (urls.length === 0) {
       logger.warn("⚠️  No URLs configured for knowledge base")
@@ -66,22 +92,27 @@ export const scrapeRightmove = task({
 
     const client = new ApifyClient({ token: apiToken })
 
-    // Configure and run Apify actor
+    // Configure and run Apify actor (dhrumil~zoopla-scraper)
     const input = {
-      startUrls: urls,
-      customMapFunction: "(object) => { return {...object} }",
-      extendOutputFunction: "($) => { return {} }",
+      addEmptyTrackerRecord: false,
+      enableDelistingTracker: false,
+      fullPropertyDetails: true,
+      listUrls: urls,
+      monitoringMode: false,
       proxy: {
         useApifyProxy: true,
+        apifyProxyGroups: ["RESIDENTIAL"],
+        apifyProxyCountry: "GB"
       },
+      email: ""
     }
 
     logger.info("  ↳ Starting Apify actor run...")
-    const run = await client.actor("LwR6JRNl4khcKXIWo").call(input)
+    const run = await client.actor("dhrumil~zoopla-scraper").call(input)
 
     // Fetch all items from dataset
     logger.info("  ↳ Fetching dataset...")
-    const allProperties: RightmoveProperty[] = []
+    const allProperties: ZooplaProperty[] = []
     let offset = 0
     const limit = 1000
 
@@ -91,10 +122,7 @@ export const scrapeRightmove = task({
         limit,
       })
 
-      
-      allProperties.push(...(items as unknown as RightmoveProperty[]))
-      
-      logger.info("  ↳ Fetched batch: ", { allProperties })
+      allProperties.push(...(items as unknown as ZooplaProperty[]))
       
       logger.info(`  ↳ Fetched batch: ${items.length} properties (${allProperties.length}/${total} total)`)
 
@@ -132,8 +160,8 @@ export const scrapeRightmove = task({
     // Normalize addresses in batches to avoid rate limits
     const propertyRecords = await Promise.all(
       allProperties.map(async (prop) => {
-        // Determine transaction type
-        const transactionType = prop.lettings ? "rent" : "sale"
+        // Determine transaction type: 'for-sale' -> 'sale', 'to-rent' -> 'rent'
+        const transactionType = prop.type === 'to-rent' ? 'rent' : 'sale'
 
         // Normalize address using AI
         let normalizedAddress
@@ -148,72 +176,67 @@ export const scrapeRightmove = task({
             street_address: addressParts.slice(0, -2).join(", ") || null,
             city: addressParts[addressParts.length - 2] || null,
             district: addressParts[addressParts.length - 3] || null,
-            postcode: addressParts[addressParts.length - 1] || null,
-            county: null,
+            postcode: prop.postalCode || null,
+            county: prop.countyArea || null,
           }
         }
 
-        // Determine bedroom count with special handling for Parking/Garage
-        const propertyType = prop.propertyType
-        const propertySubType = prop.propertySubType
-        const isParkingOrGarage = 
-          propertySubType?.toLowerCase() === "parking" ||
-          propertyType?.toLowerCase() === "garage" ||
-          propertyType?.toLowerCase() === "parking"
-        
-        const beds = prop.beds ?? (isParkingOrGarage ? null : 0)
+        // Parse bedroom and bathroom counts
+        const beds = prop.bedrooms ? parseInt(prop.bedrooms, 10) : null
+        const baths = prop.bathrooms ? parseInt(prop.bathrooms, 10) : null
+
+        // Parse price
+        const price = parseZooplaPrice(prop.price)
+
+        // Parse coordinates
+        const latitude = prop.coordinates?.latitude ? parseFloat(prop.coordinates.latitude) : null
+        const longitude = prop.coordinates?.longitude ? parseFloat(prop.coordinates.longitude) : null
 
         return {
           knowledge_base_id: knowledgeBaseId,
-          source: "rightmove",
-          external_id: prop.id,
+          source: "zoopla",
+          external_id: prop.uprn || prop.id,
           url: prop.url,
           beds: beds,
-          baths: prop.baths,
-          price: prop.price,
-          property_type: propertyType,
-          property_subtype: propertySubType,
+          baths: baths,
+          price: price,
+          property_type: prop.propertyType,
+          property_subtype: null, // Zoopla doesn't provide subtype in the same way
           title: prop.title,
           transaction_type: transactionType,
           street_address: normalizedAddress.street_address,
           city: normalizedAddress.city,
           district: normalizedAddress.district,
-          postcode: normalizedAddress.postcode,
-          postcode_district: normalizedAddress.postcode?.split(" ")[0] || null,
-          county: normalizedAddress.county,
+          postcode: prop.postalCode || normalizedAddress.postcode,
+          postcode_district: prop.outcode || prop.postalCode?.split(" ")[0] || null,
+          county: prop.countyArea || normalizedAddress.county,
           full_address: prop.address,
-          latitude: prop.latitude,
-          longitude: prop.longitude,
-          // Rental-specific fields
-          deposit: prop.lettings?.deposit || null,
-          let_available_date: prop.lettings?.letAvailableDate || null,
-          minimum_term_months: prop.lettings?.minimumTermInMonths || null,
-          let_type: prop.lettings?.letType || null,
-          furnished_type: prop.furnishedType,
-          // Sale-specific fields
-          tenure_type: prop.tenure?.tenureType || null,
-          years_remaining_lease: prop.tenure?.yearsRemainingOnLease || null,
+          latitude: latitude,
+          longitude: longitude,
+          // Rental-specific fields - Zoopla doesn't provide these in the same detail as Rightmove
+          deposit: null,
+          let_available_date: null,
+          minimum_term_months: null,
+          let_type: null,
+          furnished_type: null,
+          // Sale-specific fields - Zoopla doesn't provide tenure info in basic scrape
+          tenure_type: null,
+          years_remaining_lease: null,
           // Boolean flags
-          has_online_viewing: prop.hasOnlineViewing,
-          is_retirement: prop.isRetirement,
-          is_shared_ownership: prop.ownership?.toLowerCase().includes("shared") || false,
-          pets_allowed: prop.features?.some((f) => 
-            f.toLowerCase().includes("pet")
-          ) || null,
-          bills_included: prop.features?.some((f) => 
-            f.toLowerCase().includes("bill") && f.toLowerCase().includes("included")
-          ) || null,
+          has_online_viewing: false, // Not available in Zoopla data
+          is_retirement: false,
+          is_shared_ownership: false,
+          pets_allowed: null,
+          bills_included: null,
           // Media
           image_count: prop.images?.length || 0,
-          has_floorplan: (prop.floorplans?.length || 0) > 0,
-          has_virtual_tour: prop.brochures?.some((b) => 
-            b.caption.toLowerCase().includes("virtual")
-          ) || false,
+          has_floorplan: false, // Not directly available in the data
+          has_virtual_tour: false,
           // Content
           description: prop.description,
           features: prop.features || [],
-          // Metadata
-          added_on: prop.addedOn,
+          // Metadata - Zoopla doesn't provide addedOn in the same format
+          added_on: null,
           scraped_at: new Date().toISOString(),
           // Store full original data
           original_data: prop,
@@ -247,7 +270,7 @@ export const scrapeRightmove = task({
       logger.info(`  ↳ Inserted batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(propertyRecords.length / BATCH_SIZE)} (${batch.length} properties)`)
     }
 
-    logger.info("🎉 Rightmove scraping completed", {
+    logger.info("🎉 Zoopla scraping completed", {
       knowledgeBaseId,
       propertiesScraped: insertedCount
     })

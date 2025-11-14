@@ -33,6 +33,7 @@ export function CreateAgentForm({
   const [organizationId, setOrganizationId] = useState<string>(lockedOrganizationId || '')
   const [agentType, setAgentType] = useState<'blank' | 'demo'>('blank')
   const [demoType, setDemoType] = useState<'estate_agent' | ''>('')
+  const [platform, setPlatform] = useState<'rightmove' | 'zoopla'>('rightmove')
   const [estateAgentName, setEstateAgentName] = useState('')
   const [forSaleUrl, setForSaleUrl] = useState('')
   const [rentalUrl, setRentalUrl] = useState('')
@@ -50,6 +51,7 @@ export function CreateAgentForm({
     setAgentType(value)
     if (value === 'blank') {
       setDemoType('')
+      setPlatform('rightmove')
       setEstateAgentName('')
       setForSaleUrl('')
       setRentalUrl('')
@@ -101,6 +103,7 @@ export function CreateAgentForm({
       if (agentType === 'demo') {
         requestBody.demo_type = demoType
         if (demoType === 'estate_agent') {
+          requestBody.platform = platform
           requestBody.estate_agent_name = estateAgentName.trim()
           if (forSaleUrl.trim()) {
             requestBody.for_sale_url = forSaleUrl.trim()
@@ -127,6 +130,7 @@ export function CreateAgentForm({
       
       // Reset form
       setName('')
+      setPlatform('rightmove')
       setEstateAgentName('')
       setForSaleUrl('')
       setRentalUrl('')
@@ -210,6 +214,19 @@ export function CreateAgentForm({
           {demoType === 'estate_agent' && (
             <>
               <div className="space-y-2">
+                <Label htmlFor="platform">Platform</Label>
+                <Select value={platform} onValueChange={(value) => setPlatform(value as 'rightmove' | 'zoopla')}>
+                  <SelectTrigger id="platform">
+                    <SelectValue placeholder="Select platform" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="rightmove">Rightmove</SelectItem>
+                    <SelectItem value="zoopla">Zoopla</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="estate-agent-name">Estate Agent Name</Label>
                 <Input
                   id="estate-agent-name"
@@ -223,7 +240,11 @@ export function CreateAgentForm({
                 <Label htmlFor="for-sale-url">For Sale URL (optional)</Label>
                 <Input
                   id="for-sale-url"
-                  placeholder="https://www.rightmove.co.uk/property-for-sale/..."
+                  placeholder={
+                    platform === 'rightmove'
+                      ? "https://www.rightmove.co.uk/property-for-sale/..."
+                      : "https://www.zoopla.co.uk/for-sale/property/..."
+                  }
                   value={forSaleUrl}
                   onChange={(e) => setForSaleUrl(e.target.value)}
                 />
@@ -233,7 +254,11 @@ export function CreateAgentForm({
                 <Label htmlFor="rental-url">Rental URL (optional)</Label>
                 <Input
                   id="rental-url"
-                  placeholder="https://www.rightmove.co.uk/property-to-rent/..."
+                  placeholder={
+                    platform === 'rightmove'
+                      ? "https://www.rightmove.co.uk/property-to-rent/..."
+                      : "https://www.zoopla.co.uk/to-rent/property/..."
+                  }
                   value={rentalUrl}
                   onChange={(e) => setRentalUrl(e.target.value)}
                 />

@@ -1,6 +1,6 @@
 # Properties Table
 
-The `properties` table stores property listings scraped from external sources (currently RightMove) for estate agent knowledge bases.
+The `properties` table stores property listings scraped from external sources (Rightmove, Zoopla) for estate agent knowledge bases.
 
 ## Schema
 
@@ -8,8 +8,8 @@ The `properties` table stores property listings scraped from external sources (c
 |--------|------|-------------|-------------|
 | `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Internal database ID |
 | `knowledge_base_id` | UUID | NOT NULL, FOREIGN KEY (knowledge_bases.id) ON DELETE CASCADE | Reference to the knowledge base |
-| `source` | TEXT | NOT NULL, DEFAULT 'rightmove' | Data source provider |
-| `rightmove_id` | TEXT | UNIQUE, NOT NULL | RightMove property identifier |
+| `source` | TEXT | NOT NULL, DEFAULT 'rightmove' | Data source provider ('rightmove' or 'zoopla') |
+| `external_id` | TEXT | UNIQUE, NOT NULL | External property identifier from the source platform |
 | `url` | TEXT | NOT NULL | URL to the property listing |
 | `beds` | INTEGER | | Number of bedrooms |
 | `baths` | INTEGER | | Number of bathrooms |
@@ -100,8 +100,10 @@ Automatically computed from `original_data`:
 - Properties are automatically deleted when their knowledge base is deleted (CASCADE)
 - The `location` field enables proximity searches (e.g., "properties within 5km of a point")
 - Full-text search on descriptions allows semantic property searches
-- The `original_data` JSONB field preserves all data from RightMove for future use
+- The `original_data` JSONB field preserves all data from the source platform (Rightmove or Zoopla) for future use
 - Filter queries can combine multiple indexes for efficient property searches
+- The `external_id` field stores platform-specific identifiers (Rightmove ID, Zoopla UPRN, etc.)
+- The `source` field indicates which platform the property data came from
 
 ## Example Queries
 

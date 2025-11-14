@@ -1,5 +1,5 @@
-import {task, tasks } from "@trigger.dev/sdk/v3"
-import { assignKnowledgeBaseToAgent, createKnowledgeBase } from "@/lib/knowledge-bases"
+import {task } from "@trigger.dev/sdk/v3"
+import { assignKnowledgeBaseToAgent, createKnowledgeBase, triggerEstateAgentScraper } from "@/lib/knowledge-bases"
 import { generateAIText } from "@/lib/ai"
 import { estateAgentDemoPrompt } from "@/lib/prompts/estate-agent-template"
 import { generatePropertyQueryPrompt } from "@/lib/property-prompt"
@@ -7,8 +7,8 @@ import { updateAgent } from "@/lib/vapi/agents"
 
 export const createDemoAgent = task({
   id: "create-demo-agent",
-  run: async (payload: { agentId: string, organizationId: string, estateAgentName: string, forSaleUrl: string, rentalUrl: string }) => {
-    const { agentId, organizationId, estateAgentName, forSaleUrl, rentalUrl } = payload
+  run: async (payload: { agentId: string, organizationId: string, platform: 'rightmove' | 'zoopla', estateAgentName: string, forSaleUrl: string, rentalUrl: string }) => {
+    const { agentId, organizationId, platform, estateAgentName, forSaleUrl, rentalUrl } = payload
     console.log('Creating demo agent..., with payload:', payload)
 
     const knowledgeBase = await createKnowledgeBase({
@@ -16,17 +16,25 @@ export const createDemoAgent = task({
       organization_id: organizationId,
       type: "estate_agent",
       data: {
+        platform: platform,
         for_sale_url: forSaleUrl,
         rental_url: rentalUrl,
       },
     })
 
-    // trigger scrape-rightmove, but wait for it to complete
-    await tasks.triggerAndWait('scrape-rightmove', {
-      knowledgeBaseId: knowledgeBase.id,
-    })
+    // Trigger appropriate scraper based on platform, and wait for it to complete
+    await triggerEstateAgentScraper(knowledgeBase.id, { wait: true })
 
     const propertyQueryPrompt = await generatePropertyQueryPrompt(knowledgeBase.id)
+
+    // Extract location keywords (cities + districts) and add transaction types
+    const locationKeywords = [
+      ...propertyQueryPrompt.keywords.cities,
+      ...propertyQueryPrompt.keywords.districts,
+    ]
+
+    // Combine with transaction type keywords
+    const allKeywords = [...locationKeywords, 'rent', 'sale', 'buy']
 
     console.log('Generated property query prompt:', propertyQueryPrompt.prompt)
     console.log('Generating agent system prompt...')
@@ -68,6 +76,9 @@ Return the complete updated template with the exact same structure, keeping all 
     await updateAgent(agentId, {
         firstMessage: `Welcome to ${estateAgentName}, can I get your name, please?`,
         prompt: response.text as string,
+        transcriber: {
+          keyterm: allKeywords,
+        },
     })
 
     console.log('Assigning knowledge base to agent...')

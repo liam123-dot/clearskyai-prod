@@ -13,6 +13,7 @@ export interface GeneralKnowledgeBaseData {
 }
 
 export interface EstateAgentKnowledgeBaseData {
+  platform?: 'rightmove' | 'zoopla'
   for_sale_url?: string
   rental_url?: string
   resync_schedule?: ResyncSchedule
@@ -56,7 +57,7 @@ export interface Property {
   id: string
   knowledge_base_id: string
   source: string
-  rightmove_id: string
+  external_id: string
   url: string
   beds: number | null
   baths: number | null
@@ -487,5 +488,47 @@ export async function isKnowledgeBaseAssignedToAgent(
   }
 
   return !!data
+}
+
+/**
+ * Trigger the appropriate scraper for an estate agent knowledge base
+ * Automatically determines the platform (Rightmove or Zoopla) and triggers the correct scraper
+ * 
+ * @param knowledgeBaseId - The ID of the knowledge base to scrape
+ * @param options - Optional configuration
+ * @param options.wait - If true, waits for the scraper to complete before returning
+ * @returns Object with taskId (if not waiting) and platform name
+ * @throws Error if knowledge base not found or not of type estate_agent
+ */
+export async function triggerEstateAgentScraper(
+  knowledgeBaseId: string,
+  options?: { wait?: boolean }
+): Promise<{ taskId?: string; platform: 'rightmove' | 'zoopla' }> {
+  // Get knowledge base
+  const knowledgeBase = await getKnowledgeBase(knowledgeBaseId)
+  
+  if (!knowledgeBase) {
+    throw new Error('Knowledge base not found')
+  }
+  
+  if (knowledgeBase.type !== 'estate_agent') {
+    throw new Error('Knowledge base must be of type estate_agent')
+  }
+  
+  // Determine platform
+  const data = knowledgeBase.data as EstateAgentKnowledgeBaseData
+  const platform = data.platform || 'rightmove'
+  const scraperTask = platform === 'zoopla' ? 'scrape-zoopla' : 'scrape-rightmove'
+  
+  // Trigger appropriate scraper
+  const { tasks } = await import('@trigger.dev/sdk/v3')
+  
+  if (options?.wait) {
+    await tasks.triggerAndWait(scraperTask, { knowledgeBaseId })
+    return { platform }
+  } else {
+    const handle = await tasks.trigger(scraperTask, { knowledgeBaseId })
+    return { taskId: handle.id, platform }
+  }
 }
 

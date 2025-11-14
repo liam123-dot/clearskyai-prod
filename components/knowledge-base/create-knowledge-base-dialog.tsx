@@ -37,6 +37,7 @@ export function CreateKnowledgeBaseDialog({
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const [type, setType] = useState<KnowledgeBaseType>('general')
+  const [platform, setPlatform] = useState<'rightmove' | 'zoopla'>('rightmove')
   const [forSaleUrl, setForSaleUrl] = useState('')
   const [rentalUrl, setRentalUrl] = useState('')
   const [resyncSchedule, setResyncSchedule] = useState<ResyncSchedule>('none')
@@ -53,6 +54,7 @@ export function CreateKnowledgeBaseDialog({
       
       // Add estate agent specific data
       if (type === 'estate_agent') {
+        data.platform = platform
         if (forSaleUrl) data.for_sale_url = forSaleUrl
         if (rentalUrl) data.rental_url = rentalUrl
         data.resync_schedule = resyncSchedule
@@ -78,6 +80,7 @@ export function CreateKnowledgeBaseDialog({
       // Reset form and close
       setName('')
       setType('general')
+      setPlatform('rightmove')
       setForSaleUrl('')
       setRentalUrl('')
       setResyncSchedule('none')
@@ -136,10 +139,27 @@ export function CreateKnowledgeBaseDialog({
           {type === 'estate_agent' && (
             <>
               <div className="space-y-2">
+                <Label htmlFor="platform">Platform</Label>
+                <Select value={platform} onValueChange={(value) => setPlatform(value as 'rightmove' | 'zoopla')}>
+                  <SelectTrigger id="platform">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="rightmove">Rightmove</SelectItem>
+                    <SelectItem value="zoopla">Zoopla</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="for-sale-url">For Sale URL (optional)</Label>
                 <Input
                   id="for-sale-url"
-                  placeholder="https://www.rightmove.co.uk/property-for-sale/..."
+                  placeholder={
+                    platform === 'rightmove' 
+                      ? "https://www.rightmove.co.uk/property-for-sale/..."
+                      : "https://www.zoopla.co.uk/for-sale/property/..."
+                  }
                   value={forSaleUrl}
                   onChange={(e) => setForSaleUrl(e.target.value)}
                 />
@@ -149,7 +169,11 @@ export function CreateKnowledgeBaseDialog({
                 <Label htmlFor="rental-url">Rental URL (optional)</Label>
                 <Input
                   id="rental-url"
-                  placeholder="https://www.rightmove.co.uk/property-to-rent/..."
+                  placeholder={
+                    platform === 'rightmove'
+                      ? "https://www.rightmove.co.uk/property-to-rent/..."
+                      : "https://www.zoopla.co.uk/to-rent/property/..."
+                  }
                   value={rentalUrl}
                   onChange={(e) => setRentalUrl(e.target.value)}
                 />
