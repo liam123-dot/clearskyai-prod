@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Loader2 } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { Loader2, Maximize2 } from 'lucide-react'
 import { IdleMessagesForm } from './idle-messages-form'
 
 interface AgentPromptsFormProps {
@@ -38,6 +39,7 @@ export function AgentPromptsForm({
   const [idleMessages, setIdleMessages] = useState<string[]>(initialIdleMessages)
   const [idleTimeoutSeconds, setIdleTimeoutSeconds] = useState<number>(initialIdleTimeoutSeconds)
   const [isSaving, setIsSaving] = useState(false)
+  const [isPromptDialogOpen, setIsPromptDialogOpen] = useState(false)
 
   const handleIdleMessagesChange = (messages: string[], timeout: number) => {
     setIdleMessages(messages)
@@ -155,15 +157,27 @@ export function AgentPromptsForm({
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="prompt">Prompt</Label>
-            <Textarea
-              id="prompt"
-              placeholder="Enter the system prompt..."
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              className="min-h-[300px] font-mono text-sm"
-            />
+            <div className="relative">
+              <Textarea
+                id="prompt"
+                placeholder="Enter the system prompt..."
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                className="h-[400px] font-mono text-sm resize-none pr-10"
+                onClick={() => setIsPromptDialogOpen(true)}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsPromptDialogOpen(true)}
+                className="absolute top-2 right-2 h-8 w-8 bg-background/80 hover:bg-background/90 backdrop-blur-sm opacity-70 hover:opacity-100"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground">
-              This prompt defines how the agent behaves and responds to users.
+              Click to expand or use the icon button to edit the full prompt.
             </p>
           </div>
         </CardContent>
@@ -196,6 +210,34 @@ export function AgentPromptsForm({
           )}
         </Button>
       </div>
+
+      <Dialog open={isPromptDialogOpen} onOpenChange={setIsPromptDialogOpen}>
+        <DialogContent className="!max-w-[90vw] sm:!max-w-[90vw] h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>System Prompt</DialogTitle>
+            <DialogDescription>
+              Edit the full system prompt that guides the agent's behavior and responses.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+            <Textarea
+              placeholder="Enter the system prompt..."
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              className="flex-1 font-mono text-sm resize-none"
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsPromptDialogOpen(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </form>
   )
 }
