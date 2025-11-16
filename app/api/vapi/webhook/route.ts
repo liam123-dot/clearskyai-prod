@@ -9,7 +9,7 @@ import { after } from "next/server";
 // Voice cost per million characters (default: $0.18 per million for ElevenLabs Flash v2.5)
 // Can be overridden via environment variable VOICE_COST_PER_MILLION_CHARACTERS
 const VOICE_COST_PER_MILLION_CHARACTERS = parseFloat(
-    process.env.VOICE_COST_PER_MILLION_CHARACTERS || "150"
+    process.env.VOICE_COST_PER_MILLION_CHARACTERS || "99"
 );
 
 /**
