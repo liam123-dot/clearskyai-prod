@@ -159,13 +159,9 @@ export function buildFunctionSchema(config: ToolConfig): ToolFunctionSchema {
       break
 
     case 'transfer_call':
-      if (config.message.strategy === 'summarized') {
-        properties.summary = {
-          type: 'string',
-          description: 'Summary of the conversation'
-        }
-        required.push('summary')
-      }
+    case 'handoff':
+      // Native Vapi tools don't use function schemas
+      // They are configured directly via Vapi API
       break
 
     case 'api_request':
@@ -236,11 +232,9 @@ export function buildStaticConfig(config: ToolConfig): Record<string, unknown> {
       break
 
     case 'transfer_call':
-      staticConfig.target = config.target
-      if (config.message.strategy === 'fixed') {
-        staticConfig.message = config.message.content
-      }
-      staticConfig.messageStrategy = config.message.strategy
+    case 'handoff':
+      // Native Vapi tools don't use static config
+      // They are configured directly via Vapi API
       break
 
     case 'api_request':
@@ -294,6 +288,9 @@ export function buildStaticConfig(config: ToolConfig): Record<string, unknown> {
 /**
  * Validate that all required parameters are configured
  */
+// E.164 phone number validation regex
+const E164_REGEX = /^\+[1-9]\d{1,14}$/
+
 export function validateToolConfig(config: ToolConfig): { valid: boolean; errors: string[] } {
   const errors: string[] = []
 
@@ -335,20 +332,43 @@ export function validateToolConfig(config: ToolConfig): { valid: boolean; errors
       break
 
     case 'transfer_call':
-      // Target must be configured
-      if (config.target.type === 'agent' && !config.target.agentId) {
-        errors.push('Transfer target agent is required')
-      }
-      if (config.target.type === 'number' && !config.target.phoneNumber) {
-        errors.push('Transfer target phone number is required')
-      }
+      // At least one destination is required
+      if (!config.destinations || config.destinations.length === 0) {
+        errors.push('At least one transfer destination is required')
+      } else {
+        // Validate each destination
+        config.destinations.forEach((dest, index) => {
+          // Validate phone number
+          if (!dest.number) {
+            errors.push(`Destination ${index + 1}: Phone number is required`)
+          } else if (!E164_REGEX.test(dest.number)) {
+            errors.push(`Destination ${index + 1}: Phone number must be in E.164 format (e.g., +14155551234)`)
+          }
 
-      // Message validation based on strategy
-      if (config.message.strategy === 'fixed' && !config.message.content) {
-        errors.push('Transfer message content is required for fixed message strategy')
+          // Validate transfer plan
+          if (!dest.transferPlan || !dest.transferPlan.mode) {
+            errors.push(`Destination ${index + 1}: Transfer plan mode is required`)
+          } else {
+            // Validate message for warm transfer with message
+            if (dest.transferPlan.mode === 'warm-transfer-say-message' && !dest.transferPlan.message) {
+              errors.push(`Destination ${index + 1}: Message is required for warm transfer with message`)
+            }
+            
+            // Validate summary plan for warm transfer with summary
+            if (dest.transferPlan.mode === 'warm-transfer-say-summary' && dest.transferPlan.summaryPlan) {
+              if (!dest.transferPlan.summaryPlan.enabled) {
+                errors.push(`Destination ${index + 1}: Summary plan must be enabled for warm transfer with summary`)
+              }
+            }
+          }
+        })
       }
-      if (config.message.strategy === 'summarized' && !config.message.summarizePrompt) {
-        errors.push('Summary prompt is required for summarized message strategy')
+      break
+
+    case 'handoff':
+      // Assistant ID is required
+      if (!config.assistantId || config.assistantId.trim().length === 0) {
+        errors.push('Assistant ID is required for handoff tool')
       }
       break
 

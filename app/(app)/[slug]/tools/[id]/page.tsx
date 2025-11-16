@@ -96,7 +96,10 @@ export default async function ToolPage({ params }: ToolPageProps) {
       case 'apiRequest':
         return 'bg-green-100 text-green-700 hover:bg-green-100'
       case 'transferCall':
+      case 'transfer_call':
         return 'bg-orange-100 text-orange-700 hover:bg-orange-100'
+      case 'handoff':
+        return 'bg-teal-100 text-teal-700 hover:bg-teal-100'
       case 'externalApp':
       case 'pipedream_action':
         return 'bg-gray-100 text-gray-700 hover:bg-gray-100'
@@ -114,7 +117,10 @@ export default async function ToolPage({ params }: ToolPageProps) {
       case 'apiRequest':
         return 'API Request Tool'
       case 'transferCall':
-        return 'Transfer Call Tool'
+      case 'transfer_call':
+        return 'Transfer Call'
+      case 'handoff':
+        return 'Handoff to Assistant'
       case 'externalApp':
       case 'pipedream_action':
         return 'External App Tool'
@@ -132,6 +138,34 @@ export default async function ToolPage({ params }: ToolPageProps) {
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
         >
           <IconArrowLeft className="w-4 h-4 mr-1" />= 
+          Back to Tools
+        </Link>
+
+        <div className="flex items-start justify-between">
+          <div>
+          </div>
+          <Badge
+            variant="secondary"
+            className={getToolTypeBadgeColor(dbTool.type)}
+          >
+            {getToolTypeLabel(dbTool.type)}
+          </Badge>
+        </div>
+
+        <EditToolForm tool={dbTool as ToolDatabaseRecord} slug={slug} />
+      </div>
+    )
+  }
+
+  // For transfer_call and handoff tools, use EditToolForm directly (native Vapi tools)
+  if (dbTool.type === 'transfer_call' || dbTool.type === 'handoff') {
+    return (
+      <div className="space-y-6">
+        <Link
+          href={`/${slug}/tools`}
+          className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+        >
+          <IconArrowLeft className="w-4 h-4 mr-1" />
           Back to Tools
         </Link>
 

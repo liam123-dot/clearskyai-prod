@@ -15,6 +15,8 @@ export default authkitMiddleware({
       '/api/call/:id/execute-start-tools',
       '/api/phone-number/:id/incoming',
       '/api/phone-number/:id/incoming/fallback',
+      '/widget/:agentId',
+      '/api/widget/:agentId/script',
     ],
   }
 })

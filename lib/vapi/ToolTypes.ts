@@ -94,7 +94,7 @@ export interface TransferCallTool {
     message?: string;
     description?: string;
     transferPlan?: {
-      mode: "warm-transfer-say-message" | "warm-transfer-say-summary" | "cold-transfer";
+      mode: "blind-transfer" | "blind-transfer-add-summary-to-sip-header" | "warm-transfer-say-message" | "warm-transfer-say-summary" | "warm-transfer-twiml" | "warm-transfer-wait-for-operator-to-speak-first-and-then-say-message" | "warm-transfer-wait-for-operator-to-speak-first-and-then-say-summary" | "warm-transfer-experimental";
       message?: string;
       sipVerb?: string;
       summaryPlan?: {
@@ -108,6 +108,23 @@ export interface TransferCallTool {
       };
     };
     numberE164CheckEnabled?: boolean;
+  }>;
+}
+
+/** Handoff Tool - Full interface with system metadata */
+export interface HandoffTool {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  type: "handoff";
+  function?: ToolFunction;
+  messages: ToolMessage[];
+  orgId: string;
+  destinations: Array<{
+    type: "assistant" | "dynamic";
+    assistantName?: string;
+    assistantId?: string;
+    description?: string;
   }>;
 }
 
@@ -200,7 +217,7 @@ export interface CreateTransferCallToolDto {
     message?: string;
     description?: string;
     transferPlan?: {
-      mode: "warm-transfer-say-message" | "warm-transfer-say-summary" | "cold-transfer";
+      mode: "blind-transfer" | "blind-transfer-add-summary-to-sip-header" | "warm-transfer-say-message" | "warm-transfer-say-summary" | "warm-transfer-twiml" | "warm-transfer-wait-for-operator-to-speak-first-and-then-say-message" | "warm-transfer-wait-for-operator-to-speak-first-and-then-say-summary" | "warm-transfer-experimental";
       message?: string;
       sipVerb?: string;
       summaryPlan?: {
@@ -214,6 +231,19 @@ export interface CreateTransferCallToolDto {
       };
     };
     numberE164CheckEnabled?: boolean;
+  }>;
+}
+
+/** Handoff Tool - For creating tools (includes type, no system metadata) */
+export interface CreateHandoffToolDto {
+  type: "handoff";
+  function?: ToolFunction;
+  messages: ToolMessage[];
+  destinations: Array<{
+    type: "assistant" | "dynamic";
+    assistantName?: string;
+    assistantId?: string;
+    description?: string;
   }>;
 }
 
@@ -274,7 +304,7 @@ export interface UpdateTransferCallToolDto {
     message?: string;
     description?: string;
     transferPlan?: {
-      mode: "warm-transfer-say-message" | "warm-transfer-say-summary" | "cold-transfer";
+      mode: "blind-transfer" | "blind-transfer-add-summary-to-sip-header" | "warm-transfer-say-message" | "warm-transfer-say-summary" | "warm-transfer-twiml" | "warm-transfer-wait-for-operator-to-speak-first-and-then-say-message" | "warm-transfer-wait-for-operator-to-speak-first-and-then-say-summary" | "warm-transfer-experimental";
       message?: string;
       sipVerb?: string;
       summaryPlan?: {
@@ -291,18 +321,30 @@ export interface UpdateTransferCallToolDto {
   }>;
 }
 
+/** Handoff Tool - For updating tools (excludes id, createdAt, updatedAt, type, orgId) */
+export interface UpdateHandoffToolDto {
+  function?: ToolFunction;
+  messages?: ToolMessage[];
+  destinations?: Array<{
+    type: "assistant" | "dynamic";
+    assistantName?: string;
+    assistantId?: string;
+    description?: string;
+  }>;
+}
+
 // ============================================
 // UNION TYPES
 // ============================================
 
 /** Union type for all full tool objects (with system metadata) */
-export type VapiTool = SmsTool | ApiRequestTool | TransferCallTool | ExternalAppTool;
+export type VapiTool = SmsTool | ApiRequestTool | TransferCallTool | HandoffTool | ExternalAppTool;
 
 /** Union type for all tool DTOs (for creating tools) */
-export type CreateVapiToolDto = CreateSmsToolDto | CreateApiRequestToolDto | CreateTransferCallToolDto;
+export type CreateVapiToolDto = CreateSmsToolDto | CreateApiRequestToolDto | CreateTransferCallToolDto | CreateHandoffToolDto;
 
 /** Union type for all tool update DTOs (for updating tools) */
-export type UpdateVapiToolDto = UpdateSmsToolDto | UpdateApiRequestToolDto | UpdateTransferCallToolDto;
+export type UpdateVapiToolDto = UpdateSmsToolDto | UpdateApiRequestToolDto | UpdateTransferCallToolDto | UpdateHandoffToolDto;
 
 // ============================================
 // HELPER TYPES

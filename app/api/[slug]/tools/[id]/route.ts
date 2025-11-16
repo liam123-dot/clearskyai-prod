@@ -9,7 +9,11 @@ import {
   validateToolConfig,
 } from '@/lib/tools/schema-builder'
 import { vapiClient } from '@/lib/vapi/VapiClients'
-import { convertToolConfigToVapiApiRequest } from '@/lib/vapi/tool-converter'
+import { 
+  convertToolConfigToVapiApiRequest,
+  convertToVapiTransferCallTool,
+  convertToVapiHandoffTool
+} from '@/lib/vapi/tool-converter'
 
 type RouteContext = {
   params: Promise<{ slug: string; id: string }>
@@ -119,20 +123,23 @@ export async function PATCH(request: Request, context: RouteContext) {
       }
     }
 
-    // Build updated schemas
-    const functionSchema = buildFunctionSchema({ ...config, name: toolName })
-    const staticConfig = buildStaticConfig(config)
+    // Build updated schemas for non-native tools
+    const isNativeTool = config.type === 'transfer_call' || config.type === 'handoff'
+    const functionSchema = isNativeTool ? {} : buildFunctionSchema({ ...config, name: toolName })
+    const staticConfig = isNativeTool ? {} : buildStaticConfig(config)
 
     console.log('Updating tool:', {
       id,
       name: toolName,
       type: config.type,
       label: config.label,
-      functionSchema: JSON.stringify(functionSchema, null, 2),
+      isNativeTool,
+      functionSchema: isNativeTool ? 'N/A (native tool)' : JSON.stringify(functionSchema, null, 2),
     })
 
-    // Handle VAPI tool updates based on attach_to_agent setting
-    const attachToAgent = config.attach_to_agent !== false
+    // Handle VAPI tool updates
+    // Native tools are always attachable and always have VAPI tools
+    const attachToAgent = isNativeTool ? true : (config.attach_to_agent !== false)
     const wasAttachable = existingTool.attach_to_agent !== false
     const hasExternalId = existingTool.external_tool_id !== null
 
@@ -140,27 +147,36 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (attachToAgent && !wasAttachable) {
         // Converting from preemptive-only to attachable: create VAPI tool
         console.log('Creating VAPI tool for previously preemptive-only tool')
-        const vapiToolData = convertToolConfigToVapiApiRequest(
-          id,
-          config,
-          functionSchema
-        )
+        let vapiToolData: any
+        if (config.type === 'transfer_call') {
+          vapiToolData = convertToVapiTransferCallTool({ ...config, name: toolName })
+        } else if (config.type === 'handoff') {
+          vapiToolData = convertToVapiHandoffTool({ ...config, name: toolName })
+        } else {
+          // For non-native tools, functionSchema is guaranteed to be built properly
+          vapiToolData = convertToolConfigToVapiApiRequest(id, config, functionSchema as any)
+        }
         const vapiTool = await vapiClient.tools.create(vapiToolData as any)
         existingTool.external_tool_id = vapiTool.id
         console.log('VAPI tool created:', vapiTool.id)
       } else if (!attachToAgent && wasAttachable && hasExternalId) {
         // Converting from attachable to preemptive-only: delete VAPI tool
+        // Note: Native tools can't be preemptive-only, so this won't happen for them
         console.log('Deleting VAPI tool (converting to preemptive-only):', existingTool.external_tool_id)
         await vapiClient.tools.delete(existingTool.external_tool_id)
         existingTool.external_tool_id = null
         console.log('VAPI tool deleted successfully')
       } else if (attachToAgent && hasExternalId) {
         // Still attachable: update VAPI tool
-        const vapiToolData = convertToolConfigToVapiApiRequest(
-          id,
-          config,
-          functionSchema
-        )
+        let vapiToolData: any
+        if (config.type === 'transfer_call') {
+          vapiToolData = convertToVapiTransferCallTool({ ...config, name: toolName })
+        } else if (config.type === 'handoff') {
+          vapiToolData = convertToVapiHandoffTool({ ...config, name: toolName })
+        } else {
+          // For non-native tools, functionSchema is guaranteed to be built properly
+          vapiToolData = convertToolConfigToVapiApiRequest(id, config, functionSchema as any)
+        }
         // Remove 'type' field for updates - VAPI update API doesn't accept it
         const { type, ...updateData } = vapiToolData
         console.log('Updating VAPI tool:', existingTool.external_tool_id)
@@ -169,11 +185,15 @@ export async function PATCH(request: Request, context: RouteContext) {
       } else if (attachToAgent && !hasExternalId) {
         // Should be attachable but missing external_tool_id: create it
         console.log('Creating missing VAPI tool for attachable tool')
-        const vapiToolData = convertToolConfigToVapiApiRequest(
-          id,
-          config,
-          functionSchema
-        )
+        let vapiToolData: any
+        if (config.type === 'transfer_call') {
+          vapiToolData = convertToVapiTransferCallTool({ ...config, name: toolName })
+        } else if (config.type === 'handoff') {
+          vapiToolData = convertToVapiHandoffTool({ ...config, name: toolName })
+        } else {
+          // For non-native tools, functionSchema is guaranteed to be built properly
+          vapiToolData = convertToolConfigToVapiApiRequest(id, config, functionSchema as any)
+        }
         const vapiTool = await vapiClient.tools.create(vapiToolData as any)
         existingTool.external_tool_id = vapiTool.id
         console.log('VAPI tool created:', vapiTool.id)
@@ -200,8 +220,9 @@ export async function PATCH(request: Request, context: RouteContext) {
         function_schema: functionSchema,
         static_config: staticConfig,
         config_metadata: config,
-        async: config.async || false,
-        execute_on_call_start: config.execute_on_call_start || false,
+        // Native tools don't support async or execute_on_call_start
+        async: isNativeTool ? false : (config.async || false),
+        execute_on_call_start: isNativeTool ? false : (config.execute_on_call_start || false),
         attach_to_agent: attachToAgent,
         external_tool_id: existingTool.external_tool_id, // May have been updated above
         updated_at: new Date().toISOString(),

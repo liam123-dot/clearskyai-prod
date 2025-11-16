@@ -32,7 +32,7 @@ export type ParameterSource =
  * Common fields for all tool types
  */
 export interface BaseToolConfig {
-  type: 'sms' | 'transfer_call' | 'api_request' | 'pipedream_action'
+  type: 'sms' | 'transfer_call' | 'handoff' | 'api_request' | 'pipedream_action'
   label: string
   description: string
   name?: string // Optional - will be generated from label if not provided
@@ -57,17 +57,34 @@ export interface SmsToolConfig extends BaseToolConfig {
 
 export interface TransferCallToolConfig extends BaseToolConfig {
   type: 'transfer_call'
-  target: {
-    type: 'agent' | 'number'
-    agentId?: string
-    agentName?: string
-    phoneNumber?: string
-  }
-  message: {
-    strategy: 'fixed' | 'summarized' | 'none'
-    content?: string
-    summarizePrompt?: string
-  }
+  destinations: Array<{
+    type: 'number'
+    number: string
+    message?: string
+    description?: string
+    transferPlan: {
+      mode: 'blind-transfer' | 'warm-transfer-say-message' | 'warm-transfer-say-summary'
+      message?: string
+      summaryPlan?: {
+        enabled: boolean
+        messages?: Array<{
+          role: string
+          content: string
+        }>
+        timeoutSeconds?: number
+        useAssistantLlm?: boolean
+      }
+    }
+    numberE164CheckEnabled: boolean
+  }>
+}
+
+// ==================== Handoff Tool Configuration ====================
+
+export interface HandoffToolConfig extends BaseToolConfig {
+  type: 'handoff'
+  assistantId: string
+  assistantName?: string
 }
 
 // ==================== API Request Tool Configuration (Future) ====================
@@ -105,6 +122,7 @@ export interface PipedreamActionToolConfig extends BaseToolConfig {
 export type ToolConfig =
   | SmsToolConfig
   | TransferCallToolConfig
+  | HandoffToolConfig
   | ApiRequestToolConfig
   | PipedreamActionToolConfig
 

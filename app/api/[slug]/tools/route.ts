@@ -9,7 +9,11 @@ import {
   validateToolConfig,
 } from '@/lib/tools/schema-builder'
 import { vapiClient } from '@/lib/vapi/VapiClients'
-import { convertToolConfigToVapiApiRequest } from '@/lib/vapi/tool-converter'
+import { 
+  convertToolConfigToVapiApiRequest,
+  convertToVapiTransferCallTool,
+  convertToVapiHandoffTool
+} from '@/lib/vapi/tool-converter'
 
 type RouteContext = {
   params: Promise<{ slug: string }>
@@ -61,35 +65,48 @@ export async function POST(request: Request, context: RouteContext) {
       increment++
     }
 
-    // Build function schema and static config
-    const functionSchema = buildFunctionSchema({ ...config, name: toolName })
-    const staticConfig = buildStaticConfig(config)
+    // Build function schema and static config for non-native tools
+    const isNativeTool = config.type === 'transfer_call' || config.type === 'handoff'
+    const functionSchema = isNativeTool ? {} : buildFunctionSchema({ ...config, name: toolName })
+    const staticConfig = isNativeTool ? {} : buildStaticConfig(config)
 
     console.log('Creating tool:', {
       name: toolName,
       type: config.type,
       label: config.label,
-      functionSchema: JSON.stringify(functionSchema, null, 2),
+      isNativeTool,
+      functionSchema: isNativeTool ? 'N/A (native tool)' : JSON.stringify(functionSchema, null, 2),
     })
 
-    // Step 1: Create tool in VAPI first with a temporary callback URL
-    // We'll use a placeholder ID that we'll update after DB creation
+    // Step 1: Create tool in VAPI first
     let vapiTool: any = null
     
     try {
-      // Build VAPI tool data with a temporary placeholder ID
-      // We'll use a UUID that we'll assign to the DB record
+      // Build VAPI tool data with a temporary placeholder ID (for non-native tools)
       const tempDbId = crypto.randomUUID()
       
-      // Only create VAPI tool if tool can be attached to agents
-      const attachToAgent = config.attach_to_agent !== false
+      // Native tools (transfer_call, handoff) are always attached to agents
+      // Non-native tools can be preemptive-only (attach_to_agent = false)
+      const shouldCreateVapiTool = isNativeTool || (config.attach_to_agent !== false)
       
-      if (attachToAgent) {
-        const vapiToolData = convertToolConfigToVapiApiRequest(
-          tempDbId,
-          config,
-          functionSchema
-        )
+      if (shouldCreateVapiTool) {
+        let vapiToolData: any
+        
+        if (config.type === 'transfer_call') {
+          // Use native transfer call tool
+          vapiToolData = convertToVapiTransferCallTool({ ...config, name: toolName })
+        } else if (config.type === 'handoff') {
+          // Use native handoff tool
+          vapiToolData = convertToVapiHandoffTool({ ...config, name: toolName })
+        } else {
+          // Use apiRequest callback pattern for other tools
+          // For non-native tools, functionSchema is guaranteed to be built properly
+          vapiToolData = convertToolConfigToVapiApiRequest(
+            tempDbId,
+            config,
+            functionSchema as any
+          )
+        }
 
         console.log('Creating VAPI tool:', JSON.stringify(vapiToolData, null, 2))
 
@@ -113,9 +130,11 @@ export async function POST(request: Request, context: RouteContext) {
           function_schema: functionSchema,
           static_config: staticConfig,
           config_metadata: config,
-          async: config.async || false,
-          execute_on_call_start: config.execute_on_call_start || false,
-          attach_to_agent: config.attach_to_agent !== false,
+          // Native tools don't support async or execute_on_call_start
+          async: isNativeTool ? false : (config.async || false),
+          execute_on_call_start: isNativeTool ? false : (config.execute_on_call_start || false),
+          // Native tools are always attachable
+          attach_to_agent: isNativeTool ? true : (config.attach_to_agent !== false),
           organization_id: organizationId,
           external_tool_id: vapiTool?.id || null, // Can be null for preemptive-only tools
           data: vapiTool || {}, // Store VAPI tool object if created, empty object otherwise

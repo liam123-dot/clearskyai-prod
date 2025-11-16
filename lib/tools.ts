@@ -3,7 +3,7 @@ import { createNoCookieClient } from './supabase/serverNoCookies'
 import { vapiClient } from './vapi/VapiClients'
 import { formatLabelForDisplay } from './utils'
 
-export type ToolType = 'query' | 'sms' | 'apiRequest' | 'transferCall' | 'externalApp' | 'pipedream_action'
+export type ToolType = 'query' | 'sms' | 'apiRequest' | 'transferCall' | 'transfer_call' | 'handoff' | 'externalApp' | 'pipedream_action'
 
 export interface Tool {
   id: string

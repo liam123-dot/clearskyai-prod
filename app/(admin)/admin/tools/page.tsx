@@ -100,6 +100,7 @@ export default async function AdminToolsPage() {
                     <TableHead className="font-semibold">Type</TableHead>
                     <TableHead className="font-semibold">Organization</TableHead>
                     <TableHead className="font-semibold">Slug</TableHead>
+                    <TableHead className="font-semibold">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <ToolsTableBody 

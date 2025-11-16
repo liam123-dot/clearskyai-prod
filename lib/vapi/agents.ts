@@ -155,7 +155,8 @@ export async function getAgentsByOrganization(organizationId: string): Promise<A
                 vapiAssistant
             };
         } catch (error) {
-            console.error(`Failed to load VAPI assistant ${dbAgent.vapi_assistant_id}:`, error);
+            // include name
+            console.error(`Failed to load VAPI assistant ${dbAgent.vapi_assistant_id}, with name:`, error);
             // If VAPI assistant is not found or error, skip this agent
             return null;
         }
@@ -163,6 +164,8 @@ export async function getAgentsByOrganization(organizationId: string): Promise<A
 
     const results = await Promise.all(agentPromises);
     const agentsWithDetails = results.filter((agent): agent is AssignedAgent => agent !== null);
+
+    console.log('agentsWithDetails', agentsWithDetails);
 
     return agentsWithDetails;
 }

@@ -28,6 +28,10 @@ export function AgentNav({ agentId, slug }: AgentNavProps) {
     {
       href: `/${slug}/agents/${agentId}/success-eval`,
       label: "Success & Eval"
+    },
+    {
+      href: `/${slug}/agents/${agentId}/website-widget`,
+      label: "Website Widget"
     }
   ]
 

@@ -12,11 +12,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { toast } from "sonner"
 import { Organization } from "@/lib/organizations"
 import { Tool } from "@/lib/tools"
 import Image from "next/image"
 import { PipedreamActionToolConfig } from "@/lib/tools/types"
+import { Trash2 } from "lucide-react"
 
 interface ToolsTableBodyProps {
   vapiTools: any[]
@@ -83,6 +95,7 @@ export function ToolsTableBody({ vapiTools, dbTools, toolAssignments, organizati
   const router = useRouter()
   const [selectedOrg, setSelectedOrg] = useState<Record<string, string>>({})
   const [assigning, setAssigning] = useState<Record<string, boolean>>({})
+  const [deleting, setDeleting] = useState<Record<string, boolean>>({})
 
   const handleAssign = async (toolId: string, toolName: string, toolType: string, toolData: any) => {
     const orgId = selectedOrg[toolId]
@@ -120,6 +133,34 @@ export function ToolsTableBody({ vapiTools, dbTools, toolAssignments, organizati
       toast.error(error instanceof Error ? error.message : 'Failed to assign tool')
     } finally {
       setAssigning(prev => ({ ...prev, [toolId]: false }))
+    }
+  }
+
+  const handleDelete = async (toolId: string, toolName: string, orgSlug: string) => {
+    if (!orgSlug) {
+      toast.error('Cannot delete tool: organization slug not found')
+      return
+    }
+
+    setDeleting(prev => ({ ...prev, [toolId]: true }))
+
+    try {
+      const response = await fetch(`/api/${orgSlug}/tools/${toolId}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to delete tool')
+      }
+
+      toast.success('Tool deleted successfully')
+      window.location.reload()
+    } catch (error) {
+      console.error('Error deleting tool:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to delete tool')
+    } finally {
+      setDeleting(prev => ({ ...prev, [toolId]: false }))
     }
   }
 
@@ -177,6 +218,48 @@ export function ToolsTableBody({ vapiTools, dbTools, toolAssignments, organizati
               </TableCell>
               <TableCell>
                 <span className="text-sm text-muted-foreground">{assignedOrg?.slug || '-'}</span>
+              </TableCell>
+              <TableCell>
+                {orgSlug ? (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={deleting[dbTool.id]}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                        }}
+                        className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will permanently delete the tool &quot;{displayName}&quot;. This action cannot be undone.
+                          The tool will be removed from all agents and deleted from both the database and Vapi.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDelete(dbTool.id, displayName, orgSlug)
+                          }}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          {deleting[dbTool.id] ? 'Deleting...' : 'Delete'}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                ) : (
+                  <span className="text-sm text-muted-foreground">-</span>
+                )}
               </TableCell>
             </TableRow>
           )

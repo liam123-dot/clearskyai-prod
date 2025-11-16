@@ -111,6 +111,16 @@ export default async function OrganizationToolsPage({ params }: ToolsPageProps) 
                     </div>
                   </div>
                 </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href={`/${slug}/tools/create?type=handoff`}>
+                  <div className="flex flex-col gap-1">
+                    <div className="font-medium">Handoff to Assistant</div>
+                    <div className="text-xs text-muted-foreground">
+                      Transfer conversation to another AI assistant
+                    </div>
+                  </div>
+                </Link>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -178,6 +188,16 @@ export default async function OrganizationToolsPage({ params }: ToolsPageProps) 
                   <div className="font-medium">Transfer Call</div>
                   <div className="text-xs text-muted-foreground">
                     Transfer calls to another number
+                  </div>
+                </div>
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href={`/${slug}/tools/create?type=handoff`}>
+                <div className="flex flex-col gap-1">
+                  <div className="font-medium">Handoff to Assistant</div>
+                  <div className="text-xs text-muted-foreground">
+                    Transfer conversation to another AI assistant
                   </div>
                 </div>
               </Link>

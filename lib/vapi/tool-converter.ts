@@ -1,5 +1,5 @@
-import { ToolConfig, ToolFunctionSchema } from '@/lib/tools/types'
-import { CreateApiRequestToolDto } from './ToolTypes'
+import { ToolConfig, ToolFunctionSchema, TransferCallToolConfig, HandoffToolConfig } from '@/lib/tools/types'
+import { CreateApiRequestToolDto, CreateTransferCallToolDto, CreateHandoffToolDto } from './ToolTypes'
 
 /**
  * Converts a ToolConfig to a VAPI apiRequest tool format
@@ -81,5 +81,71 @@ export function convertToolConfigToVapiApiRequest(
   }
 
   return vapiTool
+}
+
+/**
+ * Converts a TransferCallToolConfig to Vapi's native transferCall tool format
+ */
+export function convertToVapiTransferCallTool(config: TransferCallToolConfig): CreateTransferCallToolDto {
+  const toolName = config.name || config.label.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  
+  return {
+    type: 'transferCall',
+    function: {
+      name: toolName,
+      description: config.description,
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+    messages: [],
+    destinations: config.destinations.map(dest => ({
+      type: 'number',
+      number: dest.number,
+      message: dest.message,
+      description: dest.description,
+      transferPlan: {
+        mode: dest.transferPlan.mode,
+        message: dest.transferPlan.message,
+        summaryPlan: dest.transferPlan.summaryPlan ? {
+          enabled: dest.transferPlan.summaryPlan.enabled,
+          messages: dest.transferPlan.summaryPlan.messages || [],
+          timeoutSeconds: dest.transferPlan.summaryPlan.timeoutSeconds || 30,
+          useAssistantLlm: dest.transferPlan.summaryPlan.useAssistantLlm ?? true,
+        } : undefined,
+      },
+      numberE164CheckEnabled: dest.numberE164CheckEnabled,
+    })),
+  }
+}
+
+/**
+ * Converts a HandoffToolConfig to Vapi's native handoff tool format
+ */
+export function convertToVapiHandoffTool(config: HandoffToolConfig): CreateHandoffToolDto {
+  const toolName = config.name || config.label.toLowerCase().replace(/[^a-z0-9]+/g, '_')
+  
+  return {
+    type: 'handoff',
+    function: {
+      name: toolName,
+      description: config.description,
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+    messages: [],
+    destinations: [
+      {
+        type: 'assistant',
+        assistantId: config.assistantId, // Use assistantId field for the Vapi assistant ID
+        description: config.description,
+      }
+    ],
+  }
 }
 

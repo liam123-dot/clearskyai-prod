@@ -11,7 +11,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 // import { SmsToolForm } from '@/components/tools/sms-tool-form'
-// import { TransferCallToolForm } from '@/components/tools/transfer-call-tool-form'
+import { TransferCallToolForm } from '@/components/tools/transfer-call-tool-form'
+import { HandoffToolForm } from '@/components/tools/handoff-tool-form'
 import { PipedreamActionToolForm } from '@/components/tools/pipedream-action-tool-form'
 
 interface CreateToolFormProps {
@@ -125,6 +126,8 @@ export function CreateToolForm({ slug }: CreateToolFormProps) {
         return 'SMS / Text Message'
       case 'transfer_call':
         return 'Transfer Call'
+      case 'handoff':
+        return 'Handoff to Assistant'
       case 'pipedream_action':
         return 'External App'
       default:
@@ -185,58 +188,63 @@ export function CreateToolForm({ slug }: CreateToolFormProps) {
             </p>
           </div>
 
-          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-            <div className="space-y-0.5">
-              <Label htmlFor="async" className="text-sm font-medium cursor-pointer">
-                Don&apos;t Wait for Response
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                The agent will continue the conversation immediately without waiting for this tool to finish
-              </p>
-            </div>
-            <Switch
-              id="async"
-              checked={async}
-              onCheckedChange={setAsync}
-            />
-          </div>
+          {/* Hide these switches for native tools (transfer_call, handoff) */}
+          {toolType !== 'transfer_call' && toolType !== 'handoff' && (
+            <>
+              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                <div className="space-y-0.5">
+                  <Label htmlFor="async" className="text-sm font-medium cursor-pointer">
+                    Don&apos;t Wait for Response
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    The agent will continue the conversation immediately without waiting for this tool to finish
+                  </p>
+                </div>
+                <Switch
+                  id="async"
+                  checked={async}
+                  onCheckedChange={setAsync}
+                />
+              </div>
 
-          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-            <div className="space-y-0.5">
-              <Label htmlFor="execute-on-call-start" className="text-sm font-medium cursor-pointer">
-                Execute on Call Start
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Run this tool automatically when a call starts (ideal for CRM lookups that inject customer context)
-              </p>
-            </div>
-            <Switch
-              id="execute-on-call-start"
-              checked={executeOnCallStart}
-              onCheckedChange={handleExecuteOnCallStartChange}
-            />
-          </div>
+              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                <div className="space-y-0.5">
+                  <Label htmlFor="execute-on-call-start" className="text-sm font-medium cursor-pointer">
+                    Execute on Call Start
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Run this tool automatically when a call starts (ideal for CRM lookups that inject customer context)
+                  </p>
+                </div>
+                <Switch
+                  id="execute-on-call-start"
+                  checked={executeOnCallStart}
+                  onCheckedChange={handleExecuteOnCallStartChange}
+                />
+              </div>
 
-          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-            <div className="space-y-0.5">
-              <Label htmlFor="attach-to-agent" className="text-sm font-medium cursor-pointer">
-                Allow Agent Attachment
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                {!executeOnCallStart
-                  ? "Tool can be attached to agents and used during conversations (always enabled when 'Execute on Call Start' is disabled)"
-                  : attachToAgent 
-                    ? "Tool can be attached to agents and used during conversations"
-                    : "Tool only runs preemptively (on call start), cannot be attached to agents"}
-              </p>
-            </div>
-            <Switch
-              id="attach-to-agent"
-              checked={attachToAgent}
-              onCheckedChange={setAttachToAgent}
-              disabled={!executeOnCallStart}
-            />
-          </div>
+              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                <div className="space-y-0.5">
+                  <Label htmlFor="attach-to-agent" className="text-sm font-medium cursor-pointer">
+                    Allow Agent Attachment
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {!executeOnCallStart
+                      ? "Tool can be attached to agents and used during conversations (always enabled when 'Execute on Call Start' is disabled)"
+                      : attachToAgent 
+                        ? "Tool can be attached to agents and used during conversations"
+                        : "Tool only runs preemptively (on call start), cannot be attached to agents"}
+                  </p>
+                </div>
+                <Switch
+                  id="attach-to-agent"
+                  checked={attachToAgent}
+                  onCheckedChange={setAttachToAgent}
+                  disabled={!executeOnCallStart}
+                />
+              </div>
+            </>
+          )}
 
           {/* Type-Specific Configuration - Integrated */}
           <div className="pt-4 border-t">
@@ -254,16 +262,27 @@ export function CreateToolForm({ slug }: CreateToolFormProps) {
             )}
 
             {toolType === 'transfer_call' && (
-              // <TransferCallToolForm
-              //   initialData={
-              //     toolConfig?.type === 'transfer_call'
-              //       ? { ...toolConfig, label, description }
-              //       : undefined
-              //   }
-              //   onChange={handleToolConfigChange}
-              //   slug={slug}
-              // />
-              <div>Transfer Call Tool Form</div>
+              <TransferCallToolForm
+                initialData={
+                  toolConfig?.type === 'transfer_call'
+                    ? { ...toolConfig, label, description }
+                    : undefined
+                }
+                onChange={handleToolConfigChange}
+                slug={slug}
+              />
+            )}
+
+            {toolType === 'handoff' && (
+              <HandoffToolForm
+                initialData={
+                  toolConfig?.type === 'handoff'
+                    ? { ...toolConfig, label, description }
+                    : undefined
+                }
+                onChange={handleToolConfigChange}
+                slug={slug}
+              />
             )}
 
             {toolType === 'pipedream_action' && (
