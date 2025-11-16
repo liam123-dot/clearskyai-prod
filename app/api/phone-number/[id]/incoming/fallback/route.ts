@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { findMatchingSchedule } from '@/lib/call-routing';
 import { getPhoneNumberById } from '@/lib/phone-numbers';
 import { Twilio } from 'twilio';
+import { imputeVoiceCosts } from '@/lib/costs';
 
 export async function POST(
   request: NextRequest,
@@ -442,6 +443,12 @@ async function addTwilioCostToCall(
       }
       updatedData.costs = existingCosts;
     }
+
+    // Impute voice costs if needed
+    updatedData.costs = imputeVoiceCosts(updatedData.costs);
+
+    // Calculate and store totalCost from all costs
+    updatedData.totalCost = updatedData.costs.reduce((sum: number, c: any) => sum + (c?.cost || 0), 0);
 
     // Update the call record with the cost
     const { error: updateError } = await supabase

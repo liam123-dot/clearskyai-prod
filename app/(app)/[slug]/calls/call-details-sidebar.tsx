@@ -89,33 +89,45 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
 
   // Process costs data for pie chart
   const costs = call.data?.costs || []
-  const totalCost = costs.reduce((sum: number, item: any) => sum + (item.cost || 0), 0)
+  
+  // Aggregate costs by type
+  const aggregatedCosts = costs
+    .filter((item: any) => item.cost > 0)
+    .reduce((acc: Record<string, number>, item: any) => {
+      const type = item.type
+      acc[type] = (acc[type] || 0) + (item.cost || 0)
+      return acc
+    }, {})
+  
+  // Convert aggregated costs to array for chart data
+  const aggregatedCostsArray = Object.entries(aggregatedCosts).map(([type, cost]) => ({
+    type,
+    cost: cost as number,
+  }))
+  
+  const totalCost = aggregatedCostsArray.reduce((sum: number, item: any) => sum + (item.cost || 0), 0)
   const durationMinutes = duration / 60
   const costPerMinute = durationMinutes > 0 ? totalCost / durationMinutes : 0
   
-  // Filter out zero-cost items and create chart data
-  const costChartData = costs
-    .filter((item: any) => item.cost > 0)
-    .map((item: any, index: number) => ({
-      type: item.type,
-      cost: item.cost,
-      fill: `var(--chart-${(index % 5) + 1})`,
-    }))
+  // Create chart data with consistent colors for each type
+  const costChartData = aggregatedCostsArray.map((item: any, index: number) => ({
+    type: item.type,
+    cost: item.cost,
+    fill: `var(--chart-${(index % 5) + 1})`,
+  }))
 
-  // Create chart config
-  const costChartConfig = costs
-    .filter((item: any) => item.cost > 0)
-    .reduce((config: any, item: any, index: number) => {
-      config[item.type] = {
-        label: item.type.charAt(0).toUpperCase() + item.type.slice(1),
-        color: `var(--chart-${(index % 5) + 1})`,
-      }
-      return config
-    }, {
-      cost: {
-        label: "Cost",
-      },
-    } as ChartConfig)
+  // Create chart config with consistent colors
+  const costChartConfig = aggregatedCostsArray.reduce((config: any, item: any, index: number) => {
+    config[item.type] = {
+      label: item.type.charAt(0).toUpperCase() + item.type.slice(1),
+      color: `var(--chart-${(index % 5) + 1})`,
+    }
+    return config
+  }, {
+    cost: {
+      label: "Cost",
+    },
+  } as ChartConfig)
 
   // Fetch revenue data for admin users
   const { data: revenueData, isLoading: revenueLoading } = useQuery<RevenueData>({
@@ -563,14 +575,12 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
                 </CardContent>
                 <CardFooter className="flex-col gap-2 text-sm pt-4">
                   <div className="grid grid-cols-2 gap-2 w-full text-sm">
-                    {costs
-                      .filter((item: any) => item.cost > 0)
-                      .map((item: any) => (
-                        <div key={item.type} className="flex justify-between">
-                          <span className="text-muted-foreground capitalize">{item.type}:</span>
-                          <span className="font-mono">${item.cost.toFixed(4)}</span>
-                        </div>
-                      ))}
+                    {aggregatedCostsArray.map((item: any) => (
+                      <div key={item.type} className="flex justify-between">
+                        <span className="text-muted-foreground capitalize">{item.type}:</span>
+                        <span className="font-mono">${item.cost.toFixed(4)}</span>
+                      </div>
+                    ))}
                   </div>
                   {durationMinutes > 0 && (
                     <>
@@ -581,17 +591,15 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
                           <span className="font-mono text-lg">${costPerMinute.toFixed(4)}</span>
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-xs">
-                          {costs
-                            .filter((item: any) => item.cost > 0)
-                            .map((item: any) => {
-                              const costPerMin = durationMinutes > 0 ? item.cost / durationMinutes : 0
-                              return (
-                                <div key={`${item.type}-per-min`} className="flex justify-between">
-                                  <span className="text-muted-foreground capitalize">{item.type}:</span>
-                                  <span className="font-mono">${costPerMin.toFixed(4)}/min</span>
-                                </div>
-                              )
-                            })}
+                          {aggregatedCostsArray.map((item: any) => {
+                            const costPerMin = durationMinutes > 0 ? item.cost / durationMinutes : 0
+                            return (
+                              <div key={`${item.type}-per-min`} className="flex justify-between">
+                                <span className="text-muted-foreground capitalize">{item.type}:</span>
+                                <span className="font-mono">${costPerMin.toFixed(4)}/min</span>
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
                     </>

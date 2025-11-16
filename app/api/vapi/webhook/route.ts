@@ -5,12 +5,7 @@ import { Twilio } from "twilio";
 import { createMeterEvent } from "@/lib/stripe";
 import { syncOrganizationSubscriptions } from "@/lib/billing";
 import { after } from "next/server";
-
-// Voice cost per million characters (default: $0.18 per million for ElevenLabs Flash v2.5)
-// Can be overridden via environment variable VOICE_COST_PER_MILLION_CHARACTERS
-const VOICE_COST_PER_MILLION_CHARACTERS = parseFloat(
-    process.env.VOICE_COST_PER_MILLION_CHARACTERS || "118.8"
-);
+import { imputeVoiceCosts as imputeVoiceCostsHelper } from "@/lib/costs";
 
 /**
  * Imputes voice costs when cost is 0 but characters > 0
@@ -24,37 +19,19 @@ function imputeVoiceCosts(report: Vapi.ServerMessageEndOfCallReport): Vapi.Serve
         return reportCopy;
     }
     
-    let voiceCostsImputed = false;
+    // Store original costs to check if any were imputed
+    const originalCosts = [...reportCopy.costs];
     
-    // Process each cost entry
-    reportCopy.costs = reportCopy.costs.map((costEntry: any) => {
-        // Check if this is a voice cost with 0 cost but characters > 0
-        if (
-            costEntry.type === 'voice' &&
-            (costEntry.cost === 0 || costEntry.cost === null || costEntry.cost === undefined) &&
-            costEntry.characters &&
-            costEntry.characters > 0
-        ) {
-            // Calculate imputed cost: (characters / 1,000,000) * cost per million
-            const imputedCost = (costEntry.characters / 1_000_000) * VOICE_COST_PER_MILLION_CHARACTERS;
-            
-            console.log(
-                `Imputing voice cost: ${costEntry.characters} characters = $${imputedCost.toFixed(6)} ` +
-                `(using $${VOICE_COST_PER_MILLION_CHARACTERS} per million characters)`
-            );
-            
-            voiceCostsImputed = true;
-            
-            // Update the cost entry
-            return {
-                ...costEntry,
-                cost: imputedCost,
-                imputed: true, // Flag to indicate this cost was imputed
-            };
-        }
-        
-        return costEntry;
+    // Use the helper function to impute voice costs
+    const imputedCosts = imputeVoiceCostsHelper(reportCopy.costs);
+    
+    // Check if any costs were imputed by comparing with original
+    const voiceCostsImputed = imputedCosts.some((c: any, index: number) => {
+        const original = originalCosts[index];
+        return (c as any).imputed === true && !(original as any)?.imputed;
     });
+    
+    reportCopy.costs = imputedCosts;
     
     // Recalculate total cost from all costs if any voice costs were imputed
     if (voiceCostsImputed && reportCopy.costs) {
@@ -332,8 +309,11 @@ async function getCallTwilioCost(
             updatedData.costs = existingCosts;
         }
 
+        // Impute voice costs if needed
+        updatedData.costs = imputeVoiceCostsHelper(updatedData.costs);
+
         // Calculate and store totalCost from all costs
-        updatedData.totalCost = existingCosts.reduce((sum: number, c: any) => sum + (c?.cost || 0), 0);
+        updatedData.totalCost = updatedData.costs.reduce((sum: number, c: any) => sum + (c?.cost || 0), 0);
 
         // Update the call record with the cost
         const { error: updateError } = await supabase
