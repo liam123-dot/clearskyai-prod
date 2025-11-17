@@ -23,7 +23,7 @@ export function createEstateAgentToolData(
     type: "apiRequest",
     function: {
       name: `query_${sanitizedName}_props`,
-      description: `Search and filter properties from ${knowledgeBaseName} by location (street, area, district, landmark), city, county, and other criteria. Returns up to 3 matching properties by default (or all properties if include_all is true) in plain text format with essential details (baths, price, property type, title, address, etc.) along with the total count of matching properties. Uses intelligent multi-strategy location matching combining fuzzy/phonetic address search AND Google Places API boundaries - if no match found, returns available options as refinements.`,
+      description: `Search and filter properties from ${knowledgeBaseName} by location (street, area, district, landmark), price, property type, furnished type, nearby train/tube stations, and other criteria. Returns up to 3 matching properties by default (or all properties if include_all is true) in plain text format with essential details (baths, price, property type, title, address, etc.) along with the total count of matching properties. Uses intelligent multi-strategy location matching combining fuzzy/phonetic address search AND Google Places API boundaries - if no match found, returns available options as refinements.`,
       parameters: {
         type: "object",
         properties: {

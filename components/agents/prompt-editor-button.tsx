@@ -21,14 +21,8 @@ import { ToolItem } from '@/components/tools/tool-item'
 import { KnowledgeBase } from '@/lib/knowledge-bases'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
-import { promptTemplates, getTemplateById } from '@/lib/prompt-templates'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
+import { promptTemplates, getTemplatesByQuery, PromptTemplate } from '@/lib/prompts'
 
 interface PromptEditorButtonProps {
   agentId: string
@@ -48,8 +42,17 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
   const [pendingPromptUpdate, setPendingPromptUpdate] = useState<string | null>(null)
   const [isApplying, setIsApplying] = useState(false)
   
+  // @-mention autocomplete state
+  const [showTemplateAutocomplete, setShowTemplateAutocomplete] = useState(false)
+  const [templateQuery, setTemplateQuery] = useState('')
+  const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0)
+  const [mentionStartPos, setMentionStartPos] = useState<number | null>(null)
+  
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const contentEditableRef = useRef<HTMLDivElement>(null)
+  const autocompleteRef = useRef<HTMLDivElement>(null)
 
   // Use the Vercel AI SDK's useChat hook for chat management
   const { messages, sendMessage, status } = useChat({
@@ -99,12 +102,28 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
       // The chat will be empty on mount, and resets when the sheet reopens
       setPendingPromptUpdate(null)
       setInput('')
+      setShowTemplateAutocomplete(false)
+      setTemplateQuery('')
+      setMentionStartPos(null)
+      setSelectedTemplateIndex(0)
       if (tools.length === 0 && knowledgeBases.length === 0 && !loading) {
         fetchToolsAndKbs()
+      }
+      
+      // Clear contentEditable
+      if (contentEditableRef.current) {
+        contentEditableRef.current.textContent = ''
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
+
+  // Clear contentEditable when input is cleared
+  useEffect(() => {
+    if (!input && contentEditableRef.current && contentEditableRef.current.textContent) {
+      contentEditableRef.current.textContent = ''
+    }
+  }, [input])
 
   const fetchToolsAndKbs = async () => {
     setLoading(true)
@@ -200,31 +219,321 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
     return null
   }
 
+  // Extract template references from text and return them with their positions
+  const extractTemplateReferences = (text: string): Array<{ template: PromptTemplate; start: number; end: number }> => {
+    const references: Array<{ template: PromptTemplate; start: number; end: number }> = []
+    const templateMentionRegex = /@([a-zA-Z0-9_-]+)/g
+    let match
+    
+    while ((match = templateMentionRegex.exec(text)) !== null) {
+      const templateId = match[1]
+      const template = promptTemplates.find(t => t.id === templateId)
+      if (template) {
+        references.push({
+          template,
+          start: match.index,
+          end: match.index + match[0].length,
+        })
+      }
+    }
+    
+    return references
+  }
+
+  // Render text with template references highlighted
+  const renderTextWithTemplateHighlights = (text: string, isUserMessage: boolean, markdownComponents: any) => {
+    const templateRefs = extractTemplateReferences(text)
+    
+    if (templateRefs.length === 0) {
+      return null // No templates to highlight, return null to use default rendering
+    }
+    
+    // Sort references by start position (ascending)
+    templateRefs.sort((a, b) => a.start - b.start)
+    
+    // Build array of segments (text and badges)
+    const segments: Array<{ type: 'text' | 'badge'; content: string; template?: PromptTemplate }> = []
+    let lastIndex = 0
+    
+    for (const ref of templateRefs) {
+      // Add text before this reference
+      if (ref.start > lastIndex) {
+        segments.push({
+          type: 'text',
+          content: text.substring(lastIndex, ref.start),
+        })
+      }
+      
+      // Add badge for this reference
+      segments.push({
+        type: 'badge',
+        content: `@${ref.template.id}`,
+        template: ref.template,
+      })
+      
+      lastIndex = ref.end
+    }
+    
+    // Add remaining text after last reference
+    if (lastIndex < text.length) {
+      segments.push({
+        type: 'text',
+        content: text.substring(lastIndex),
+      })
+    }
+    
+    // Render segments - badges inline, text with markdown
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1">
+        {segments.map((segment, idx) => {
+          if (segment.type === 'badge' && segment.template) {
+            return (
+              <Badge
+                key={`template-${idx}`}
+                variant="secondary"
+                className="font-mono text-xs inline-flex items-center"
+              >
+                <Sparkles className="h-3 w-3 mr-1" />
+                @{segment.template.id}
+              </Badge>
+            )
+          }
+          // Render text segments with markdown
+          return (
+            <span key={`text-${idx}`} className="inline">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={markdownComponents}
+              >
+                {segment.content}
+              </ReactMarkdown>
+            </span>
+          )
+        })}
+      </span>
+    )
+  }
+
+  // Filter templates based on query
+  const filteredTemplates = getTemplatesByQuery(templateQuery)
+
+  // Handle template selection
+  const selectTemplate = (template: PromptTemplate) => {
+    if (!contentEditableRef.current || mentionStartPos === null) return
+    
+    const selection = window.getSelection()
+    if (!selection || selection.rangeCount === 0) return
+    
+    // Get current position and text
+    const currentText = extractTextFromContentEditable(contentEditableRef.current)
+    const beforeMention = currentText.substring(0, mentionStartPos)
+    
+    // Find the end of the current @ mention
+    const textAfterAt = currentText.substring(mentionStartPos + 1)
+    const spaceIndex = textAfterAt.search(/[\s\n]/)
+    const mentionEnd = mentionStartPos + 1 + (spaceIndex === -1 ? textAfterAt.length : spaceIndex)
+    const afterMention = currentText.substring(mentionEnd)
+    
+    // Manually update the contentEditable DOM
+    const range = selection.getRangeAt(0)
+    
+    // Find and remove the @ mention text
+    const walker = document.createTreeWalker(
+      contentEditableRef.current,
+      NodeFilter.SHOW_TEXT,
+      null
+    )
+    
+    let node
+    let charCount = 0
+    while ((node = walker.nextNode())) {
+      const textNode = node as Text
+      const textLength = textNode.textContent?.length || 0
+      
+      if (charCount + textLength > mentionStartPos) {
+        // This text node contains the start of the mention
+        const offsetInNode = mentionStartPos - charCount
+        const lengthToRemove = mentionEnd - mentionStartPos
+        
+        // Remove the @ mention text
+        textNode.textContent = 
+          (textNode.textContent?.substring(0, offsetInNode) || '') +
+          (textNode.textContent?.substring(offsetInNode + lengthToRemove) || '')
+        
+        // Insert the badge
+        const badgeSpan = document.createElement('span')
+        badgeSpan.contentEditable = 'false'
+        badgeSpan.className = 'inline-flex items-center rounded-full border border-transparent bg-secondary text-secondary-foreground px-2 py-0.5 text-xs font-medium font-mono'
+        badgeSpan.setAttribute('data-template-id', template.id)
+        badgeSpan.innerHTML = `<svg class="h-3 w-3 mr-1" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.582a.5.5 0 0 1 0 .962L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>@${template.id}`
+        
+        // Add space after badge
+        const spaceNode = document.createTextNode(' ')
+        
+        // Insert badge and space
+        if (textNode.parentNode) {
+          textNode.parentNode.insertBefore(badgeSpan, textNode.nextSibling)
+          textNode.parentNode.insertBefore(spaceNode, badgeSpan.nextSibling)
+          
+          // Position cursor after the space
+          const newRange = document.createRange()
+          newRange.setStartAfter(spaceNode)
+          newRange.setEndAfter(spaceNode)
+          selection.removeAllRanges()
+          selection.addRange(newRange)
+        }
+        
+        break
+      }
+      
+      charCount += textLength
+    }
+    
+    // Extract the updated text from contentEditable and update state
+    setTimeout(() => {
+      if (contentEditableRef.current) {
+        const updatedText = extractTextFromContentEditable(contentEditableRef.current)
+        setInput(updatedText)
+      }
+    }, 0)
+    
+    // Reset autocomplete state
+    setShowTemplateAutocomplete(false)
+    setTemplateQuery('')
+    setMentionStartPos(null)
+    setSelectedTemplateIndex(0)
+    
+    // Focus the contentEditable
+    contentEditableRef.current.focus()
+  }
+
+  // Extract text from contentEditable div (replacing badges with @template-id)
+  const extractTextFromContentEditable = (element: HTMLElement): string => {
+    let text = ''
+    
+    // Helper function to recursively process nodes
+    const processNode = (node: Node) => {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as HTMLElement
+        
+        // Check if it's a badge element with template ID
+        const templateId = el.getAttribute('data-template-id')
+        if (templateId) {
+          text += `@${templateId}`
+          return // Skip children of badge
+        }
+        
+        // Process children of non-badge elements
+        node.childNodes.forEach(child => processNode(child))
+      } else if (node.nodeType === Node.TEXT_NODE) {
+        text += node.textContent || ''
+      }
+    }
+    
+    element.childNodes.forEach(child => processNode(child))
+    
+    return text
+  }
+
+
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault()
-    if (input.trim() && !isLoading) {
-      sendMessage({ text: input })
+    
+    // Extract current text from contentEditable (includes @template-id from badges)
+    let messageText = input
+    if (contentEditableRef.current) {
+      messageText = extractTextFromContentEditable(contentEditableRef.current)
+    }
+    
+    if (messageText.trim() && !isLoading) {
+      // Expand template references (e.g., @template-id)
+      const templateMentionRegex = /@([a-zA-Z0-9_-]+)/g
+      const expandedMessage = messageText.replace(templateMentionRegex, (match, templateId) => {
+        const template = promptTemplates.find(t => t.id === templateId)
+        if (template) {
+          return `@${templateId}\n\n${template.template}`
+        }
+        return match // Keep original if template not found
+      })
+      
+      sendMessage({ text: expandedMessage })
       setInput('')
+      
+      // Clear the contentEditable
+      if (contentEditableRef.current) {
+        contentEditableRef.current.textContent = ''
+      }
     }
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
+    // Handle autocomplete navigation
+    if (showTemplateAutocomplete && filteredTemplates.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedTemplateIndex((prev) => 
+          prev < filteredTemplates.length - 1 ? prev + 1 : prev
+        )
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSelectedTemplateIndex((prev) => (prev > 0 ? prev - 1 : 0))
+        return
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault()
+        selectTemplate(filteredTemplates[selectedTemplateIndex])
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowTemplateAutocomplete(false)
+        setTemplateQuery('')
+        setMentionStartPos(null)
+        return
+      }
+    }
+    
+    // Normal Enter handling
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      if (input.trim() && !isLoading) {
+      if (input.trim() && !isLoading && !showTemplateAutocomplete) {
         sendMessage({ text: input })
         setInput('')
       }
     }
   }
 
-  const useTemplate = (templateId: string) => {
-    const template = getTemplateById(templateId)
+  // Handle @ detection in textarea
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value
+    const cursorPos = e.target.selectionStart
     
-    if (template && !isLoading) {
-      // Send the entire template content as the initial message
-      sendMessage({ text: template.template })
+    setInput(value)
+    
+    // Find @ symbol before cursor
+    const textBeforeCursor = value.substring(0, cursorPos)
+    const lastAtIndex = textBeforeCursor.lastIndexOf('@')
+    
+    if (lastAtIndex !== -1) {
+      // Check if there's a space after @ (which would mean @ is not active)
+      const textAfterAt = textBeforeCursor.substring(lastAtIndex + 1)
+      if (!textAfterAt.includes(' ') && !textAfterAt.includes('\n')) {
+        // We have an active @ mention
+        const query = textAfterAt
+        setTemplateQuery(query)
+        setMentionStartPos(lastAtIndex)
+        setShowTemplateAutocomplete(true)
+        setSelectedTemplateIndex(0)
+        return
+      }
     }
+    
+    // No active @ mention
+    setShowTemplateAutocomplete(false)
+    setTemplateQuery('')
+    setMentionStartPos(null)
   }
 
   const applyPromptUpdate = async () => {
@@ -279,35 +588,6 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
           </SheetDescription>
         </SheetHeader>
 
-        {/* Template Selector */}
-        <div className="px-6 py-3 border-b bg-muted/30">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-muted-foreground" />
-            <Select
-              onValueChange={(value) => useTemplate(value)}
-              disabled={isLoading}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a prompt template..." />
-              </SelectTrigger>
-              <SelectContent>
-                {promptTemplates.map((template) => (
-                  <SelectItem key={template.id} value={template.id}>
-                    <div className="flex flex-col">
-                      <span className="font-medium">{template.name}</span>
-                      {template.description && (
-                        <span className="text-xs text-muted-foreground">
-                          {template.description}
-                        </span>
-                      )}
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        
         {/* Chat Messages */}
         <div 
           ref={chatContainerRef}
@@ -351,63 +631,114 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
                             // Show placeholder if there's no other content, or show the other content if it exists
                             const displayText = cleanText || '*A system prompt update has been generated. Review it below.*'
                             
+                            // Define markdown components
+                            const markdownComponents = {
+                              code: ({ node, className, children, ...props }: any) => {
+                                const match = /language-(\w+)/.exec(className || '')
+                                return (
+                                  <code className={className} {...props}>
+                                    {children}
+                                  </code>
+                                )
+                              },
+                              pre: ({ children }: any) => (
+                                <pre className="bg-background/50 rounded p-2 overflow-x-auto my-2">
+                                  {children}
+                                </pre>
+                              ),
+                              a: ({ href, children }: any) => (
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={message.role === 'user' ? 'text-primary-foreground underline' : 'text-primary underline'}
+                                >
+                                  {children}
+                                </a>
+                              ),
+                              ul: ({ children }: any) => (
+                                <ul className="list-disc list-inside my-2 space-y-1">
+                                  {children}
+                                </ul>
+                              ),
+                              ol: ({ children }: any) => (
+                                <ol className="list-decimal list-inside my-2 space-y-1">
+                                  {children}
+                                </ol>
+                              ),
+                              h1: ({ children }: any) => <h1 className="text-lg font-bold mt-2 mb-1">{children}</h1>,
+                              h2: ({ children }: any) => <h2 className="text-base font-semibold mt-2 mb-1">{children}</h2>,
+                              h3: ({ children }: any) => <h3 className="text-sm font-semibold mt-1 mb-1">{children}</h3>,
+                              blockquote: ({ children }: any) => (
+                                <blockquote className="border-l-4 border-muted-foreground/30 pl-3 italic my-2">
+                                  {children}
+                                </blockquote>
+                              ),
+                            }
+                            
                             return (
                               <ReactMarkdown
                                 key={index}
                                 remarkPlugins={[remarkGfm]}
-                                components={{
-                                  // Style code blocks
-                                  code: ({ node, className, children, ...props }) => {
-                                    const match = /language-(\w+)/.exec(className || '')
-                                    return (
-                                      <code className={className} {...props}>
-                                        {children}
-                                      </code>
-                                    )
-                                  },
-                                  // Style pre blocks
-                                  pre: ({ children }) => (
-                                    <pre className="bg-background/50 rounded p-2 overflow-x-auto my-2">
-                                      {children}
-                                    </pre>
-                                  ),
-                                  // Style links
-                                  a: ({ href, children }) => (
-                                    <a
-                                      href={href}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className={message.role === 'user' ? 'text-primary-foreground underline' : 'text-primary underline'}
-                                    >
-                                      {children}
-                                    </a>
-                                  ),
-                                  // Style lists
-                                  ul: ({ children }) => (
-                                    <ul className="list-disc list-inside my-2 space-y-1">
-                                      {children}
-                                    </ul>
-                                  ),
-                                  ol: ({ children }) => (
-                                    <ol className="list-decimal list-inside my-2 space-y-1">
-                                      {children}
-                                    </ol>
-                                  ),
-                                  // Style headings
-                                  h1: ({ children }) => <h1 className="text-lg font-bold mt-2 mb-1">{children}</h1>,
-                                  h2: ({ children }) => <h2 className="text-base font-semibold mt-2 mb-1">{children}</h2>,
-                                  h3: ({ children }) => <h3 className="text-sm font-semibold mt-1 mb-1">{children}</h3>,
-                                  // Style blockquotes
-                                  blockquote: ({ children }) => (
-                                    <blockquote className="border-l-4 border-muted-foreground/30 pl-3 italic my-2">
-                                      {children}
-                                    </blockquote>
-                                  ),
-                                }}
+                                components={markdownComponents}
                               >
                                 {displayText}
                               </ReactMarkdown>
                             )
+                          }
+                          
+                          // Check for template references and highlight them
+                          const templateHighlight = renderTextWithTemplateHighlights(
+                            part.text,
+                            message.role === 'user',
+                            {
+                              code: ({ node, className, children, ...props }: any) => {
+                                const match = /language-(\w+)/.exec(className || '')
+                                return (
+                                  <code className={className} {...props}>
+                                    {children}
+                                  </code>
+                                )
+                              },
+                              pre: ({ children }: any) => (
+                                <pre className="bg-background/50 rounded p-2 overflow-x-auto my-2">
+                                  {children}
+                                </pre>
+                              ),
+                              a: ({ href, children }: any) => (
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={message.role === 'user' ? 'text-primary-foreground underline' : 'text-primary underline'}
+                                >
+                                  {children}
+                                </a>
+                              ),
+                              ul: ({ children }: any) => (
+                                <ul className="list-disc list-inside my-2 space-y-1">
+                                  {children}
+                                </ul>
+                              ),
+                              ol: ({ children }: any) => (
+                                <ol className="list-decimal list-inside my-2 space-y-1">
+                                  {children}
+                                </ol>
+                              ),
+                              h1: ({ children }: any) => <h1 className="text-lg font-bold mt-2 mb-1">{children}</h1>,
+                              h2: ({ children }: any) => <h2 className="text-base font-semibold mt-2 mb-1">{children}</h2>,
+                              h3: ({ children }: any) => <h3 className="text-sm font-semibold mt-1 mb-1">{children}</h3>,
+                              blockquote: ({ children }: any) => (
+                                <blockquote className="border-l-4 border-muted-foreground/30 pl-3 italic my-2">
+                                  {children}
+                                </blockquote>
+                              ),
+                            }
+                          )
+                          
+                          // If template highlights exist, use them; otherwise use normal markdown
+                          if (templateHighlight) {
+                            return <div key={index}>{templateHighlight}</div>
                           }
                           
                           // No prompt_update, show content normally
@@ -416,8 +747,7 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
                               key={index}
                               remarkPlugins={[remarkGfm]}
                               components={{
-                                // Style code blocks
-                                code: ({ node, className, children, ...props }) => {
+                                code: ({ node, className, children, ...props }: any) => {
                                   const match = /language-(\w+)/.exec(className || '')
                                   return (
                                     <code className={className} {...props}>
@@ -425,14 +755,12 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
                                     </code>
                                   )
                                 },
-                                // Style pre blocks
-                                pre: ({ children }) => (
+                                pre: ({ children }: any) => (
                                   <pre className="bg-background/50 rounded p-2 overflow-x-auto my-2">
                                     {children}
                                   </pre>
                                 ),
-                                // Style links
-                                a: ({ href, children }) => (
+                                a: ({ href, children }: any) => (
                                   <a
                                     href={href}
                                     target="_blank"
@@ -442,23 +770,20 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
                                     {children}
                                   </a>
                                 ),
-                                // Style lists
-                                ul: ({ children }) => (
+                                ul: ({ children }: any) => (
                                   <ul className="list-disc list-inside my-2 space-y-1">
                                     {children}
                                   </ul>
                                 ),
-                                ol: ({ children }) => (
+                                ol: ({ children }: any) => (
                                   <ol className="list-decimal list-inside my-2 space-y-1">
                                     {children}
                                   </ol>
                                 ),
-                                // Style headings
-                                h1: ({ children }) => <h1 className="text-lg font-bold mt-2 mb-1">{children}</h1>,
-                                h2: ({ children }) => <h2 className="text-base font-semibold mt-2 mb-1">{children}</h2>,
-                                h3: ({ children }) => <h3 className="text-sm font-semibold mt-1 mb-1">{children}</h3>,
-                                // Style blockquotes
-                                blockquote: ({ children }) => (
+                                h1: ({ children }: any) => <h1 className="text-lg font-bold mt-2 mb-1">{children}</h1>,
+                                h2: ({ children }: any) => <h2 className="text-base font-semibold mt-2 mb-1">{children}</h2>,
+                                h3: ({ children }: any) => <h3 className="text-sm font-semibold mt-1 mb-1">{children}</h3>,
+                                blockquote: ({ children }: any) => (
                                   <blockquote className="border-l-4 border-muted-foreground/30 pl-3 italic my-2">
                                     {children}
                                   </blockquote>
@@ -573,16 +898,115 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
         </div>
 
         {/* Message Input */}
-        <div className="border-t px-6 py-4 bg-background">
+        <div className="border-t px-6 py-4 bg-background relative">
           <form onSubmit={handleSendMessage} className="flex gap-2">
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyPress}
-              placeholder="Type your message... (Shift+Enter for new line)"
-              className="min-h-[60px] max-h-[120px] resize-none"
-              disabled={isLoading || status !== 'ready'}
-            />
+            <div className="relative flex-1">
+              {/* ContentEditable div for input with badge support */}
+              <div
+                ref={contentEditableRef}
+                contentEditable
+                suppressContentEditableWarning
+                onInput={(e) => {
+                  if (contentEditableRef.current) {
+                    const newText = extractTextFromContentEditable(contentEditableRef.current)
+                    setInput(newText)
+                    
+                    // Handle @ detection
+                    const lastAtIndex = newText.lastIndexOf('@')
+                    
+                    if (lastAtIndex !== -1) {
+                      const textAfterAt = newText.substring(lastAtIndex + 1)
+                      // Check if we have an active @ mention (no space or newline after it)
+                      const spaceIndex = textAfterAt.indexOf(' ')
+                      const newlineIndex = textAfterAt.indexOf('\n')
+                      
+                      if (spaceIndex === -1 && newlineIndex === -1) {
+                        setTemplateQuery(textAfterAt)
+                        setMentionStartPos(lastAtIndex)
+                        setShowTemplateAutocomplete(true)
+                        setSelectedTemplateIndex(0)
+                        return
+                      }
+                    }
+                    
+                    setShowTemplateAutocomplete(false)
+                    setTemplateQuery('')
+                    setMentionStartPos(null)
+                  }
+                }}
+                onKeyDown={handleKeyPress}
+                onFocus={() => {
+                  // Remove placeholder on focus
+                  if (contentEditableRef.current) {
+                    const placeholder = contentEditableRef.current.querySelector('.placeholder-text')
+                    if (placeholder) {
+                      placeholder.remove()
+                    }
+                  }
+                }}
+                onBlur={() => {
+                  // Re-add placeholder if empty
+                  if (contentEditableRef.current && !input) {
+                    const hasContent = contentEditableRef.current.textContent?.trim()
+                    if (!hasContent) {
+                      contentEditableRef.current.innerHTML = '<span class="placeholder-text text-muted-foreground pointer-events-none select-none">Type your message... Use @ to reference templates (Shift+Enter for new line)</span>'
+                    }
+                  }
+                }}
+                className="min-h-[60px] max-h-[120px] resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 overflow-y-auto whitespace-pre-wrap break-words empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground empty:before:pointer-events-none"
+                style={{
+                  minHeight: '60px',
+                  maxHeight: '120px',
+                }}
+                data-placeholder="Type your message... Use @ to reference templates (Shift+Enter for new line)"
+              />
+              
+              {/* Hidden textarea for form value (needed for some edge cases) */}
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={() => {}}
+                className="hidden"
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+              
+              {/* Template Autocomplete Dropdown */}
+              {showTemplateAutocomplete && filteredTemplates.length > 0 && (
+                <div
+                  ref={autocompleteRef}
+                  className="absolute bottom-full left-0 mb-2 w-full bg-popover border rounded-md shadow-lg z-50 max-h-64 overflow-y-auto"
+                >
+                  <div className="p-2">
+                    <div className="text-xs text-muted-foreground px-2 py-1 mb-1">
+                      Templates
+                    </div>
+                    {filteredTemplates.map((template, index) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => selectTemplate(template)}
+                        className={`w-full text-left px-3 py-2 rounded-md hover:bg-accent transition-colors ${
+                          index === selectedTemplateIndex ? 'bg-accent' : ''
+                        }`}
+                      >
+                        <div className="flex flex-col">
+                          <span className="font-medium text-sm">@{template.id}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {template.name}
+                          </span>
+                          {template.description && (
+                            <span className="text-xs text-muted-foreground mt-0.5">
+                              {template.description}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
             <Button
               type="submit"
               disabled={!input.trim() || isLoading || status !== 'ready'}

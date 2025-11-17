@@ -7,6 +7,7 @@ export default authkitMiddleware({
     unauthenticatedPaths: [
       '/',
       '/api/vapi/webhook',
+      '/api/elevenlabs/webhook',
       '/api/query/estate-agent/:id',
       '/api/query/estate-agent/:id/filters',
       '/api/stripe/webhook',
