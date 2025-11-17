@@ -6,6 +6,7 @@ import { getAgentKnowledgeBases } from '@/lib/knowledge-bases'
 import { generatePropertyQueryPrompt } from '@/lib/property-prompt'
 import { generateToolLLMPrompt } from '@/lib/tools/llm-prompt'
 import { generateAIText } from '@/lib/ai'
+import { promptTemplates } from '@/lib/prompts'
 
 interface RouteContext {
   params: Promise<{
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const body = await request.json()
-    const { messages }: { messages: any[] } = body
+    let { messages }: { messages: any[] } = body
 
     // console.log('messages', JSON.stringify(messages, null, 2))
 
@@ -44,6 +45,33 @@ export async function POST(request: NextRequest, context: RouteContext) {
         { status: 400 }
       )
     }
+
+    // Expand template references in user messages (server-side fallback)
+    messages = messages.map((message: any) => {
+      if (message.role === 'user' && message.content) {
+        const content = typeof message.content === 'string' ? message.content : message.content.text || ''
+        
+        // Check for template references (e.g., @template-id)
+        const templateMentionRegex = /@([a-zA-Z0-9_-]+)/g
+        const expandedContent = content.replace(templateMentionRegex, (match: string, templateId: string) => {
+          const template = promptTemplates.find(t => t.id === templateId)
+          if (template) {
+            console.log(`[Server] Expanding template reference: @${templateId}`)
+            return `@${templateId}\n\n${template.template}`
+          }
+          return match // Keep original if template not found
+        })
+        
+        if (expandedContent !== content) {
+          console.log(`[Server] Template expansion applied. Original length: ${content.length}, Expanded length: ${expandedContent.length}`)
+          return {
+            ...message,
+            content: expandedContent,
+          }
+        }
+      }
+      return message
+    })
 
     // Fetch agent details
     const agent = await getAgentById(agentId)

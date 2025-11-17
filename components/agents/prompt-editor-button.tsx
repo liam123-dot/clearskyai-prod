@@ -393,6 +393,7 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
     setTimeout(() => {
       if (contentEditableRef.current) {
         const updatedText = extractTextFromContentEditable(contentEditableRef.current)
+        console.log('Updated input after template selection:', updatedText)
         setInput(updatedText)
       }
     }, 0)
@@ -419,6 +420,7 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
         // Check if it's a badge element with template ID
         const templateId = el.getAttribute('data-template-id')
         if (templateId) {
+          console.log('Found badge with template:', templateId)
           text += `@${templateId}`
           return // Skip children of badge
         }
@@ -431,6 +433,7 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
     }
     
     element.childNodes.forEach(child => processNode(child))
+    console.log('Final extracted text:', text)
     
     return text
   }
@@ -443,19 +446,24 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
     let messageText = input
     if (contentEditableRef.current) {
       messageText = extractTextFromContentEditable(contentEditableRef.current)
+      console.log('Extracted text from contentEditable:', messageText)
     }
     
     if (messageText.trim() && !isLoading) {
       // Expand template references (e.g., @template-id)
       const templateMentionRegex = /@([a-zA-Z0-9_-]+)/g
       const expandedMessage = messageText.replace(templateMentionRegex, (match, templateId) => {
+        console.log('Found template reference:', match, 'templateId:', templateId)
         const template = promptTemplates.find(t => t.id === templateId)
         if (template) {
+          console.log('Expanding template:', templateId)
           return `@${templateId}\n\n${template.template}`
         }
+        console.log('Template not found:', templateId)
         return match // Keep original if template not found
       })
       
+      console.log('Sending message:', expandedMessage.substring(0, 200))
       sendMessage({ text: expandedMessage })
       setInput('')
       
