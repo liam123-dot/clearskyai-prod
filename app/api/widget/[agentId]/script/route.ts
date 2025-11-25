@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getAgentById } from "@/lib/vapi/agents"
+import { getAgentById } from "@/lib/agents"
+import { UnifiedAgent } from "@/lib/agents"
 
 export async function GET(
   request: NextRequest,
@@ -7,14 +8,23 @@ export async function GET(
 ) {
   const { agentId } = await params
   
-  const agent = await getAgentById(agentId)
+  const agent = await getAgentById(agentId) as UnifiedAgent
 
   if (!agent) {
     return NextResponse.json({ error: "Agent not found" }, { status: 404 })
   }
+  
+  // Only support ElevenLabs agents for widget embed
+  if (agent.provider !== 'elevenlabs') {
+    return new NextResponse('// Widget only available for ElevenLabs agents', {
+      headers: {
+        'Content-Type': 'application/javascript',
+        'Cache-Control': 'public, max-age=3600',
+      },
+    })
+  }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
-  const widgetUrl = `${baseUrl}/widget/${agentId}`
+  const elevenLabsAgentId = agent.externalAgentId
   
   const script = `(function() {
   'use strict';
@@ -23,54 +33,24 @@ export async function GET(
   if (window.ClearskyWidgetLoaded) return;
   window.ClearskyWidgetLoaded = true;
   
-  // Configuration
-  const WIDGET_URL = '${widgetUrl}';
-  
   function createWidget() {
-    // Create styles
-    const style = document.createElement('style');
-    style.textContent = 
-      '#clearsky-widget-container {' +
-        'position: fixed;' +
-        'bottom: 20px;' +
-        'right: 20px;' +
-        'width: 250px;' +
-        'height: 80px;' +
-        'z-index: 9999;' +
-        'border: none;' +
-        'overflow: visible;' +
-      '}' +
-      '#clearsky-widget-iframe {' +
-        'width: 100%;' +
-        'height: 100%;' +
-        'border: none;' +
-        'display: block;' +
-        'background: transparent;' +
-        'overflow: visible;' +
-      '}';
-    document.head.appendChild(style);
+    // Create the ElevenLabs ConvAI widget element
+    const convaiElement = document.createElement('elevenlabs-convai');
+    convaiElement.setAttribute('agent-id', '${elevenLabsAgentId}');
+    document.body.appendChild(convaiElement);
     
-    // Create container
-    const container = document.createElement('div');
-    container.id = 'clearsky-widget-container';
-    
-    // Create iframe
-    const iframe = document.createElement('iframe');
-    iframe.id = 'clearsky-widget-iframe';
-    iframe.src = WIDGET_URL;
-    iframe.setAttribute('allow', 'microphone');
-    iframe.setAttribute('aria-label', 'Voice chat widget');
-    
-    container.appendChild(iframe);
-    
-    // Append to body
-    document.body.appendChild(container);
+    // Load the ElevenLabs widget script
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/@elevenlabs/convai-widget-embed';
+    script.async = true;
+    script.type = 'text/javascript';
+    document.body.appendChild(script);
     
     // Expose API for customization
     window.ClearskyWidget = {
       destroy: function() {
-        container.remove();
-        style.remove();
+        convaiElement.remove();
+        script.remove();
         window.ClearskyWidgetLoaded = false;
       }
     };

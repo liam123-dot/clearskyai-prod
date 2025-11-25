@@ -14,6 +14,7 @@ The `phone_numbers` table stores phone numbers with their provider credentials f
 | `organization_id` | UUID | REFERENCES organisations(id) ON DELETE CASCADE | Organization that owns this number |
 | `owned_by_admin` | BOOLEAN | NOT NULL, DEFAULT false | Whether owned by admin vs organization |
 | `vapi_phone_number_id` | TEXT | NULL | VAPI phone number ID (for Twilio numbers registered with VAPI) |
+| `elevenlabs_phone_number_id` | TEXT | NULL | ElevenLabs phone number ID (for Twilio numbers registered with ElevenLabs) |
 | `time_based_routing_enabled` | BOOLEAN | NOT NULL, DEFAULT false | Whether time-based routing is enabled for this phone number |
 | `sms_enabled` | BOOLEAN | NOT NULL, DEFAULT true | Whether SMS is enabled for this phone number |
 | `created_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Timestamp when the record was created |
@@ -26,6 +27,7 @@ The `phone_numbers` table stores phone numbers with their provider credentials f
 - `idx_phone_numbers_organization_id` on `organization_id` - Fast lookups by organization
 - `idx_phone_numbers_owned_by_admin` on `owned_by_admin` - Fast filtering by ownership type
 - `idx_phone_numbers_vapi_phone_number_id` on `vapi_phone_number_id` - Fast lookups by VAPI phone number ID
+- `idx_phone_numbers_elevenlabs_phone_number_id` on `elevenlabs_phone_number_id` - Fast lookups by ElevenLabs phone number ID
 
 ## Relationships
 
@@ -65,12 +67,15 @@ The `credentials` JSONB field allows flexible structure for any provider:
 - When an agent is deleted, phone numbers are unassigned (SET NULL)
 - Credentials are stored encrypted at rest by the database
 
-### VAPI Integration
+### Provider Integration (VAPI and ElevenLabs)
 
-- Twilio phone numbers are automatically registered with VAPI when imported or purchased
+- Twilio phone numbers are automatically registered with both VAPI and ElevenLabs when imported or purchased
 - The `vapi_phone_number_id` stores the VAPI phone number ID for integration
-- When a phone number is assigned to an agent, it is also linked to the agent's VAPI assistant
-- The webhook URL is set on Twilio when assigning to an agent to point to our server endpoint
+- The `elevenlabs_phone_number_id` stores the ElevenLabs phone number ID for integration
+- Phone numbers exist in both providers simultaneously, enabling flexibility in agent assignment
+- When a phone number is assigned to an agent, it is linked to the agent's provider-specific assistant (VAPI or ElevenLabs)
+- The webhook URL is set on Twilio to point to our server endpoint (`/api/phone-number/[id]/incoming`)
+- Our server routes calls to the appropriate provider based on the assigned agent's provider
 - The `sms_enabled` status is synced with VAPI when fetching phone numbers
 - When updating `sms_enabled`, the change is synced to both the database and VAPI
 

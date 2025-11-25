@@ -8,12 +8,6 @@ import {
   generateToolName,
   validateToolConfig,
 } from '@/lib/tools/schema-builder'
-import { vapiClient } from '@/lib/vapi/VapiClients'
-import { 
-  convertToolConfigToVapiApiRequest,
-  convertToVapiTransferCallTool,
-  convertToVapiHandoffTool
-} from '@/lib/vapi/tool-converter'
 
 type RouteContext = {
   params: Promise<{ slug: string }>
@@ -65,60 +59,57 @@ export async function POST(request: Request, context: RouteContext) {
       increment++
     }
 
-    // Build function schema and static config for non-native tools
+    // Skip native tools (not implemented for ElevenLabs yet)
     const isNativeTool = config.type === 'transfer_call' || config.type === 'handoff'
-    const functionSchema = isNativeTool ? {} : buildFunctionSchema({ ...config, name: toolName })
-    const staticConfig = isNativeTool ? {} : buildStaticConfig(config)
+    if (isNativeTool) {
+      return NextResponse.json(
+        { error: 'Native tools (handoff, transfer_call) are not supported yet' },
+        { status: 400 }
+      )
+    }
+
+    // Build function schema and static config
+    const functionSchema = buildFunctionSchema({ ...config, name: toolName })
+    const staticConfig = buildStaticConfig(config)
 
     console.log('Creating tool:', {
       name: toolName,
       type: config.type,
       label: config.label,
-      isNativeTool,
-      functionSchema: isNativeTool ? 'N/A (native tool)' : JSON.stringify(functionSchema, null, 2),
+      functionSchema: JSON.stringify(functionSchema, null, 2),
     })
 
-    // Step 1: Create tool in VAPI first
-    let vapiTool: any = null
+    // Step 1: Create tool in ElevenLabs first
+    let elevenLabsTool: any = null
     
     try {
-      // Build VAPI tool data with a temporary placeholder ID (for non-native tools)
+      // Build ElevenLabs tool data with a temporary placeholder ID
       const tempDbId = crypto.randomUUID()
       
-      // Native tools (transfer_call, handoff) are always attached to agents
-      // Non-native tools can be preemptive-only (attach_to_agent = false)
-      const shouldCreateVapiTool = isNativeTool || (config.attach_to_agent !== false)
-      
-      if (shouldCreateVapiTool) {
-        let vapiToolData: any
-        
-        if (config.type === 'transfer_call') {
-          // Use native transfer call tool
-          vapiToolData = convertToVapiTransferCallTool({ ...config, name: toolName })
-        } else if (config.type === 'handoff') {
-          // Use native handoff tool
-          vapiToolData = convertToVapiHandoffTool({ ...config, name: toolName })
-        } else {
-          // Use apiRequest callback pattern for other tools
-          // For non-native tools, functionSchema is guaranteed to be built properly
-          vapiToolData = convertToolConfigToVapiApiRequest(
-            tempDbId,
-            config,
-            functionSchema as any
-          )
-        }
+      // Import ElevenLabs dependencies
+      const { convertToolConfigToElevenLabsWebhook } = await import('@/lib/elevenlabs/tool-converter')
+      const { ElevenLabsClient } = await import('@elevenlabs/elevenlabs-js')
 
-        console.log('Creating VAPI tool:', JSON.stringify(vapiToolData, null, 2))
+      const elevenLabsClient = new ElevenLabsClient({
+        apiKey: process.env.ELEVEN_API_KEY,
+      })
 
-        // Create the tool in VAPI
-        vapiTool = await vapiClient.tools.create(vapiToolData as any)
+      const elevenLabsToolData = convertToolConfigToElevenLabsWebhook(
+        tempDbId,
+        config,
+        functionSchema as any
+      )
 
-        console.log('VAPI tool created:', vapiTool.id)
-      } else {
-        console.log('Skipping VAPI tool creation (preemptive-only tool)')
-      }
+      console.log('Creating ElevenLabs tool:', JSON.stringify(elevenLabsToolData, null, 2))
 
-      // Step 2: Create DB record with the VAPI tool data
+      // Create the tool in ElevenLabs
+      elevenLabsTool = await elevenLabsClient.conversationalAi.tools.create({
+        toolConfig: elevenLabsToolData
+      })
+
+      console.log('ElevenLabs tool created:', elevenLabsTool.id)
+
+      // Step 2: Create DB record with the ElevenLabs tool data
       const { data: tool, error: createError } = await supabase
         .from('tools')
         .insert({
@@ -130,14 +121,13 @@ export async function POST(request: Request, context: RouteContext) {
           function_schema: functionSchema,
           static_config: staticConfig,
           config_metadata: config,
-          // Native tools don't support async or execute_on_call_start
-          async: isNativeTool ? false : (config.async || false),
-          execute_on_call_start: isNativeTool ? false : (config.execute_on_call_start || false),
-          // Native tools are always attachable
-          attach_to_agent: isNativeTool ? true : (config.attach_to_agent !== false),
+          async: config.async || false,
+          execute_on_call_start: config.execute_on_call_start || false,
+          attach_to_agent: config.attach_to_agent !== false,
           organization_id: organizationId,
-          external_tool_id: vapiTool?.id || null, // Can be null for preemptive-only tools
-          data: vapiTool || {}, // Store VAPI tool object if created, empty object otherwise
+          external_tool_id: elevenLabsTool.id,
+          provider: 'elevenlabs',
+          data: elevenLabsTool,
         })
         .select()
         .single()
@@ -145,13 +135,13 @@ export async function POST(request: Request, context: RouteContext) {
       if (createError || !tool) {
         console.error('Error creating tool in DB:', createError)
         
-        // Rollback: Delete the VAPI tool if we created one
-        if (vapiTool?.id) {
+        // Rollback: Delete the ElevenLabs tool
+        if (elevenLabsTool?.id) {
           try {
-            await vapiClient.tools.delete(vapiTool.id)
-            console.log('Rolled back VAPI tool:', vapiTool.id)
+            await elevenLabsClient.conversationalAi.tools.delete(elevenLabsTool.id)
+            console.log('Rolled back ElevenLabs tool:', elevenLabsTool.id)
           } catch (rollbackError) {
-            console.error('Error rolling back VAPI tool:', rollbackError)
+            console.error('Error rolling back ElevenLabs tool:', rollbackError)
           }
         }
 
@@ -166,13 +156,17 @@ export async function POST(request: Request, context: RouteContext) {
     } catch (error) {
       console.error('Error in tool creation:', error)
 
-      // If we have a VAPI tool, try to delete it
-      if (vapiTool?.id) {
+      // If we have an ElevenLabs tool, try to delete it
+      if (elevenLabsTool?.id) {
         try {
-          await vapiClient.tools.delete(vapiTool.id)
-          console.log('Rolled back VAPI tool:', vapiTool.id)
+          const { ElevenLabsClient } = await import('@elevenlabs/elevenlabs-js')
+          const elevenLabsClient = new ElevenLabsClient({
+            apiKey: process.env.ELEVEN_API_KEY,
+          })
+          await elevenLabsClient.conversationalAi.tools.delete(elevenLabsTool.id)
+          console.log('Rolled back ElevenLabs tool:', elevenLabsTool.id)
         } catch (rollbackError) {
-          console.error('Error rolling back VAPI tool:', rollbackError)
+          console.error('Error rolling back ElevenLabs tool:', rollbackError)
         }
       }
 

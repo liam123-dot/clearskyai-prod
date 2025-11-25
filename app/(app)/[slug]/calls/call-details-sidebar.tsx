@@ -74,21 +74,37 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
     existingAnnotation?: CallAnnotation | null
   }>({ level: 'call' })
 
-  const duration = getCallDuration(call.data)
+  const duration = getCallDuration(call.data, call.provider)
   const callerNumber = getCallerNumber(call)
   const calledNumber = getCalledNumber(call)
-  const assistantName = getAssistantName(call.data)
+  const assistantName = getAssistantName(call.data, call.provider)
   const routingJourney = getRoutingJourney(call)
   const eventSequence = call.event_sequence || []
-  const recordingUrl = getRecordingUrl(call.data)
-  const summary = getSummary(call.data)
-  const endedReason = getEndedReason(call.data)
+  const recordingUrl = getRecordingUrl(call.data, call.provider)
+  const summary = getSummary(call.data, call.provider)
+  const endedReason = getEndedReason(call.data, call.provider)
   const callDate = new Date(call.created_at)
   const startedAt = call.data?.startedAt ? new Date(call.data.startedAt) : null
   const endedAt = call.data?.endedAt ? new Date(call.data.endedAt) : null
 
   // Process costs data for pie chart
-  const costs = call.data?.costs || []
+  let costs = call.data?.costs || []
+  
+  // Calculate ElevenLabs costs if missing (fallback for calls created before cost calculation was added)
+  if (call.provider === 'elevenlabs' && (!costs || costs.length === 0)) {
+    const credits = call.data?.metadata?.cost
+    if (credits && credits > 0) {
+      // Use same default as server-side: $118.8 per million characters
+      const VOICE_COST_PER_MILLION_CHARACTERS = 118.8
+      const costUSD = (credits / 1_000_000) * VOICE_COST_PER_MILLION_CHARACTERS
+      
+      costs = [{
+        type: 'elevenlabs',
+        cost: costUSD,
+        credits: credits
+      }]
+    }
+  }
   
   // Aggregate costs by type
   const aggregatedCosts = costs
@@ -299,7 +315,12 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
 
           {/* Call Information */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold">Call Information</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Call Information</h3>
+              <Badge variant="outline" className="capitalize">
+                {call.provider === 'elevenlabs' ? 'ElevenLabs' : 'Vapi'}
+              </Badge>
+            </div>
             
             <div className="bg-muted/50 rounded-lg p-4 space-y-4">
               <div className="flex items-center justify-between">
@@ -618,11 +639,12 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
           )}
 
           {/* Conversation */}
-          {call.data?.artifact?.messages && call.data.artifact.messages.length > 0 && (
+          {((call.data?.artifact?.messages && call.data.artifact.messages.length > 0) || (call.provider === 'elevenlabs' && call.data?.transcript && call.data.transcript.length > 0)) && (
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Conversation</h3>
               <div className="space-y-3">
-                {call.data.artifact.messages.map((msg: VapiMessage, index: number) => {
+                {/* Vapi messages */}
+                {call.provider !== 'elevenlabs' && call.data?.artifact?.messages && call.data.artifact.messages.map((msg: VapiMessage, index: number) => {
                   if (msg.role === 'system') return null
                   
                   const isBot = msg.role === 'bot'
@@ -847,6 +869,66 @@ export function CallDetailsSidebar({ call, open, onClose, isAdmin = false }: Cal
                           </div>
                         </div>
                         <p className="text-sm leading-relaxed">{messageContent}</p>
+                        {transcriptAnnotation && (
+                          <div className="mt-3 pt-3 border-t border-border">
+                            <div className="text-xs text-muted-foreground space-y-1">
+                              <div className="font-semibold">{transcriptAnnotation.issue_category}</div>
+                              <div>{transcriptAnnotation.note}</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+                
+                {/* ElevenLabs transcript */}
+                {call.provider === 'elevenlabs' && call.data?.transcript && Array.isArray(call.data.transcript) && call.data.transcript.map((item: any, index: number) => {
+                  const role = item.output_role || item.role || 'unknown'
+                  const message = item.message || item.text || ''
+                  const isAgent = role === 'agent'
+                  const transcriptAnnotation = getAnnotationForTranscriptItem(annotations, index)
+                  
+                  return (
+                    <div key={index} className="group relative">
+                      <div 
+                        className={`rounded-lg p-4 ${
+                          isAgent 
+                            ? 'bg-primary/5 border border-primary/10' 
+                            : 'bg-muted/50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-semibold uppercase tracking-wider ${
+                              isAgent ? 'text-primary' : 'text-foreground'
+                            }`}>
+                              {isAgent ? 'Agent' : role === 'user' ? 'User' : role}
+                            </span>
+                            {transcriptAnnotation && (
+                              <Badge variant="outline" className="text-xs">
+                                <IconAlertCircle className="size-3 mr-1" />
+                                Annotated
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {item.time_in_call_secs !== undefined && (
+                              <span className="text-muted-foreground text-xs font-mono">
+                                {formatDuration(item.time_in_call_secs)}
+                              </span>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 p-0"
+                              onClick={() => openTranscriptAnnotationDialog(index, isAgent ? 'Agent Message' : 'User Message', transcriptAnnotation)}
+                            >
+                              <IconPencil className="size-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        <p className="text-sm leading-relaxed">{message}</p>
                         {transcriptAnnotation && (
                           <div className="mt-3 pt-3 border-t border-border">
                             <div className="text-xs text-muted-foreground space-y-1">

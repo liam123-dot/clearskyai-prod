@@ -67,7 +67,7 @@ export async function GET(
     const callData = call as Call
     
     // Get call duration and costs
-    const durationSeconds = getCallDuration(callData.data)
+    const durationSeconds = getCallDuration(callData.data, callData.provider)
     const durationMinutes = durationSeconds / 60
     const costs = (callData.data as any)?.costs || []
     const totalCostUSD = costs.reduce((sum: number, item: any) => sum + (item.cost || 0), 0)

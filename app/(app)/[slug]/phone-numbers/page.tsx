@@ -1,5 +1,5 @@
 import { getPhoneNumbersByOrganization } from '@/lib/phone-numbers'
-import { getAgentsByOrganization } from '@/lib/vapi/agents'
+import { getAgentsByOrganization } from '@/lib/agents'
 import { createServiceClient } from '@/lib/supabase/server'
 import { ImportTwilioDialog } from '@/components/phone-numbers/import-twilio-dialog'
 // import { BuyNumberDialog } from '@/components/phone-numbers/buy-number-dialog'
@@ -36,18 +36,13 @@ export default async function OrganizationPhoneNumbersPage({ params }: PageProps
     notFound()
   }
 
-  const [phoneNumbers, agentsData] = await Promise.all([
+  const [phoneNumbers, agents] = await Promise.all([
     getPhoneNumbersByOrganization(org.id),
     getAgentsByOrganization(org.id),
   ])
 
-  // Map agents to include organization_id for the component
-  const agents = agentsData.map(agent => ({
-    id: agent.id,
-    vapi_assistant_id: agent.vapi_assistant_id,
-    organization_id: agent.organization.id,
-    vapiAssistant: { name: agent.vapiAssistant.name }
-  }))
+  // UnifiedAgent type already includes both Vapi and ElevenLabs agents
+  // No mapping needed - pass agents directly
 
   return (
     <div className="space-y-6">

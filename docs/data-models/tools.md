@@ -2,7 +2,7 @@
 
 ## Overview
 
-The `tools` table stores custom tools that can be attached to agents. Tools enable agents to perform actions like sending SMS messages, making API requests, or executing Pipedream workflows. All tools are created as VAPI `apiRequest` tools that callback to our execution endpoint.
+The `tools` table stores custom tools that can be attached to agents. Tools enable agents to perform actions like sending SMS messages, making API requests, or executing Pipedream workflows. Tools are created in either Vapi or ElevenLabs based on the agent's provider, and all tools callback to our execution endpoint for processing.
 
 ## Table Schema
 
@@ -14,6 +14,7 @@ CREATE TABLE tools (
   description TEXT,
   organization_id UUID NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
   external_tool_id TEXT UNIQUE, -- NULL for preemptive-only tools
+  provider TEXT NOT NULL DEFAULT 'vapi' CHECK (provider IN ('vapi', 'elevenlabs')),
   type TEXT NOT NULL CHECK (type IN ('query', 'sms', 'apiRequest', 'transferCall', 'externalApp', 'pipedream_action', 'transfer_call')),
   function_schema JSONB NOT NULL,
   static_config JSONB,
@@ -36,7 +37,8 @@ CREATE TABLE tools (
 - **label**: User-friendly display name
 - **description**: Description of when and how the AI should use this tool
 - **organization_id**: The organization that owns this tool
-- **external_tool_id**: The VAPI tool ID (returned from VAPI API). NULL for preemptive-only tools that cannot be attached to agents.
+- **external_tool_id**: The provider's tool ID (from Vapi or ElevenLabs API). NULL for preemptive-only tools that cannot be attached to agents.
+- **provider**: The AI provider platform ('vapi' or 'elevenlabs'). Determines which API is used for tool creation and management. Defaults to 'vapi'.
 
 ### Tool Type
 
@@ -167,6 +169,37 @@ Makes custom HTTP requests with AI-provided parameters.
 Specialized tool for querying knowledge bases (e.g., estate agent properties).
 
 **Note:** Created automatically when attaching certain knowledge bases to agents.
+
+## Multi-Provider Support
+
+The tools system supports both Vapi and ElevenLabs providers. The provider is determined by the agent the tool is being created for:
+
+### Vapi Tools
+- Created via Vapi API: `POST /v1/tool`
+- Use `apiRequest` type with webhook callback to our execution endpoint
+- Attached to Vapi assistants via `model.toolIds` array
+- Removed from assistants by updating `model.toolIds` array
+- Deleted via Vapi API: `DELETE /v1/tool/{toolId}`
+
+### ElevenLabs Tools
+- Created via ElevenLabs API: `POST /v1/convai/tools`
+- Use `webhook` type with similar schema to Vapi
+- Attached to ElevenLabs agents via `conversationConfig.agent.toolIds` array
+- Removed from agents by updating `conversationConfig.agent.toolIds` array
+- Deleted via ElevenLabs API: `DELETE /v1/convai/tools/{toolId}`
+
+### Tool Compatibility
+Both providers use webhook-style tools that call back to the same execution endpoint (`/api/tools/{id}/execute`). This means:
+- The same execution logic works for both providers
+- Tool configuration and behavior is consistent across providers
+- Knowledge base query tools work the same way for both Vapi and ElevenLabs agents
+
+### Provider Detection
+When a tool is created for an agent:
+1. Query the agent's `provider` field from the database
+2. Route to the appropriate provider's API (Vapi or ElevenLabs)
+3. Store the tool with matching `provider` field
+4. The tool is then bound to that provider for its lifetime
 
 ## Tool Creation Flow
 

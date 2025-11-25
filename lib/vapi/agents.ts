@@ -12,7 +12,7 @@ export interface AgentOrganization {
 
 export interface AgentWithDetails {
     id: string | null;
-    vapi_assistant_id: string;
+    external_agent_id: string;
     created_at: string | null;
     updated_at: string | null;
     organization: AgentOrganization | null;
@@ -22,7 +22,7 @@ export interface AgentWithDetails {
 
 export interface AssignedAgent {
     id: string;
-    vapi_assistant_id: string;
+    external_agent_id: string;
     created_at: string;
     updated_at: string;
     organization: AgentOrganization;
@@ -53,7 +53,7 @@ export async function getAgents(): Promise<AgentWithDetails[]> {
         .from('agents')
         .select(`
             id,
-            vapi_assistant_id,
+            external_agent_id,
             created_at,
             updated_at,
             organization:organisations!organization_id (
@@ -63,9 +63,10 @@ export async function getAgents(): Promise<AgentWithDetails[]> {
                 permissions
             )
         `)
+        .eq('provider', 'vapi')
         .returns<Array<{
             id: string;
-            vapi_assistant_id: string;
+            external_agent_id: string;
             created_at: string;
             updated_at: string;
             organization: AgentOrganization | null;
@@ -77,7 +78,7 @@ export async function getAgents(): Promise<AgentWithDetails[]> {
 
     // Create a map of vapi_assistant_id to database agent record
     const dbAgentMap = new Map(
-        (dbAgents || []).map(agent => [agent.vapi_assistant_id, agent])
+        (dbAgents || []).map(agent => [agent.external_agent_id, agent])
     );
 
     // Map all VAPI assistants and include organization info if assigned
@@ -86,7 +87,7 @@ export async function getAgents(): Promise<AgentWithDetails[]> {
         
         return {
             id: dbAgent?.id || null,
-            vapi_assistant_id: vapiAssistant.id,
+            external_agent_id: vapiAssistant.id,
             created_at: dbAgent?.created_at || null,
             updated_at: dbAgent?.updated_at || null,
             organization: dbAgent?.organization || null,
@@ -108,7 +109,7 @@ export async function getAgentsByOrganization(organizationId: string): Promise<A
         .from('agents')
         .select(`
             id,
-            vapi_assistant_id,
+            external_agent_id,
             created_at,
             updated_at,
             organization:organisations!organization_id (
@@ -119,9 +120,10 @@ export async function getAgentsByOrganization(organizationId: string): Promise<A
             )
         `)
         .eq('organization_id', organizationId)
+        .eq('provider', 'vapi')
         .returns<Array<{
             id: string;
-            vapi_assistant_id: string;
+            external_agent_id: string;
             created_at: string;
             updated_at: string;
             organization: AgentOrganization | null;
@@ -143,11 +145,11 @@ export async function getAgentsByOrganization(organizationId: string): Promise<A
                 return null;
             }
 
-            const vapiAssistant: Vapi.Assistant = await vapiClient.assistants.get(dbAgent.vapi_assistant_id);
+            const vapiAssistant: Vapi.Assistant = await vapiClient.assistants.get(dbAgent.external_agent_id);
             
             return {
                 id: dbAgent.id,
-                vapi_assistant_id: dbAgent.vapi_assistant_id,
+                external_agent_id: dbAgent.external_agent_id,
                 created_at: dbAgent.created_at,
                 updated_at: dbAgent.updated_at,
                 organization: dbAgent.organization,
@@ -156,7 +158,7 @@ export async function getAgentsByOrganization(organizationId: string): Promise<A
             };
         } catch (error) {
             // include name
-            console.error(`Failed to load VAPI assistant ${dbAgent.vapi_assistant_id}, with name:`, error);
+            console.error(`Failed to load VAPI assistant ${dbAgent.external_agent_id}, with name:`, error);
             // If VAPI assistant is not found or error, skip this agent
             return null;
         }
@@ -177,7 +179,7 @@ export async function getAgentById(agentId: string): Promise<AgentWithDetails | 
         .from('agents')
         .select(`
             id,
-            vapi_assistant_id,
+            external_agent_id,
             created_at,
             updated_at,
             organization:organisations!organization_id (
@@ -188,9 +190,10 @@ export async function getAgentById(agentId: string): Promise<AgentWithDetails | 
             )
         `)
         .eq('id', agentId)
+        .eq('provider', 'vapi')
         .single<{
             id: string;
-            vapi_assistant_id: string;
+            external_agent_id: string;
             created_at: string;
             updated_at: string;
             organization: AgentOrganization | null;
@@ -202,11 +205,11 @@ export async function getAgentById(agentId: string): Promise<AgentWithDetails | 
 
     try {
         // Fetch the full Vapi assistant details
-        const vapiAssistant: Vapi.Assistant = await vapiClient.assistants.get(dbAgent.vapi_assistant_id);
+        const vapiAssistant: Vapi.Assistant = await vapiClient.assistants.get(dbAgent.external_agent_id);
         
         return {
             id: dbAgent.id,
-            vapi_assistant_id: dbAgent.vapi_assistant_id,
+            external_agent_id: dbAgent.external_agent_id,
             created_at: dbAgent.created_at,
             updated_at: dbAgent.updated_at,
             organization: dbAgent.organization,
@@ -214,9 +217,29 @@ export async function getAgentById(agentId: string): Promise<AgentWithDetails | 
             vapiAssistant
         };
     } catch (error) {
-        console.error(`Failed to load VAPI assistant ${dbAgent.vapi_assistant_id}:`, error);
+        console.error(`Failed to load VAPI assistant ${dbAgent.external_agent_id}:`, error);
         return null;
     }
+}
+
+/**
+ * Gets a Vapi agent by external agent ID (from Vapi API)
+ * @param externalAgentId - The Vapi assistant ID
+ */
+export async function getVapiAgentById(externalAgentId: string): Promise<Vapi.Assistant | null> {
+    const vapiAssistant = await vapiClient.assistants.get(externalAgentId);
+    return vapiAssistant;
+}
+
+/**
+ * Updates a Vapi agent's name by external agent ID
+ * @param externalAgentId - The Vapi assistant ID
+ * @param name - The new name for the agent
+ */
+export async function updateVapiAgentName(externalAgentId: string, name: string): Promise<void> {
+    await vapiClient.assistants.update(externalAgentId, {
+        name: name.trim(),
+    });
 }
 
 /**
@@ -377,23 +400,24 @@ export async function updateAgent(
     // Fetch the agent from database to get vapi_assistant_id
     const { data: dbAgent, error } = await supabase
         .from('agents')
-        .select('vapi_assistant_id')
+        .select('external_agent_id')
         .eq('id', agentId)
-        .single<{ vapi_assistant_id: string }>();
+        .eq('provider', 'vapi')
+        .single<{ external_agent_id: string }>();
 
     if (error || !dbAgent) {
         throw new Error(`Failed to find agent with ID ${agentId}: ${error?.message || 'Agent not found'}`);
     }
 
-    console.log('Fetched VAPI assistant ID:', dbAgent.vapi_assistant_id)
+    console.log('Fetched external agent ID:', dbAgent.external_agent_id)
 
     // Call updateAgentAssistant with the fetched vapi_assistant_id
-    await updateAgentAssistant(dbAgent.vapi_assistant_id, updates);
+    await updateAgentAssistant(dbAgent.external_agent_id, updates);
 }
 
 /**
  * Assigns or unassigns an agent to/from an organization
- * @param vapi_assistant_id - The VAPI assistant ID
+ * @param external_agent_id - The external agent ID
  * @param organization_id - The organization ID to assign to, or null to unassign
  * @returns Object with success status, assigned boolean, and agent data if assigned
  */

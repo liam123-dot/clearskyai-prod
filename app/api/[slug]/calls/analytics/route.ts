@@ -213,7 +213,7 @@ function groupCallsByTimePeriod(
     const callData = call.data as any
     const durationSeconds = callData?.roundedDurationSeconds !== undefined
       ? callData.roundedDurationSeconds
-      : getCallDuration(call.data)
+      : getCallDuration(call.data, call.provider)
     const durationMinutes = durationSeconds > 0 ? durationSeconds / 60 : 0
     
     group.totalMinutes += durationMinutes
@@ -449,7 +449,7 @@ async function calculateTotals(calls: Call[], supabase: Awaited<ReturnType<typeo
       roundedDurationSeconds = callData.roundedDurationSeconds
     } else {
       // Calculate by rounding UP durationSeconds
-      const durationSeconds = getCallDuration(call.data)
+      const durationSeconds = getCallDuration(call.data, call.provider)
       roundedDurationSeconds = durationSeconds > 0 ? Math.ceil(durationSeconds) : 0
       
       // Mark this call for update

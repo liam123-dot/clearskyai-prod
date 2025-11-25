@@ -1,8 +1,9 @@
-import { getAgentById } from "@/lib/vapi/agents"
+import { getAgentById } from "@/lib/agents"
 import { notFound } from "next/navigation"
-import { VoiceWidget } from "@/components/vapi/voice-widget"
 import { EmbedCodeSection } from "@/components/vapi/embed-code-section"
-import { Card } from "@/components/ui/card"
+import { WidgetPreview } from "@/components/agents/widget-preview"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertCircle } from "lucide-react"
 
 interface WebsiteWidgetPageProps {
   params: Promise<{ slug: string; id: string }>
@@ -17,18 +18,25 @@ export default async function WebsiteWidgetPage({ params }: WebsiteWidgetPagePro
     notFound()
   }
 
-  const vapiPublishableKey = process.env.NEXT_PUBLIC_VAPI_PUBLISHABLE_KEY
-  const assistantId = agent.vapi_assistant_id
-  const agentName = agent.vapiAssistant.name || "Voice Assistant"
-  const agentDescription = "Tap to start voice chat"
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || ""
 
-  if (!vapiPublishableKey) {
+  // Only ElevenLabs agents support widget embed
+  if (agent.provider !== 'elevenlabs') {
     return (
       <div className="space-y-6">
-        <div className="text-destructive">
-          Vapi publishable key is not configured. Please set NEXT_PUBLIC_VAPI_PUBLISHABLE_KEY environment variable.
+        <div className="space-y-2">
+          <h2 className="text-2xl font-semibold">Website Widget</h2>
+          <p className="text-muted-foreground">
+            Embed a compact voice assistant button on your website.
+          </p>
         </div>
+        
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Website widget is only available for ElevenLabs agents. This agent uses {agent.provider}.
+          </AlertDescription>
+        </Alert>
       </div>
     )
   }
@@ -45,13 +53,7 @@ export default async function WebsiteWidgetPage({ params }: WebsiteWidgetPagePro
       
       <EmbedCodeSection agentId={id} baseUrl={baseUrl} />
       
-            <VoiceWidget
-              assistantId={assistantId}
-              vapiPublishableKey={vapiPublishableKey}
-              agentName={agentName}
-              agentDescription={agentDescription}
-            />
+      <WidgetPreview agentId={id} baseUrl={baseUrl} />
     </div>
   )
 }
-

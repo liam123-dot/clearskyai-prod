@@ -1,6 +1,6 @@
 # Agents Table
 
-The `agents` table stores AI agents that are associated with organizations and synced with VAPI assistants.
+The `agents` table stores AI agents that are associated with organizations and synced with external AI providers (VAPI or ElevenLabs).
 
 ## Schema
 
@@ -8,14 +8,15 @@ The `agents` table stores AI agents that are associated with organizations and s
 |--------|------|-------------|-------------|
 | `id` | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | Internal database ID |
 | `organization_id` | UUID | REFERENCES organisations(id) ON DELETE CASCADE | Organization that owns this agent |
-| `vapi_assistant_id` | TEXT | UNIQUE, NOT NULL | VAPI assistant ID |
+| `external_agent_id` | TEXT | UNIQUE, NOT NULL | External agent ID from the provider (VAPI or ElevenLabs) |
+| `provider` | TEXT | NOT NULL, DEFAULT 'eleven_labs', CHECK IN ('vapi', 'eleven_labs') | AI provider: vapi or eleven_labs |
 | `created_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Timestamp when the record was created |
 | `updated_at` | TIMESTAMP WITH TIME ZONE | DEFAULT NOW() | Timestamp when the record was last updated |
 
 ## Indexes
 
 - `idx_agents_organization_id` on `organization_id` - Fast lookups by organization
-- `idx_agents_vapi_assistant_id` on `vapi_assistant_id` - Fast lookups by VAPI assistant ID
+- `idx_agents_external_agent_id` on `external_agent_id` - Fast lookups by external agent ID
 
 ## Triggers
 
@@ -24,9 +25,10 @@ The `agents` table stores AI agents that are associated with organizations and s
 ## Usage Notes
 
 - Each agent is associated with one organization via `organization_id`
-- The `vapi_assistant_id` is unique across all agents and maps to the VAPI platform
+- The `external_agent_id` is unique across all agents and maps to the external AI provider (VAPI or ElevenLabs)
+- The `provider` field specifies which AI provider the agent uses ('vapi' or 'eleven_labs')
 - When an organization is deleted, their agents are automatically deleted (CASCADE)
-- Agents are synchronized with VAPI assistants
+- Agents are synchronized with their respective external AI provider assistants
 
 ## Example Queries
 

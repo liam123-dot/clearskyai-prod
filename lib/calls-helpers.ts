@@ -2,6 +2,29 @@
 // These are client-safe and don't use any server-side code
 
 import { Vapi } from "@vapi-ai/server-sdk"
+import { 
+  getCallDurationVapi, 
+  getCallerNumberVapi, 
+  getCalledNumberVapi,
+  getAssistantNameVapi,
+  getRecordingUrlVapi,
+  getSummaryVapi,
+  getEndedReasonVapi,
+  getTranscriptVapi,
+  getTranscriptTextVapi,
+  type VapiMessage as VapiMessageType
+} from "@/lib/vapi/calls"
+import {
+  getCallDurationElevenLabs,
+  getCallerNumberElevenLabs,
+  getCalledNumberElevenLabs,
+  getAssistantNameElevenLabs,
+  getRecordingUrlElevenLabs,
+  getSummaryElevenLabs,
+  getEndedReasonElevenLabs,
+  getTranscriptElevenLabs,
+  getTranscriptTextElevenLabs
+} from "@/lib/elevenlabs/calls"
 
 export interface Call {
   id: string
@@ -12,16 +35,17 @@ export interface Call {
   caller_number?: string | null
   called_number?: string | null
   routing_status?: string | null
+  provider?: string
   event_sequence?: Array<{
     type: string
     timestamp: string
     details: Record<string, unknown>
   }>
   created_at: string
-  data: Vapi.ServerMessageEndOfCallReport
+  data: any // Can be Vapi or ElevenLabs data
 }
 
-export type VapiMessage = Vapi.Artifact.Messages.Item;
+export type VapiMessage = VapiMessageType;
 
 export interface CallAnnotation {
   id: string
@@ -42,46 +66,101 @@ export function formatDuration(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
-export function getCallDuration(callData: any): number {
-  return callData?.durationSeconds || callData?.call?.duration || 0
+/**
+ * Check if a call is from ElevenLabs
+ */
+export function isElevenLabsCall(call: Call): boolean {
+  return call.provider === 'elevenlabs'
 }
 
+/**
+ * Get call duration - dispatches to provider-specific implementation
+ */
+export function getCallDuration(callData: any, provider?: string): number {
+  if (provider === 'elevenlabs') {
+    return getCallDurationElevenLabs(callData)
+  }
+  return getCallDurationVapi(callData)
+}
+
+/**
+ * Get caller number - dispatches to provider-specific implementation
+ */
 export function getCallerNumber(call: Call): string {
   // Prefer stored caller_number, fallback to extracting from data
   if (call.caller_number) {
     return call.caller_number
   }
-  const callData = call.data
-  return callData?.customer?.number || callData?.call?.customer?.number || 'Unknown'
+  
+  if (isElevenLabsCall(call)) {
+    return getCallerNumberElevenLabs(call.data)
+  }
+  return getCallerNumberVapi(call.data)
 }
 
+/**
+ * Get called number - dispatches to provider-specific implementation
+ */
 export function getCalledNumber(call: Call): string {
   // Prefer stored called_number, fallback to extracting from data
   if (call.called_number) {
     return call.called_number
   }
-  const callData = call.data as any
-  return callData?.phoneNumber?.number || callData?.call?.phoneNumber?.number || 'Unknown'
+  
+  if (isElevenLabsCall(call)) {
+    return getCalledNumberElevenLabs(call.data)
+  }
+  return getCalledNumberVapi(call.data)
 }
 
-export function getAssistantName(callData: any): string {
-  return callData?.assistant?.name || 'Unknown Assistant'
+/**
+ * Get assistant name - dispatches to provider-specific implementation
+ */
+export function getAssistantName(callData: any, provider?: string): string {
+  if (provider === 'elevenlabs') {
+    return getAssistantNameElevenLabs(callData)
+  }
+  return getAssistantNameVapi(callData)
 }
 
-export function getRecordingUrl(callData: any): string | null {
-  return callData?.recordingUrl || callData?.stereoRecordingUrl || null
+/**
+ * Get recording URL - dispatches to provider-specific implementation
+ */
+export function getRecordingUrl(callData: any, provider?: string): string | null {
+  if (provider === 'elevenlabs') {
+    return getRecordingUrlElevenLabs(callData)
+  }
+  return getRecordingUrlVapi(callData)
 }
 
-export function getTranscript(callData: any): string {
-  return callData?.transcript || callData?.artifact?.transcript || ''
+/**
+ * Get transcript as plain text - dispatches to provider-specific implementation
+ */
+export function getTranscript(callData: any, provider?: string): string {
+  if (provider === 'elevenlabs') {
+    return getTranscriptTextElevenLabs(callData)
+  }
+  return getTranscriptTextVapi(callData)
 }
 
-export function getSummary(callData: any): string {
-  return callData?.summary || callData?.analysis?.summary || ''
+/**
+ * Get summary - dispatches to provider-specific implementation
+ */
+export function getSummary(callData: any, provider?: string): string {
+  if (provider === 'elevenlabs') {
+    return getSummaryElevenLabs(callData)
+  }
+  return getSummaryVapi(callData)
 }
 
-export function getEndedReason(callData: any): string {
-  return callData?.endedReason || callData?.call?.status || 'Unknown'
+/**
+ * Get ended reason - dispatches to provider-specific implementation
+ */
+export function getEndedReason(callData: any, provider?: string): string {
+  if (provider === 'elevenlabs') {
+    return getEndedReasonElevenLabs(callData)
+  }
+  return getEndedReasonVapi(callData)
 }
 
 export function getRoutingJourney(call: Call): {

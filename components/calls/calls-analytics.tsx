@@ -38,8 +38,9 @@ interface CallsAnalyticsProps {
 
 interface Agent {
   id: string
-  vapi_assistant_id: string
-  vapiAssistant: {
+  external_agent_id?: string
+  name?: string
+  vapiAssistant?: {
     name: string
   }
 }
@@ -809,7 +810,7 @@ export function CallsAnalytics({ slug, isAdmin = false, organizations = [] }: Ca
                         htmlFor={`agent-${agent.id}`}
                         className="text-sm font-normal cursor-pointer flex-1"
                       >
-                        {agent.vapiAssistant.name}
+                        {agent.name || agent.vapiAssistant?.name || 'Unknown Agent'}
                       </Label>
                     </div>
                   ))

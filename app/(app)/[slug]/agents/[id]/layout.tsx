@@ -1,4 +1,4 @@
-import { getAgentById } from "@/lib/vapi/agents"
+import { getAgentById, UnifiedAgent } from "@/lib/agents"
 import { notFound } from "next/navigation"
 import { ExternalLink, Phone, Clock, MessageSquare } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -31,7 +31,9 @@ export default async function AgentLayout({ params, children }: AgentLayoutProps
     notFound()
   }
 
-  const vapiDashboardUrl = `https://dashboard.vapi.ai/assistants/${agent.vapi_assistant_id}`
+  // Provider-specific dashboard URLs
+  const vapiDashboardUrl = `https://dashboard.vapi.ai/assistants/${agent.externalAgentId}`
+  const elevenLabsDashboardUrl = `https://elevenlabs.io/app/agents/agents/${agent.externalAgentId}`
   
   // Fetch phone numbers attached to this agent
   const phoneNumbers = agent.id ? await getPhoneNumbersByAgent(agent.id) : []
@@ -53,7 +55,7 @@ export default async function AgentLayout({ params, children }: AgentLayoutProps
             <EditableAgentName
               agentId={id}
               slug={slug}
-              initialName={agent.vapiAssistant.name || "Unnamed Agent"}
+              initialName={agent.name}
               variant="h1"
             />
             {/* <p className="text-muted-foreground mt-2">
@@ -61,15 +63,27 @@ export default async function AgentLayout({ params, children }: AgentLayoutProps
             </p> */}
           </div>
           <div className="flex items-center gap-2">
-            <TestAgentButtonWrapper slug={slug} agentId={id} assistantId={agent.vapi_assistant_id} />
+            {agent.provider === 'vapi' && (
+              <TestAgentButtonWrapper slug={slug} agentId={id} assistantId={agent.externalAgentId} />
+            )}
             {isAdmin && (
               <>
-                <Button asChild variant="outline">
-                  <Link href={vapiDashboardUrl} target="_blank" rel="noopener noreferrer">
-                    View in Vapi
-                    <ExternalLink className="ml-2 h-4 w-4" />
-                  </Link>
-                </Button>
+                {agent.provider === 'vapi' && (
+                  <Button asChild variant="outline">
+                    <Link href={vapiDashboardUrl} target="_blank" rel="noopener noreferrer">
+                      View in Vapi
+                      <ExternalLink className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                )}
+                {agent.provider === 'elevenlabs' && (
+                  <Button asChild variant="outline">
+                    <Link href={elevenLabsDashboardUrl} target="_blank" rel="noopener noreferrer">
+                      View in ElevenLabs
+                      <ExternalLink className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                )}
                 <PromptEditorButton agentId={id} slug={slug} />
               </>
             )}
@@ -143,7 +157,7 @@ export default async function AgentLayout({ params, children }: AgentLayoutProps
           </div>
         )}
         
-        <AgentNav slug={slug} agentId={id} />
+        <AgentNav slug={slug} agentId={id} provider={agent.provider} />
         
         {children}
       </div>

@@ -1,5 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card"
-import { getAgents } from "@/lib/vapi/agents"
+import { getAgents } from "@/lib/agents"
 import { getOrganizations } from "@/lib/organizations"
 import {
   Table,
@@ -65,7 +65,7 @@ export default async function AdminAgentsPage() {
               </EmptyMedia>
               <EmptyTitle>No Agents Yet</EmptyTitle>
               <EmptyDescription>
-                No VAPI agents found. Create an agent in VAPI to get started.
+                No agents found. Create an agent to get started.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>

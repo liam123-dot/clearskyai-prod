@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAgentById } from '@/lib/vapi/agents'
+import { getAgentById, updateAgentName } from '@/lib/agents'
 import { getAuthSession } from '@/lib/auth'
-import { vapiClient } from '@/lib/vapi/VapiClients'
 import { createServiceClient } from '@/lib/supabase/server'
 
 export async function GET(
@@ -18,7 +17,7 @@ export async function GET(
       return NextResponse.json({ name: null }, { status: 404 })
     }
     
-    return NextResponse.json({ name: agent.vapiAssistant.name || 'Unnamed Agent' })
+    return NextResponse.json({ name: agent.name || 'Unnamed Agent' })
   } catch (error) {
     console.error('Error fetching agent name:', error)
     return NextResponse.json({ name: null }, { status: 500 })
@@ -45,10 +44,10 @@ export async function PATCH(
 
     const supabase = await createServiceClient()
 
-    // Get the agent
+    // Get the agent to verify ownership
     const { data: agent, error: agentError } = await supabase
       .from('agents')
-      .select('vapi_assistant_id, organization_id')
+      .select('organization_id')
       .eq('id', agentId)
       .single()
 
@@ -67,10 +66,8 @@ export async function PATCH(
       )
     }
 
-    // Update the assistant name in Vapi
-    await vapiClient.assistants.update(agent.vapi_assistant_id, {
-      name: name.trim(),
-    })
+    // Update the agent name (works for both Vapi and ElevenLabs)
+    await updateAgentName(agentId, name.trim())
 
     return NextResponse.json({ success: true, name: name.trim() })
   } catch (error) {

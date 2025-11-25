@@ -1,5 +1,5 @@
 
-import { getAgentById } from "@/lib/vapi/agents"
+import { getAgentById } from "@/lib/agents"
 import { notFound, redirect } from "next/navigation"
 import { AgentPromptsForm } from "@/components/agents/agent-prompts-form"
 import type { Metadata } from "next"
@@ -13,9 +13,9 @@ export async function generateMetadata({ params }: AgentPageProps): Promise<Meta
   
   try {
     const agent = await getAgentById(id)
-    if (agent?.vapiAssistant?.name) {
+    if (agent?.name) {
       return {
-        title: agent.vapiAssistant.name,
+        title: agent.name,
       }
     }
   } catch (error) {
@@ -36,22 +36,11 @@ export default async function AgentConfigurationPage({ params }: { params: Promi
     redirect(`/${slug}/agents`)
   }
 
-  // Extract firstMessage
-  const firstMessage = (agent.vapiAssistant.firstMessage as string) || ''
-
-  // Extract prompt from system message
-  const prompt = agent.vapiAssistant.model?.messages?.find(
-    (msg: any) => msg.role === 'system'
-  )?.content || ''
-
-  // Extract messagePlan
-  const messagePlan = (agent.vapiAssistant as any).messagePlan as {
-    idleMessages?: string[]
-    idleTimeoutSeconds?: number
-  } | undefined
-
-  const initialIdleMessages = messagePlan?.idleMessages || []
-  const initialIdleTimeoutSeconds = messagePlan?.idleTimeoutSeconds ?? 7.5
+  // Extract data from unified agent model
+  const firstMessage = agent.firstMessage || ''
+  const prompt = agent.systemPrompt || ''
+  const initialIdleMessages = agent.idleMessages || []
+  const initialIdleTimeoutSeconds = agent.idleTimeoutSeconds ?? 7.5
 
   return (
     <div className="space-y-6">

@@ -8,12 +8,6 @@ import {
   generateToolName,
   validateToolConfig,
 } from '@/lib/tools/schema-builder'
-import { vapiClient } from '@/lib/vapi/VapiClients'
-import { 
-  convertToolConfigToVapiApiRequest,
-  convertToVapiTransferCallTool,
-  convertToVapiHandoffTool
-} from '@/lib/vapi/tool-converter'
 
 type RouteContext = {
   params: Promise<{ slug: string; id: string }>
@@ -123,88 +117,74 @@ export async function PATCH(request: Request, context: RouteContext) {
       }
     }
 
-    // Build updated schemas for non-native tools
+    // Skip native tools (not implemented for ElevenLabs yet)
     const isNativeTool = config.type === 'transfer_call' || config.type === 'handoff'
-    const functionSchema = isNativeTool ? {} : buildFunctionSchema({ ...config, name: toolName })
-    const staticConfig = isNativeTool ? {} : buildStaticConfig(config)
+    if (isNativeTool) {
+      return NextResponse.json(
+        { error: 'Native tools (handoff, transfer_call) are not supported yet' },
+        { status: 400 }
+      )
+    }
+
+    // Build updated schemas
+    const functionSchema = buildFunctionSchema({ ...config, name: toolName })
+    const staticConfig = buildStaticConfig(config)
 
     console.log('Updating tool:', {
       id,
       name: toolName,
       type: config.type,
       label: config.label,
-      isNativeTool,
-      functionSchema: isNativeTool ? 'N/A (native tool)' : JSON.stringify(functionSchema, null, 2),
+      functionSchema: JSON.stringify(functionSchema, null, 2),
     })
 
-    // Handle VAPI tool updates
-    // Native tools are always attachable and always have VAPI tools
-    const attachToAgent = isNativeTool ? true : (config.attach_to_agent !== false)
-    const wasAttachable = existingTool.attach_to_agent !== false
+    // Handle ElevenLabs tool updates
     const hasExternalId = existingTool.external_tool_id !== null
 
     try {
-      if (attachToAgent && !wasAttachable) {
-        // Converting from preemptive-only to attachable: create VAPI tool
-        console.log('Creating VAPI tool for previously preemptive-only tool')
-        let vapiToolData: any
-        if (config.type === 'transfer_call') {
-          vapiToolData = convertToVapiTransferCallTool({ ...config, name: toolName })
-        } else if (config.type === 'handoff') {
-          vapiToolData = convertToVapiHandoffTool({ ...config, name: toolName })
-        } else {
-          // For non-native tools, functionSchema is guaranteed to be built properly
-          vapiToolData = convertToolConfigToVapiApiRequest(id, config, functionSchema as any)
-        }
-        const vapiTool = await vapiClient.tools.create(vapiToolData as any)
-        existingTool.external_tool_id = vapiTool.id
-        console.log('VAPI tool created:', vapiTool.id)
-      } else if (!attachToAgent && wasAttachable && hasExternalId) {
-        // Converting from attachable to preemptive-only: delete VAPI tool
-        // Note: Native tools can't be preemptive-only, so this won't happen for them
-        console.log('Deleting VAPI tool (converting to preemptive-only):', existingTool.external_tool_id)
-        await vapiClient.tools.delete(existingTool.external_tool_id)
-        existingTool.external_tool_id = null
-        console.log('VAPI tool deleted successfully')
-      } else if (attachToAgent && hasExternalId) {
-        // Still attachable: update VAPI tool
-        let vapiToolData: any
-        if (config.type === 'transfer_call') {
-          vapiToolData = convertToVapiTransferCallTool({ ...config, name: toolName })
-        } else if (config.type === 'handoff') {
-          vapiToolData = convertToVapiHandoffTool({ ...config, name: toolName })
-        } else {
-          // For non-native tools, functionSchema is guaranteed to be built properly
-          vapiToolData = convertToolConfigToVapiApiRequest(id, config, functionSchema as any)
-        }
-        // Remove 'type' field for updates - VAPI update API doesn't accept it
-        const { type, ...updateData } = vapiToolData
-        console.log('Updating VAPI tool:', existingTool.external_tool_id)
-        await vapiClient.tools.update(existingTool.external_tool_id, updateData as any)
-        console.log('VAPI tool updated successfully')
-      } else if (attachToAgent && !hasExternalId) {
-        // Should be attachable but missing external_tool_id: create it
-        console.log('Creating missing VAPI tool for attachable tool')
-        let vapiToolData: any
-        if (config.type === 'transfer_call') {
-          vapiToolData = convertToVapiTransferCallTool({ ...config, name: toolName })
-        } else if (config.type === 'handoff') {
-          vapiToolData = convertToVapiHandoffTool({ ...config, name: toolName })
-        } else {
-          // For non-native tools, functionSchema is guaranteed to be built properly
-          vapiToolData = convertToolConfigToVapiApiRequest(id, config, functionSchema as any)
-        }
-        const vapiTool = await vapiClient.tools.create(vapiToolData as any)
-        existingTool.external_tool_id = vapiTool.id
-        console.log('VAPI tool created:', vapiTool.id)
+      // Import ElevenLabs dependencies
+      const { convertToolConfigToElevenLabsWebhook } = await import('@/lib/elevenlabs/tool-converter')
+      const { ElevenLabsClient } = await import('@elevenlabs/elevenlabs-js')
+
+      const elevenLabsClient = new ElevenLabsClient({
+        apiKey: process.env.ELEVEN_API_KEY,
+      })
+
+      if (hasExternalId) {
+        // Update existing ElevenLabs tool using PATCH API
+        console.log('Updating ElevenLabs tool:', existingTool.external_tool_id)
+        
+        const elevenLabsToolData = convertToolConfigToElevenLabsWebhook(
+          id,
+          config,
+          functionSchema as any
+        )
+
+        await elevenLabsClient.conversationalAi.tools.update(existingTool.external_tool_id, {
+          toolConfig: elevenLabsToolData
+        })
+
+        console.log('ElevenLabs tool updated successfully')
       } else {
-        // Preemptive-only: no VAPI operations needed
-        console.log('Skipping VAPI operations (preemptive-only tool)')
+        // Create new ElevenLabs tool (shouldn't happen for tools created via UI, but handle it)
+        console.log('Creating missing ElevenLabs tool')
+        const elevenLabsToolData = convertToolConfigToElevenLabsWebhook(
+          id,
+          config,
+          functionSchema as any
+        )
+
+        const newTool = await elevenLabsClient.conversationalAi.tools.create({
+          toolConfig: elevenLabsToolData
+        })
+
+        existingTool.external_tool_id = newTool.id
+        console.log('ElevenLabs tool created:', newTool.id)
       }
-    } catch (vapiError) {
-      console.error('Error updating VAPI tool:', vapiError)
+    } catch (elevenLabsError) {
+      console.error('Error updating ElevenLabs tool:', elevenLabsError)
       return NextResponse.json(
-        { error: 'Failed to update tool in VAPI. Please try again.' },
+        { error: 'Failed to update tool in ElevenLabs. Please try again.' },
         { status: 500 }
       )
     }
@@ -220,11 +200,11 @@ export async function PATCH(request: Request, context: RouteContext) {
         function_schema: functionSchema,
         static_config: staticConfig,
         config_metadata: config,
-        // Native tools don't support async or execute_on_call_start
-        async: isNativeTool ? false : (config.async || false),
-        execute_on_call_start: isNativeTool ? false : (config.execute_on_call_start || false),
-        attach_to_agent: attachToAgent,
+        async: config.async || false,
+        execute_on_call_start: config.execute_on_call_start || false,
+        attach_to_agent: config.attach_to_agent !== false,
         external_tool_id: existingTool.external_tool_id, // May have been updated above
+        provider: 'elevenlabs',
         updated_at: new Date().toISOString(),
       })
       .eq('id', id)
@@ -265,10 +245,10 @@ export async function DELETE(request: Request, context: RouteContext) {
 
     const supabase = await createClient()
 
-    // First, get the tool to retrieve its external_tool_id
+    // Verify tool belongs to organization before deletion
     const { data: tool, error: fetchError } = await supabase
       .from('tools')
-      .select('external_tool_id')
+      .select('id')
       .eq('id', id)
       .eq('organization_id', organizationId)
       .single()
@@ -280,107 +260,23 @@ export async function DELETE(request: Request, context: RouteContext) {
       )
     }
 
-    // Find all agents with this tool attached via agent_tools
-    const { data: agentToolsRecords, error: agentToolsError } = await supabase
-      .from('agent_tools')
-      .select('agent_id, is_vapi_attached, agents!inner(vapi_assistant_id)')
-      .eq('tool_id', id)
-
-    if (agentToolsError) {
-      console.error('Error fetching agent_tools:', agentToolsError)
-      return NextResponse.json(
-        { error: 'Failed to fetch tool attachments' },
-        { status: 500 }
-      )
-    }
-
-    // Remove tool from all agents in VAPI (for is_vapi_attached=true)
-    if (tool.external_tool_id && agentToolsRecords && agentToolsRecords.length > 0) {
-      console.log(`Removing tool ${id} from ${agentToolsRecords.length} agent(s)`)
-      
-      for (const record of agentToolsRecords) {
-        const agentRecord = record as any
-        if (!agentRecord.is_vapi_attached) {
-          // Skip preemptive-only tools
-          continue
-        }
-
-        const vapiAssistantId = agentRecord.agents?.vapi_assistant_id
-        if (!vapiAssistantId) {
-          console.warn(`Agent ${agentRecord.agent_id} has no vapi_assistant_id`)
-          continue
-        }
-
-        try {
-          // Fetch current assistant
-          const assistant = await vapiClient.assistants.get(vapiAssistantId)
-          const currentToolIds = assistant.model?.toolIds || []
-
-          // Remove tool from toolIds
-          const updatedToolIds = currentToolIds.filter(toolId => toolId !== tool.external_tool_id)
-
-          // Update assistant
-          await vapiClient.assistants.update(vapiAssistantId, {
-            model: {
-              ...assistant.model,
-              toolIds: updatedToolIds
-            } as any
-          })
-          
-          console.log(`Removed tool from agent ${agentRecord.agent_id} in VAPI`)
-        } catch (vapiError: any) {
-          // Check if it's a 404 error (tool or assistant not found)
-          if (vapiError?.statusCode === 404 || vapiError?.status === 404) {
-            console.log(`Tool or assistant not found in VAPI (404), continuing with deletion`)
-          } else {
-            // Other errors should fail the deletion
-            console.error(`Error removing tool from agent ${agentRecord.agent_id}:`, vapiError)
-            return NextResponse.json(
-              { error: 'Failed to remove tool from agents in VAPI' },
-              { status: 500 }
-            )
-          }
-        }
-      }
-    }
-
-    // Delete tool from VAPI (only if tool has external_tool_id)
-    if (tool.external_tool_id) {
-      try {
-        console.log('Deleting VAPI tool:', tool.external_tool_id)
-        await vapiClient.tools.delete(tool.external_tool_id)
-        console.log('VAPI tool deleted successfully')
-      } catch (vapiError: any) {
-        // If 404, the tool was already deleted, which is fine
-        if (vapiError?.statusCode === 404 || vapiError?.status === 404) {
-          console.log('VAPI tool already deleted (404)')
-        } else {
-          console.error('Error deleting VAPI tool:', vapiError)
-          // Continue with DB deletion even if VAPI deletion fails
-        }
-      }
-    } else {
-      console.log('No VAPI tool to delete (preemptive-only tool)')
-    }
-
-    // Delete from DB (CASCADE will handle agent_tools deletion)
-    const { error: deleteError } = await supabase
-      .from('tools')
-      .delete()
-      .eq('id', id)
-      .eq('organization_id', organizationId)
-
-    if (deleteError) {
-      console.error('Error deleting tool from DB:', deleteError)
+    // Use the deleteToolWithCleanup function which handles:
+    // - Removing tool from all agents in ElevenLabs
+    // - Deleting tool from ElevenLabs
+    // - Deleting tool from database (CASCADE handles agent_tools)
+    const { deleteToolWithCleanup } = await import('@/lib/tools')
+    
+    try {
+      await deleteToolWithCleanup(id)
+      console.log('Tool deleted:', id)
+      return NextResponse.json({ success: true })
+    } catch (deleteError) {
+      console.error('Error deleting tool:', deleteError)
       return NextResponse.json(
         { error: 'Failed to delete tool' },
         { status: 500 }
       )
     }
-
-    console.log('Tool deleted:', id)
-
-    return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error in /api/[organizationId]/tools/[id] DELETE:', error)
     return NextResponse.json(

@@ -22,7 +22,8 @@ import { KnowledgeBase } from '@/lib/knowledge-bases'
 import { Textarea } from '@/components/ui/textarea'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { promptTemplates, getTemplatesByQuery, PromptTemplate } from '@/lib/prompts'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { promptTemplates, type PromptTemplate } from '@/lib/prompts'
 
 interface PromptEditorButtonProps {
   agentId: string
@@ -41,12 +42,13 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
   const [prompts, setPrompts] = useState<Record<string, { prompt: string; loading: boolean }>>({})
   const [pendingPromptUpdate, setPendingPromptUpdate] = useState<string | null>(null)
   const [isApplying, setIsApplying] = useState(false)
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('')
   
-  // @-mention autocomplete state
+  // Template autocomplete state
   const [showTemplateAutocomplete, setShowTemplateAutocomplete] = useState(false)
   const [templateQuery, setTemplateQuery] = useState('')
-  const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0)
   const [mentionStartPos, setMentionStartPos] = useState<number | null>(null)
+  const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
@@ -98,32 +100,15 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
   // Reset chat when sheet opens
   useEffect(() => {
     if (open) {
-      // Note: In AI SDK v5, we can't directly reset messages via setMessages
-      // The chat will be empty on mount, and resets when the sheet reopens
       setPendingPromptUpdate(null)
       setInput('')
-      setShowTemplateAutocomplete(false)
-      setTemplateQuery('')
-      setMentionStartPos(null)
-      setSelectedTemplateIndex(0)
+      setSelectedTemplate('')
       if (tools.length === 0 && knowledgeBases.length === 0 && !loading) {
         fetchToolsAndKbs()
-      }
-      
-      // Clear contentEditable
-      if (contentEditableRef.current) {
-        contentEditableRef.current.textContent = ''
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
-
-  // Clear contentEditable when input is cleared
-  useEffect(() => {
-    if (!input && contentEditableRef.current && contentEditableRef.current.textContent) {
-      contentEditableRef.current.textContent = ''
-    }
-  }, [input])
 
   const fetchToolsAndKbs = async () => {
     setLoading(true)
@@ -314,9 +299,6 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
     )
   }
 
-  // Filter templates based on query
-  const filteredTemplates = getTemplatesByQuery(templateQuery)
-
   // Handle template selection
   const selectTemplate = (template: PromptTemplate) => {
     if (!contentEditableRef.current || mentionStartPos === null) return
@@ -406,6 +388,18 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
     
     // Focus the contentEditable
     contentEditableRef.current.focus()
+  }
+
+  // Filter templates based on query
+  const getTemplatesByQuery = (query: string): PromptTemplate[] => {
+    if (!query) return promptTemplates
+    
+    const lowerQuery = query.toLowerCase()
+    return promptTemplates.filter(template => 
+      template.id.toLowerCase().includes(lowerQuery) ||
+      template.name.toLowerCase().includes(lowerQuery) ||
+      (template.description && template.description.toLowerCase().includes(lowerQuery))
+    )
   }
 
   // Extract text from contentEditable div (replacing badges with @template-id)
@@ -579,6 +573,9 @@ export function PromptEditorButton({ agentId, slug, currentPrompt = '', onPrompt
     setPendingPromptUpdate(null)
     toast.info('Prompt update rejected')
   }
+
+  // Filter templates based on current query
+  const filteredTemplates = getTemplatesByQuery(templateQuery)
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>

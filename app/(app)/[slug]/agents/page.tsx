@@ -1,4 +1,4 @@
-import { getAgentsByOrganization, type AssignedAgent } from "@/lib/vapi/agents"
+import { getAgentsByOrganization, type UnifiedAgent } from "@/lib/agents"
 import { createServiceClient } from "@/lib/supabase/server"
 import { getAuthSession } from "@/lib/auth"
 import { Card, CardContent } from "@/components/ui/card"
@@ -52,7 +52,7 @@ export default async function AgentsPage({ params }: AgentsPageProps) {
   }
 
   // Get agents for this organization
-  let agents: AssignedAgent[] = []
+  let agents: UnifiedAgent[] = []
   let error: string | null = null
   
   try {

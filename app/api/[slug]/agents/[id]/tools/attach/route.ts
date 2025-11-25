@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthSession } from '@/lib/auth'
 import { getTool, isToolAttachedToAgent } from '@/lib/tools'
-import { vapiClient } from '@/lib/vapi/VapiClients'
 import { createServiceClient } from '@/lib/supabase/server'
 
 export async function POST(
@@ -43,7 +42,7 @@ export async function POST(
     // Get the agent
     const { data: agent, error: agentError } = await supabase
       .from('agents')
-      .select('vapi_assistant_id, organization_id')
+      .select('external_agent_id, organization_id, provider')
       .eq('id', agentId)
       .single()
 
@@ -62,6 +61,14 @@ export async function POST(
       )
     }
 
+    // For now, only support ElevenLabs
+    if (agent.provider !== 'elevenlabs') {
+      return NextResponse.json(
+        { error: 'Only ElevenLabs agents are supported currently' },
+        { status: 400 }
+      )
+    }
+
     // Check if tool is already attached (via VAPI or agent_tools)
     const isAttached = await isToolAttachedToAgent(agentId, toolId)
     if (isAttached) {
@@ -74,7 +81,6 @@ export async function POST(
     // Handle attachment based on attach_to_agent flag
     if (tool.attach_to_agent === false) {
       // Preemptive-only tool: attach via agent_tools table only
-      // Ensure tool has execute_on_call_start = true
       if (!tool.execute_on_call_start) {
         return NextResponse.json(
           { error: 'Preemptive-only tools must have execute_on_call_start enabled' },
@@ -82,13 +88,12 @@ export async function POST(
         )
       }
 
-      // Insert into agent_tools table with is_vapi_attached = false
       const { error: insertError } = await supabase
         .from('agent_tools')
         .insert({
           agent_id: agentId,
           tool_id: toolId,
-          is_vapi_attached: false,
+          is_vapi_attached: false, // Keep field name for backward compatibility
         })
 
       if (insertError) {
@@ -101,52 +106,60 @@ export async function POST(
 
       return NextResponse.json({ success: true })
     } else {
-      // Attachable tool: attach via VAPI assistant's toolIds AND agent_tools table
-      // Check if tool has an external_tool_id (required for VAPI attachment)
+      // Attachable tool: attach via ElevenLabs agent
       if (!tool.external_tool_id) {
         return NextResponse.json(
-          { error: 'This tool does not have a VAPI tool ID and cannot be attached via VAPI' },
+          { error: 'This tool does not have an external tool ID and cannot be attached' },
           { status: 400 }
         )
       }
 
-      // Fetch assistant from VAPI
-      const assistant = await vapiClient.assistants.get(agent.vapi_assistant_id)
-      const currentToolIds = assistant.model?.toolIds || []
-
-      // Add the new tool ID to the assistant
-      const updatedToolIds = [...currentToolIds, tool.external_tool_id]
-
-      // Update the assistant with the new tool
-      await vapiClient.assistants.update(agent.vapi_assistant_id, {
-        model: {
-          ...assistant.model,
-          toolIds: updatedToolIds
-        } as any
+      const { ElevenLabsClient } = await import('@elevenlabs/elevenlabs-js')
+      const elevenLabsClient = new ElevenLabsClient({
+        apiKey: process.env.ELEVEN_API_KEY,
       })
 
-      // Also insert into agent_tools table with is_vapi_attached = true
+      // Get current agent tools
+      const elevenLabsAgent = await elevenLabsClient.conversationalAi.agents.get(agent.external_agent_id)
+      const currentToolIds = (elevenLabsAgent.conversationConfig?.agent as any)?.prompt?.toolIds || []
+
+      // Add the new tool ID
+      const updatedToolIds = [...currentToolIds, tool.external_tool_id]
+
+      // Update the agent with the new tool
+      await elevenLabsClient.conversationalAi.agents.update(agent.external_agent_id, {
+        conversationConfig: {
+          agent: {
+            prompt: {
+              toolIds: updatedToolIds
+            }
+          }
+        }
+      })
+
+      // Insert into agent_tools table
       const { error: insertError } = await supabase
         .from('agent_tools')
         .insert({
           agent_id: agentId,
           tool_id: toolId,
-          is_vapi_attached: true,
+          is_vapi_attached: true, // Keep field name for backward compatibility
         })
 
       if (insertError) {
-        console.error('Error inserting into agent_tools:', insertError)
-        // Try to rollback VAPI change
+        // Rollback ElevenLabs change
         try {
-          const rollbackToolIds = currentToolIds
-          await vapiClient.assistants.update(agent.vapi_assistant_id, {
-            model: {
-              ...assistant.model,
-              toolIds: rollbackToolIds
-            } as any
+          await elevenLabsClient.conversationalAi.agents.update(agent.external_agent_id, {
+            conversationConfig: {
+              agent: {
+                prompt: {
+                  toolIds: currentToolIds
+                }
+              }
+            }
           })
         } catch (rollbackError) {
-          console.error('Error rolling back VAPI change:', rollbackError)
+          console.error('Error rolling back ElevenLabs change:', rollbackError)
         }
         return NextResponse.json(
           { error: 'Failed to attach tool' },

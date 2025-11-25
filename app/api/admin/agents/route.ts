@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/app/(admin)/lib/admin-auth'
-import { getAgentsByOrganization, getAgents } from '@/lib/vapi/agents'
+import { getAgentsByOrganization, getAgents } from '@/lib/agents'
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,12 +21,11 @@ export async function GET(request: NextRequest) {
         .filter(agent => agent.isAssigned && agent.organization)
         .map(agent => ({
           id: agent.id!,
-          vapi_assistant_id: agent.vapi_assistant_id,
-          created_at: agent.created_at!,
-          updated_at: agent.updated_at!,
+          external_agent_id: agent.externalAgentId,
+          provider: agent.provider as 'vapi' | 'elevenlabs',
           organization: agent.organization!,
+          name: agent.name,
           isAssigned: true as const,
-          vapiAssistant: agent.vapiAssistant,
         }))
     }
 

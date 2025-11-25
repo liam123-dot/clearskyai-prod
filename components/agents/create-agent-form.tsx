@@ -37,6 +37,7 @@ export function CreateAgentForm({
   const [estateAgentName, setEstateAgentName] = useState('')
   const [forSaleUrl, setForSaleUrl] = useState('')
   const [rentalUrl, setRentalUrl] = useState('')
+  const [provider, setProvider] = useState<'vapi' | 'elevenlabs'>('vapi')
 
   // Auto-update agent name when estate agent name changes (for demo agents)
   const handleEstateAgentNameChange = (value: string) => {
@@ -97,6 +98,7 @@ export function CreateAgentForm({
         name: name.trim(),
         organization_id: finalOrganizationId,
         agent_type: agentType,
+        provider: provider,
       }
 
       // Add demo-specific data
@@ -136,6 +138,7 @@ export function CreateAgentForm({
       setRentalUrl('')
       setDemoType('')
       setAgentType('blank')
+      setProvider('vapi')
       if (!lockedOrganizationId) {
         setOrganizationId('')
       }
@@ -177,6 +180,22 @@ export function CreateAgentForm({
             </SelectContent>
           </Select>
         )}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="provider">Provider</Label>
+        <Select value={provider} onValueChange={(value) => setProvider(value as 'vapi' | 'elevenlabs')}>
+          <SelectTrigger id="provider">
+            <SelectValue placeholder="Select provider" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="vapi">VAPI</SelectItem>
+            <SelectItem value="elevenlabs">ElevenLabs</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-sm text-muted-foreground">
+          Select the AI provider for this agent.
+        </p>
       </div>
 
       <div className="space-y-2">

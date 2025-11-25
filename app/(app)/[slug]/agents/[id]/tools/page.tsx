@@ -1,7 +1,7 @@
 import { getAuthSession } from "@/lib/auth"
-import { getAgentById } from "@/lib/vapi/agents"
+import { getAgentById } from "@/lib/agents"
 import { getToolsByOrganization, getAgentTools } from "@/lib/tools"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Empty,
   EmptyDescription,
@@ -44,17 +44,17 @@ export default async function AgentToolsPage({ params }: AgentToolsPageProps) {
     )
   }
 
-  const toolIds = agent.vapiAssistant.model?.toolIds || []
+  // Tools are supported for both Vapi and ElevenLabs agents
 
   let attachedTools: Awaited<ReturnType<typeof getAgentTools>> = []
   let availableTools: Awaited<ReturnType<typeof getToolsByOrganization>> = []
   let error: string | null = null
 
   try {
-    // Get tools from both VAPI toolIds and agent_tools table
+    // Get all tools attached to this agent from the database
     const allAttachedTools = await getAgentTools(id)
     
-    // Filter out query type tools from attached tools
+    // Filter out query type tools from attached tools (knowledge base tools)
     attachedTools = allAttachedTools.filter(tool => tool.type !== 'query')
 
     // Get all organization tools
@@ -69,8 +69,8 @@ export default async function AgentToolsPage({ params }: AgentToolsPageProps) {
     )
     
     // Filter available tools:
-    // 1. Exclude query type tools
-    // 2. Tools with attach_to_agent = true that aren't already attached via VAPI
+    // 1. Exclude query type tools (knowledge base tools)
+    // 2. Tools with attach_to_agent = true that aren't already attached
     // 3. Tools with attach_to_agent = false AND execute_on_call_start = true that aren't in agent_tools
     availableTools = allOrgTools.filter(tool => {
       // Skip query type tools
@@ -83,7 +83,7 @@ export default async function AgentToolsPage({ params }: AgentToolsPageProps) {
         return false
       }
 
-      // For attach_to_agent = true tools: must have external_tool_id and not be in VAPI toolIds
+      // For attach_to_agent = true tools: must have external_tool_id and not be already attached
       if (tool.attach_to_agent !== false) {
         return tool.external_tool_id !== null && !attachedToolExternalIds.has(tool.external_tool_id)
       }
@@ -149,26 +149,30 @@ export default async function AgentToolsPage({ params }: AgentToolsPageProps) {
                     </div>
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href={`/${slug}/tools/create?type=transfer_call`}>
-                    <div className="flex flex-col gap-1">
-                      <div className="font-medium">Transfer Call</div>
-                      <div className="text-xs text-muted-foreground">
-                        Transfer calls to another number
-                      </div>
-                    </div>
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href={`/${slug}/tools/create?type=handoff`}>
-                    <div className="flex flex-col gap-1">
-                      <div className="font-medium">Handoff to Assistant</div>
-                      <div className="text-xs text-muted-foreground">
-                        Transfer conversation to another AI assistant
-                      </div>
-                    </div>
-                  </Link>
-                </DropdownMenuItem>
+                {agent.provider === 'vapi' && (
+                  <>
+                    <DropdownMenuItem asChild>
+                      <Link href={`/${slug}/tools/create?type=transfer_call`}>
+                        <div className="flex flex-col gap-1">
+                          <div className="font-medium">Transfer Call</div>
+                          <div className="text-xs text-muted-foreground">
+                            Transfer calls to another number
+                          </div>
+                        </div>
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href={`/${slug}/tools/create?type=handoff`}>
+                        <div className="flex flex-col gap-1">
+                          <div className="font-medium">Handoff to Assistant</div>
+                          <div className="text-xs text-muted-foreground">
+                            Transfer conversation to another AI assistant
+                          </div>
+                        </div>
+                      </Link>
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

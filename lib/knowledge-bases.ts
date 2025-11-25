@@ -198,19 +198,20 @@ export async function updateKnowledgeBase(
 /**
  * Delete a knowledge base
  * This function performs cascading deletion:
- * - Finds all tools created for this knowledge base (via agent_knowledge_bases.vapi_tool_id)
- * - Deletes each tool (which removes it from VAPI and all agents)
+ * - Finds all tools created for this knowledge base (via agent_knowledge_bases.external_tool_id)
+ * - Deletes each tool (which removes it from the provider and all agents)
  * - Deletes the knowledge base (CASCADE deletes agent_knowledge_bases records)
+ * Supports both Vapi and ElevenLabs providers
  */
 export async function deleteKnowledgeBase(id: string): Promise<void> {
   const supabase = createNoCookieClient()
 
-  // Find all agent_knowledge_bases records with vapi_tool_id for this knowledge base
+  // Find all agent_knowledge_bases records with external_tool_id for this knowledge base
   const { data: assignments, error: assignmentsError } = await supabase
     .from('agent_knowledge_bases')
-    .select('vapi_tool_id')
+    .select('external_tool_id, provider')
     .eq('knowledge_base_id', id)
-    .not('vapi_tool_id', 'is', null)
+    .not('external_tool_id', 'is', null)
 
   if (assignmentsError) {
     console.error('Error fetching knowledge base assignments:', assignmentsError)
@@ -221,31 +222,40 @@ export async function deleteKnowledgeBase(id: string): Promise<void> {
   if (assignments && assignments.length > 0) {
     console.log(`Found ${assignments.length} tool(s) associated with knowledge base ${id}`)
     
-    // Collect unique vapi_tool_ids (same tool might be referenced multiple times)
-    const uniqueToolIds = new Set<string>()
+    // Collect unique tool IDs grouped by provider
+    const toolsByProvider = new Map<'vapi' | 'elevenlabs', Set<string>>()
+    
     for (const assignment of assignments) {
-      if (assignment.vapi_tool_id) {
-        uniqueToolIds.add(assignment.vapi_tool_id)
+      if (assignment.external_tool_id && assignment.provider) {
+        const provider = assignment.provider as 'vapi' | 'elevenlabs'
+        if (!toolsByProvider.has(provider)) {
+          toolsByProvider.set(provider, new Set())
+        }
+        toolsByProvider.get(provider)!.add(assignment.external_tool_id)
       }
     }
 
-    // For each unique tool, find it in the tools table and delete it
-    for (const vapiToolId of uniqueToolIds) {
-      try {
-        // Find the tool by external_tool_id
-        const tool = await getToolByExternalId(vapiToolId)
-        
-        if (tool) {
-          console.log(`Deleting tool ${tool.id} (VAPI tool ID: ${vapiToolId}) for knowledge base ${id}`)
-          // This will remove the tool from VAPI and all agents, then delete from DB
-          await deleteToolWithCleanup(tool.id)
-        } else {
-          console.warn(`Tool with external_tool_id ${vapiToolId} not found in database, skipping`)
+    // For each provider, delete its tools
+    for (const [provider, toolIds] of toolsByProvider) {
+      console.log(`Deleting ${toolIds.size} ${provider} tool(s) for knowledge base ${id}`)
+      
+      for (const externalToolId of toolIds) {
+        try {
+          // Find the tool by external_tool_id
+          const tool = await getToolByExternalId(externalToolId)
+          
+          if (tool) {
+            console.log(`Deleting tool ${tool.id} (${provider} tool ID: ${externalToolId}) for knowledge base ${id}`)
+            // This will remove the tool from the provider and all agents, then delete from DB
+            await deleteToolWithCleanup(tool.id)
+          } else {
+            console.warn(`Tool with external_tool_id ${externalToolId} not found in database, skipping`)
+          }
+        } catch (error) {
+          console.error(`Error deleting tool with ${provider} ID ${externalToolId}:`, error)
+          // Continue with other tools even if one fails
+          // The knowledge base deletion will still proceed
         }
-      } catch (error) {
-        console.error(`Error deleting tool with VAPI ID ${vapiToolId}:`, error)
-        // Continue with other tools even if one fails
-        // The knowledge base deletion will still proceed
       }
     }
   }
@@ -359,13 +369,25 @@ export async function getKnowledgeBasesWithAgentStatus(
 
 /**
  * Assign a knowledge base to an agent
- * If the knowledge base is of type 'estate_agent', a VAPI tool will be created and attached
+ * If the knowledge base is of type 'estate_agent', a tool will be created and attached
+ * The tool type (Vapi or ElevenLabs) depends on the agent's provider
  */
 export async function assignKnowledgeBaseToAgent(
   agentId: string,
   knowledgeBaseId: string
 ): Promise<void> {
   const supabase = createNoCookieClient()
+
+  // Get the agent to check its provider
+  const { data: agent, error: agentError } = await supabase
+    .from('agents')
+    .select('provider')
+    .eq('id', agentId)
+    .single()
+
+  if (agentError || !agent) {
+    throw new Error('Agent not found')
+  }
 
   // Get the knowledge base to check its type
   const knowledgeBase = await getKnowledgeBase(knowledgeBaseId)
@@ -374,39 +396,63 @@ export async function assignKnowledgeBaseToAgent(
     throw new Error('Knowledge base not found')
   }
 
-  let vapiToolId: string | null = null
+  let externalToolId: string | null = null
+  let provider: 'vapi' | 'elevenlabs' | null = null
 
-  // If it's an estate agent knowledge base, create and attach a VAPI tool
+  // If it's an estate agent knowledge base, create and attach a tool based on agent provider
   if (knowledgeBase.type === 'estate_agent') {
-    const { createEstateAgentToolData, attachToolToAgent } = await import('./vapi/knowledge-base-tools')
-    
-    try {
-      const toolData = createEstateAgentToolData(knowledgeBase.id, knowledgeBase.name)
-      const result = await attachToolToAgent(agentId, toolData, 'query')
-      vapiToolId = result.vapiToolId
-    } catch (error) {
-      console.error('Error creating VAPI tool:', error)
-      throw new Error('Failed to create VAPI tool for estate agent knowledge base')
+    if (agent.provider === 'vapi') {
+      const { createEstateAgentToolData, attachToolToAgent } = await import('./vapi/knowledge-base-tools')
+      
+      try {
+        const toolData = createEstateAgentToolData(knowledgeBase.id, knowledgeBase.name)
+        const result = await attachToolToAgent(agentId, toolData, 'query')
+        externalToolId = result.vapiToolId
+        provider = 'vapi'
+      } catch (error) {
+        console.error('Error creating Vapi tool:', error)
+        throw new Error('Failed to create Vapi tool for estate agent knowledge base')
+      }
+    } else if (agent.provider === 'elevenlabs') {
+      const { createEstateAgentToolData, attachToolToAgent } = await import('./elevenlabs/knowledge-base-tools')
+      
+      try {
+        const toolData = createEstateAgentToolData(knowledgeBase.id, knowledgeBase.name)
+        const result = await attachToolToAgent(agentId, toolData, 'query')
+        externalToolId = result.elevenLabsToolId
+        provider = 'elevenlabs'
+      } catch (error) {
+        console.error('Error creating ElevenLabs tool:', error)
+        throw new Error('Failed to create ElevenLabs tool for estate agent knowledge base')
+      }
+    } else {
+      throw new Error(`Unsupported agent provider: ${agent.provider}`)
     }
   }
 
-  // Insert the assignment record with the tool ID if created
+  // Insert the assignment record with the tool ID and provider if created
   const { error } = await supabase
     .from('agent_knowledge_bases')
     .insert({
       agent_id: agentId,
       knowledge_base_id: knowledgeBaseId,
-      vapi_tool_id: vapiToolId,
+      external_tool_id: externalToolId,
+      provider: provider,
     })
 
   if (error) {
     // If insert fails and we created a tool, try to clean it up
-    if (vapiToolId) {
+    if (externalToolId && provider) {
       try {
-        const { removeToolFromAgent } = await import('./vapi/knowledge-base-tools')
-        await removeToolFromAgent(agentId, vapiToolId)
+        if (provider === 'vapi') {
+          const { removeToolFromAgent } = await import('./vapi/knowledge-base-tools')
+          await removeToolFromAgent(agentId, externalToolId)
+        } else if (provider === 'elevenlabs') {
+          const { removeToolFromAgent } = await import('./elevenlabs/knowledge-base-tools')
+          await removeToolFromAgent(agentId, externalToolId)
+        }
       } catch (cleanupError) {
-        console.error('Error cleaning up VAPI tool after failed assignment:', cleanupError)
+        console.error('Error cleaning up tool after failed assignment:', cleanupError)
       }
     }
     
@@ -417,7 +463,8 @@ export async function assignKnowledgeBaseToAgent(
 
 /**
  * Unassign a knowledge base from an agent
- * If a VAPI tool was created for this assignment, it will be removed and deleted
+ * If a tool was created for this assignment, it will be removed and deleted
+ * Supports both Vapi and ElevenLabs providers
  */
 export async function unassignKnowledgeBaseFromAgent(
   agentId: string,
@@ -425,10 +472,10 @@ export async function unassignKnowledgeBaseFromAgent(
 ): Promise<void> {
   const supabase = await createClient()
 
-  // Get the assignment to check for a VAPI tool ID
+  // Get the assignment to check for a tool ID and provider
   const { data: assignment, error: fetchError } = await supabase
     .from('agent_knowledge_bases')
-    .select('vapi_tool_id')
+    .select('external_tool_id, provider')
     .eq('agent_id', agentId)
     .eq('knowledge_base_id', knowledgeBaseId)
     .single()
@@ -438,18 +485,19 @@ export async function unassignKnowledgeBaseFromAgent(
     throw fetchError
   }
 
-  // If there's a VAPI tool, remove it from the agent and delete it
-  if (assignment?.vapi_tool_id) {
-    try {
+  // If there's a tool, remove it from the agent and delete it based on provider
+  if (assignment?.external_tool_id && assignment?.provider) {
+    if (assignment.provider === 'vapi') {
       const { removeToolFromAgent } = await import('./vapi/knowledge-base-tools')
-      await removeToolFromAgent(agentId, assignment.vapi_tool_id)
-    } catch (error) {
-      console.error('Error removing VAPI tool:', error)
-      // Continue with deletion even if tool removal fails
+      await removeToolFromAgent(agentId, assignment.external_tool_id)
+    } else if (assignment.provider === 'elevenlabs') {
+      const { removeToolFromAgent } = await import('./elevenlabs/knowledge-base-tools')
+      await removeToolFromAgent(agentId, assignment.external_tool_id)
     }
+    // If we get here, tool removal succeeded, now delete the assignment record
   }
 
-  // Delete the assignment record
+  // Delete the assignment record (only if tool removal succeeded or there was no tool)
   const { error } = await supabase
     .from('agent_knowledge_bases')
     .delete()

@@ -14,20 +14,12 @@ import { Switch } from "@/components/ui/switch"
 import { toast } from "sonner"
 import { IconPhone, IconClock, IconChevronRight } from "@tabler/icons-react"
 import type { PhoneNumberWithDetails } from "@/lib/phone-numbers"
+import type { UnifiedAgent } from "@/lib/agents"
 import { TimeBasedRoutingDrawer } from "./time-based-routing-drawer"
-
-interface Agent {
-  id: string;
-  vapi_assistant_id: string;
-  organization_id?: string | null;
-  vapiAssistant: {
-    name?: string;
-  };
-}
 
 interface PhoneNumbersTableProps {
   phoneNumbers: PhoneNumberWithDetails[]
-  agents?: Agent[]
+  agents?: UnifiedAgent[]
   organizations?: Array<{ id: string; slug: string; name: string }>
   isAdmin: boolean
   organizationSlug?: string
@@ -79,7 +71,7 @@ export function PhoneNumbersTable({
     
     // Get agent's organization if assigning
     const agent = agentId ? agents.find(a => a.id === agentId) : null
-    const agentOrganizationId = agent?.organization_id || null
+    const agentOrganizationId = agent?.organization?.id || null
     
     // Optimistically update UI for both agent and organization
     setAssignedAgents(prev => ({
@@ -125,7 +117,7 @@ export function PhoneNumbersTable({
 
       toast.success(
         agentId 
-          ? `Phone number assigned to ${agent?.vapiAssistant.name || agent?.vapi_assistant_id || 'agent'}` 
+          ? `Phone number assigned to ${agent?.name || agent?.externalAgentId || 'agent'}` 
           : 'Phone number unassigned from agent'
       )
     } catch (error) {
@@ -325,7 +317,7 @@ export function PhoneNumbersTable({
                       </SelectItem>
                       {agents.map((agent) => (
                         <SelectItem key={agent.id} value={agent.id}>
-                          {agent.vapiAssistant.name || agent.vapi_assistant_id}
+                          {agent.name || agent.externalAgentId}
                         </SelectItem>
                       ))}
                     </SelectContent>

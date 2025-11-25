@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/app/(admin)/lib/admin-auth'
 import { createServiceClient } from '@/lib/supabase/server'
-import { createAgent } from '@/lib/vapi/agents'
+import { createAgent as createVapiAgent } from '@/lib/vapi/agents'
+import { createAgent as createElevenLabsAgent } from '@/lib/elevenlabs/agents'
 import { tasks } from '@trigger.dev/sdk'
 
 async function setupDemoAgent(
@@ -35,6 +36,7 @@ export async function POST(request: NextRequest) {
       estate_agent_name,
       for_sale_url,
       rental_url,
+      provider,
     } = await request.json()
 
     if (!name || !organization_id) {
@@ -47,7 +49,16 @@ export async function POST(request: NextRequest) {
     // Create agent and assign to organization
     let createResult
     try {
-      createResult = await createAgent(name, organization_id)
+      if (provider === 'vapi') {
+        createResult = await createVapiAgent(name, organization_id)
+      } else if (provider === 'elevenlabs') {
+        createResult = await createElevenLabsAgent(name, organization_id)
+      } else {
+        return NextResponse.json(
+          { error: 'Invalid provider' },
+          { status: 400 }
+        )
+      }
     } catch (createError) {
       return NextResponse.json(
         { error: createError instanceof Error ? createError.message : 'Failed to create agent' },

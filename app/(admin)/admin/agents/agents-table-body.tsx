@@ -25,10 +25,10 @@ import {
 } from "@/components/ui/alert-dialog"
 import { toast } from "sonner"
 import { IconRobot, IconTrash, IconLoader2 } from "@tabler/icons-react"
-import type { AgentWithDetails } from "@/lib/vapi/agents"
+import type { UnifiedAgent } from "@/lib/agents"
 
 interface AgentsTableBodyProps {
-  agents: AgentWithDetails[]
+  agents: UnifiedAgent[]
   organizations: Array<{ id: string; slug: string; name: string }>
 }
 
@@ -36,20 +36,20 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
   const router = useRouter()
   const [assignedOrgs, setAssignedOrgs] = useState<Record<string, string | null>>(
     agents.reduce((acc, agent) => {
-      acc[agent.vapi_assistant_id] = agent.organization?.id || null
+      acc[agent.externalAgentId] = agent.organization?.id || null
       return acc
     }, {} as Record<string, string | null>)
   )
   const [agentToDelete, setAgentToDelete] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
 
-  const handleOrganizationChange = async (vapiAssistantId: string, organizationId: string | null) => {
-    const previousValue = assignedOrgs[vapiAssistantId]
+  const handleOrganizationChange = async (externalAgentId: string, organizationId: string | null) => {
+    const previousValue = assignedOrgs[externalAgentId]
     
     // Optimistically update UI
     setAssignedOrgs(prev => ({
       ...prev,
-      [vapiAssistantId]: organizationId
+      [externalAgentId]: organizationId
     }))
 
     try {
@@ -59,7 +59,7 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          vapi_assistant_id: vapiAssistantId,
+          external_agent_id: externalAgentId,
           organization_id: organizationId,
         }),
       })
@@ -82,7 +82,7 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
       // Revert on error
       setAssignedOrgs(prev => ({
         ...prev,
-        [vapiAssistantId]: previousValue
+        [externalAgentId]: previousValue
       }))
       toast.error('Failed to assign agent')
     }
@@ -115,7 +115,7 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
   return (
     <TableBody>
       {agents.map((agent) => {
-        const assignedOrgId = assignedOrgs[agent.vapi_assistant_id]
+        const assignedOrgId = assignedOrgs[agent.externalAgentId]
         const assignedOrg = assignedOrgId 
           ? organizations.find(o => o.id === assignedOrgId)
           : null
@@ -123,9 +123,17 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
         // Only make clickable if agent has a database ID and is assigned to an organization
         const canNavigate = !!agent.id && !!assignedOrg?.slug
 
+        // Extract model info based on provider
+        const modelProvider = agent.provider === 'vapi' 
+          ? agent.rawVapiData?.model?.provider 
+          : undefined
+        const modelName = agent.provider === 'vapi'
+          ? agent.rawVapiData?.model?.model
+          : undefined
+
         return (
           <TableRow 
-            key={agent.vapi_assistant_id}
+            key={agent.externalAgentId}
             className={canNavigate ? "cursor-pointer hover:bg-muted/50" : ""}
             onClick={canNavigate ? () => router.push(`/${assignedOrg.slug}/agents/${agent.id}`) : undefined}
           >
@@ -138,22 +146,20 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
             </TableCell>
             <TableCell>
               <div className="flex flex-col gap-1">
-                <div className="font-medium">{agent.vapiAssistant.name}</div>
+                <div className="font-medium">{agent.name}</div>
                 <div className="text-muted-foreground text-xs">
-                  {agent.vapiAssistant.id}
+                  {agent.externalAgentId}
                 </div>
               </div>
             </TableCell>
             <TableCell>
               <div className="flex flex-col gap-1">
-                {agent.vapiAssistant.model?.provider && (
-                  <Badge variant="outline" className="text-muted-foreground w-fit px-1.5">
-                    {agent.vapiAssistant.model.provider}
-                  </Badge>
-                )}
-                {agent.vapiAssistant.model?.model && (
+                <Badge variant="outline" className="text-muted-foreground w-fit px-1.5 capitalize">
+                  {agent.provider}
+                </Badge>
+                {modelName && (
                   <span className="text-muted-foreground text-xs">
-                    {agent.vapiAssistant.model.model}
+                    {modelName}
                   </span>
                 )}
               </div>
@@ -163,7 +169,7 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
                 value={assignedOrgId || "unassigned"}
                 onValueChange={(value) => 
                   handleOrganizationChange(
-                    agent.vapi_assistant_id, 
+                    agent.externalAgentId, 
                     value === "unassigned" ? null : value
                   )
                 }
@@ -194,7 +200,7 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
             </TableCell>
             <TableCell onClick={(e) => e.stopPropagation()}>
               <AlertDialog 
-                open={agentToDelete === (agent.id || agent.vapi_assistant_id)} 
+                open={agentToDelete === (agent.id || agent.externalAgentId)} 
                 onOpenChange={(open) => !open && setAgentToDelete(null)}
               >
                 <AlertDialogTrigger asChild>
@@ -204,11 +210,11 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
                     className="h-8 w-8 text-muted-foreground hover:text-destructive"
                     onClick={(e) => {
                       e.stopPropagation()
-                      setAgentToDelete(agent.id || agent.vapi_assistant_id)
+                      setAgentToDelete(agent.id || agent.externalAgentId)
                     }}
                     disabled={isDeleting}
                   >
-                    {isDeleting && agentToDelete === (agent.id || agent.vapi_assistant_id) ? (
+                    {isDeleting && agentToDelete === (agent.id || agent.externalAgentId) ? (
                       <IconLoader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <IconTrash className="h-4 w-4" />
@@ -219,7 +225,7 @@ export function AgentsTableBody({ agents, organizations }: AgentsTableBodyProps)
                   <AlertDialogHeader>
                     <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will permanently delete the agent &quot;{agent.vapiAssistant.name}&quot;. This will remove all tool and knowledge base assignments, but call history will be preserved. This action cannot be undone.
+                      This will permanently delete the agent &quot;{agent.name}&quot;. This will remove all tool and knowledge base assignments, but call history will be preserved. This action cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

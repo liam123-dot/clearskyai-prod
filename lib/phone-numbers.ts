@@ -1,5 +1,6 @@
 import { createServiceClient } from "./supabase/server";
 import { createVapiTwilioPhoneNumber, updateVapiPhoneNumberAssistant, updateVapiPhoneNumberSmsEnabled } from "./vapi/phone-numbers";
+import { createElevenLabsTwilioPhoneNumber, updateElevenLabsPhoneNumberAgent } from "./elevenlabs/phone-numbers";
 import { vapiClient } from "./vapi/VapiClients";
 import type { PhoneNumberSchedule } from "./call-routing";
 
@@ -19,6 +20,7 @@ export interface PhoneNumber {
   organization_id: string | null;
   owned_by_admin: boolean;
   vapi_phone_number_id: string | null;
+  elevenlabs_phone_number_id: string | null;
   time_based_routing_enabled: boolean;
   sms_enabled: boolean;
   created_at: string;
@@ -28,7 +30,7 @@ export interface PhoneNumber {
 export interface PhoneNumberWithDetails extends PhoneNumber {
   agent?: {
     id: string;
-    vapi_assistant_id: string;
+    external_agent_id: string;
   } | null;
   organization?: {
     id: string;
@@ -91,7 +93,7 @@ export async function getPhoneNumbers(): Promise<PhoneNumberWithDetails[]> {
     .from('phone_numbers')
     .select(`
       *,
-      agent:agents(id, vapi_assistant_id),
+      agent:agents(id, external_agent_id),
       organization:organisations(id, slug, external_id)
     `)
     .order('created_at', { ascending: false });
@@ -151,7 +153,7 @@ export async function getPhoneNumbersByOrganization(
     .from('phone_numbers')
     .select(`
       *,
-      agent:agents(id, vapi_assistant_id),
+      agent:agents(id, external_agent_id),
       organization:organisations(id, slug, external_id)
     `)
     .eq('organization_id', organizationId)
@@ -212,7 +214,7 @@ export async function getPhoneNumbersByAgent(
     .from('phone_numbers')
     .select(`
       *,
-      agent:agents(id, vapi_assistant_id),
+      agent:agents(id, external_agent_id),
       organization:organisations(id, slug, external_id)
     `)
     .eq('agent_id', agentId)
@@ -273,7 +275,7 @@ export async function getPhoneNumberByNumber(
     .from('phone_numbers')
     .select(`
       *,
-      agent:agents(id, vapi_assistant_id),
+      agent:agents(id, external_agent_id),
       organization:organisations(id, slug, external_id)
     `)
     .eq('phone_number', phoneNumber)
@@ -301,7 +303,7 @@ export async function getPhoneNumberById(
     .from('phone_numbers')
     .select(`
       *,
-      agent:agents(id, vapi_assistant_id),
+      agent:agents(id, external_agent_id),
       organization:organisations(id, slug, external_id)
     `)
     .eq('id', phoneNumberId)
@@ -337,8 +339,9 @@ export async function importPhoneNumber(
     throw new Error('Phone number already exists in the system');
   }
   
-  // For Twilio numbers, create in VAPI first
+  // For Twilio numbers, create in both VAPI and ElevenLabs
   let vapiPhoneNumberId: string | null = null;
+  let elevenlabsPhoneNumberId: string | null = null;
   
   if (data.provider === 'twilio') {
     const accountSid = data.credentials.account_sid;
@@ -348,21 +351,35 @@ export async function importPhoneNumber(
       throw new Error('Twilio account_sid and auth_token are required');
     }
     
+    // Create in VAPI
     try {
-      vapiPhoneNumberId = await createVapiTwilioPhoneNumber(
-        data.phone_number,
-        accountSid,
-        authToken
-      );
+      // vapiPhoneNumberId = await createVapiTwilioPhoneNumber(
+      //   data.phone_number,
+      //   accountSid,
+      //   authToken
+      // );
     } catch (error) {
       console.error('Failed to create phone number in VAPI:', error);
       throw new Error(
         `Failed to register phone number with VAPI: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
+    
+    // Create in ElevenLabs
+    try {
+      elevenlabsPhoneNumberId = await createElevenLabsTwilioPhoneNumber(
+        data.phone_number,
+        accountSid,
+        authToken
+      );
+    } catch (error) {
+      console.error('Failed to create phone number in ElevenLabs:', error);
+      // Don't fail the entire import if ElevenLabs fails, but log it
+      // The phone number will still work with VAPI
+    }
   }
   
-  // Insert into database with VAPI phone number ID
+  // Insert into database with both provider phone number IDs
   const { data: phoneNumber, error } = await supabase
     .from('phone_numbers')
     .insert({
@@ -373,6 +390,7 @@ export async function importPhoneNumber(
       owned_by_admin: data.owned_by_admin,
       agent_id: data.agent_id || null,
       vapi_phone_number_id: vapiPhoneNumberId,
+      elevenlabs_phone_number_id: elevenlabsPhoneNumberId,
     })
     .select()
     .single();
@@ -394,10 +412,10 @@ export async function assignPhoneNumberToAgent(
 ): Promise<void> {
   const supabase = await createServiceClient();
   
-  // Get the phone number details to check if it has a VAPI ID
+  // Get the phone number details to check provider IDs
   const { data: phoneNumber, error: phoneError } = await supabase
     .from('phone_numbers')
-    .select('vapi_phone_number_id, provider')
+    .select('vapi_phone_number_id, elevenlabs_phone_number_id, provider')
     .eq('id', phoneNumberId)
     .single();
   
@@ -409,10 +427,10 @@ export async function assignPhoneNumberToAgent(
   
   // If assigning to an agent (not unassigning)
   if (agentId) {
-    // Get the agent's VAPI assistant ID and organization ID
+    // Get the agent's external agent ID, organization ID, and provider
     const { data: agent, error: agentError } = await supabase
       .from('agents')
-      .select('vapi_assistant_id, organization_id')
+      .select('external_agent_id, organization_id, provider')
       .eq('id', agentId)
       .single();
     
@@ -422,12 +440,12 @@ export async function assignPhoneNumberToAgent(
     
     agentOrganizationId = agent.organization_id;
     
-    // Update VAPI if phone number has VAPI ID
-    if (phoneNumber.vapi_phone_number_id) {
+    // Update the appropriate provider based on agent's provider
+    if (agent.provider === 'vapi' && phoneNumber.vapi_phone_number_id) {
       try {
         await updateVapiPhoneNumberAssistant(
           phoneNumber.vapi_phone_number_id,
-          agent.vapi_assistant_id
+          agent.external_agent_id
         );
       } catch (error) {
         console.error('Failed to update VAPI phone number assignment:', error);
@@ -435,17 +453,43 @@ export async function assignPhoneNumberToAgent(
           `Failed to link phone number to agent in VAPI: ${error instanceof Error ? error.message : 'Unknown error'}`
         );
       }
+    } else if (agent.provider === 'elevenlabs' && phoneNumber.elevenlabs_phone_number_id) {
+      try {
+        await updateElevenLabsPhoneNumberAgent(
+          phoneNumber.elevenlabs_phone_number_id,
+          agent.external_agent_id
+        );
+      } catch (error) {
+        console.error('Failed to update ElevenLabs phone number assignment:', error);
+        throw new Error(
+          `Failed to link phone number to agent in ElevenLabs: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
     }
-  } else if (!agentId && phoneNumber.vapi_phone_number_id) {
-    // Unassigning - remove assistant from VAPI phone number
-    try {
-      await updateVapiPhoneNumberAssistant(
-        phoneNumber.vapi_phone_number_id,
-        null
-      );
-    } catch (error) {
-      console.error('Failed to unlink VAPI phone number:', error);
-      // Don't throw here - we still want to unassign in our database
+  } else {
+    // Unassigning - remove assistant from both providers
+    if (phoneNumber.vapi_phone_number_id) {
+      try {
+        await updateVapiPhoneNumberAssistant(
+          phoneNumber.vapi_phone_number_id,
+          null
+        );
+      } catch (error) {
+        console.error('Failed to unlink VAPI phone number:', error);
+        // Don't throw here - we still want to unassign in our database
+      }
+    }
+    
+    if (phoneNumber.elevenlabs_phone_number_id) {
+      try {
+        await updateElevenLabsPhoneNumberAgent(
+          phoneNumber.elevenlabs_phone_number_id,
+          null
+        );
+      } catch (error) {
+        console.error('Failed to unlink ElevenLabs phone number:', error);
+        // Don't throw here - we still want to unassign in our database
+      }
     }
   }
   

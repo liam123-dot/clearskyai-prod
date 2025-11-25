@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { assignAgentToOrganization } from '@/lib/vapi/agents';
+import { assignAgentToOrganization } from '@/lib/agents';
 
 export async function POST(request: NextRequest) {
     try {
-        const { vapi_assistant_id, organization_id } = await request.json();
+        const { external_agent_id, organization_id } = await request.json();
 
-        if (!vapi_assistant_id) {
+        if (!external_agent_id) {
             return NextResponse.json(
-                { error: 'vapi_assistant_id is required' },
+                { error: 'external_agent_id is required' },
                 { status: 400 }
             );
         }
 
-        const result = await assignAgentToOrganization(vapi_assistant_id, organization_id || null);
+        const result = await assignAgentToOrganization(external_agent_id, organization_id || null);
 
         return NextResponse.json(result);
     } catch (error) {

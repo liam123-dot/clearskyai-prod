@@ -52,8 +52,30 @@ export async function POST(
       );
     }
 
-    // Create initial call record
+    // Create supabase client for subsequent queries
     const supabase = await createServiceClient();
+
+    // Get the agent's provider to determine routing
+    const { data: agent, error: agentError } = await supabase
+      .from('agents')
+      .select('provider')
+      .eq('id', phoneNumber.agent_id)
+      .single();
+
+    if (agentError || !agent) {
+      console.error(`Failed to get agent for phone number ${phoneNumberId}`);
+      return new NextResponse(
+        '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Agent configuration error.</Say></Response>',
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/xml' },
+        }
+      );
+    }
+
+    const agentProvider = agent.provider as 'vapi' | 'elevenlabs';
+
+    // Create initial call record
     let routingStatus: 'transferred_to_team' | 'direct_to_agent' = 'direct_to_agent';
     let matchingSchedule = null;
 
@@ -92,8 +114,9 @@ export async function POST(
         caller_number: from,
         called_number: to,
         routing_status: routingStatus,
+        provider: agentProvider,
         event_sequence: eventSequence,
-        data: {} as unknown as Record<string, unknown>, // Will be updated by VAPI webhook
+        data: {} as unknown as Record<string, unknown>, // Will be updated by provider webhook
       })
       .select()
       .single();
@@ -165,8 +188,15 @@ export async function POST(
         formDataToSend.append(key, value.toString());
       }
       
-      // Forward to Vapi's inbound call endpoint
-      const vapiResponse = await fetch('https://api.vapi.ai/twilio/inbound_call', {
+      // Determine the provider endpoint based on agent provider
+      const providerEndpoint = agentProvider === 'vapi' 
+        ? 'https://api.vapi.ai/twilio/inbound_call'
+        : 'https://api.us.elevenlabs.io/twilio/inbound_call';
+      
+      const providerName = agentProvider === 'vapi' ? 'Vapi' : 'ElevenLabs';
+      
+      // Forward to the appropriate provider's inbound call endpoint
+      const providerResponse = await fetch(providerEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -174,9 +204,9 @@ export async function POST(
         body: formDataToSend,
       });
 
-      if (!vapiResponse.ok) {
-        console.error(`Vapi responded with status ${vapiResponse.status}`);
-        console.error(`Vapi response body: ${await vapiResponse.text()}`);
+      if (!providerResponse.ok) {
+        console.error(`${providerName} responded with status ${providerResponse.status}`);
+        console.error(`${providerName} response body: ${await providerResponse.text()}`);
         return new NextResponse(
           '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Unable to connect to voice assistant. Please try again later.</Say></Response>',
           {
@@ -186,61 +216,63 @@ export async function POST(
         );
       }
 
-      // Get the TwiML response from Vapi and return it to Twilio
-      const vapiTwiml = await vapiResponse.text();
-      console.log('Vapi Twiml response:', vapiTwiml);
-      console.log(`Call ${callSid} routed directly to agent ${phoneNumber.agent_id}`);
+      // Get the TwiML response from the provider and return it to Twilio
+      const providerTwiml = await providerResponse.text();
+      console.log(`${providerName} Twiml response:`, providerTwiml);
+      console.log(`Call ${callSid} routed directly to ${providerName} agent ${phoneNumber.agent_id}`);
       
-      // Extract control URL from TwiML if we have a call record
+      // Extract control URL from TwiML if we have a call record (only for Vapi calls)
       if (callRecord) {
         try {
-          // Parse TwiML to extract Stream URL
+          // Parse TwiML to extract Stream URL (only for Vapi calls)
           // Format: <Stream url='wss://.../transport' />
-          const streamUrlMatch = vapiTwiml.match(/url=['"]([^'"]+)['"]/);
-          if (streamUrlMatch) {
-            const streamUrl = streamUrlMatch[1];
-            // Replace /transport with /control and convert wss:// to https://
-            const controlUrl = streamUrl
-              .replace('/transport', '/control')
-              .replace(/^wss:\/\//, 'https://');
-            
-            console.log(`📞 Extracted control URL: ${controlUrl}`);
-            
-            // Update call record with control URL
-            await supabase
-              .from('calls')
-              .update({ control_url: controlUrl })
-              .eq('id', callRecord.id);
-            
-            // Trigger on-call-start tool execution
-            // Wait for immediate response (endpoint will use after() to execute tools in background)
-            try {
-              const executeUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/call/${callRecord.id}/execute-start-tools`;
-              const response = await fetch(executeUrl, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  agentId: phoneNumber.agent_id!,
-                  callerNumber: from,
-                  calledNumber: to,
-                  controlUrl: controlUrl,
-                }),
-              });
+          if (agentProvider === 'vapi') {
+            const streamUrlMatch = providerTwiml.match(/url=['"]([^'"]+)['"]/);
+            if (streamUrlMatch) {
+              const streamUrl = streamUrlMatch[1];
+              // Replace /transport with /control and convert wss:// to https://
+              const controlUrl = streamUrl
+                .replace('/transport', '/control')
+                .replace(/^wss:\/\//, 'https://');
               
-              if (!response.ok) {
-                console.error('Error response from execute-start-tools endpoint:', response.status);
-              } else {
-                console.log('✅ Tool execution initiated successfully');
+              console.log(`📞 Extracted control URL: ${controlUrl}`);
+              
+              // Update call record with control URL
+              await supabase
+                .from('calls')
+                .update({ control_url: controlUrl })
+                .eq('id', callRecord.id);
+              
+              // Trigger on-call-start tool execution
+              // Wait for immediate response (endpoint will use after() to execute tools in background)
+              try {
+                const executeUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/call/${callRecord.id}/execute-start-tools`;
+                const response = await fetch(executeUrl, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    agentId: phoneNumber.agent_id!,
+                    callerNumber: from,
+                    calledNumber: to,
+                    controlUrl: controlUrl,
+                  }),
+                });
+                
+                if (!response.ok) {
+                  console.error('Error response from execute-start-tools endpoint:', response.status);
+                } else {
+                  console.log('✅ Tool execution initiated successfully');
+                }
+              } catch (error) {
+                console.error('Error triggering on-call-start tools execution:', error);
+                // Don't fail the call if the async call fails
               }
-            } catch (error) {
-              console.error('Error triggering on-call-start tools execution:', error);
-              // Don't fail the call if the async call fails
-            }
 
-          } else {
-            console.warn('Could not extract Stream URL from VAPI TwiML response');
+            } else {
+              console.warn('Could not extract Stream URL from VAPI TwiML response');
+            }
           }
         } catch (error) {
           console.error('Error extracting control URL:', error);
@@ -248,7 +280,7 @@ export async function POST(
         }
       }
       
-      return new NextResponse(vapiTwiml, {
+      return new NextResponse(providerTwiml, {
         status: 200,
         headers: { 'Content-Type': 'text/xml' },
       });

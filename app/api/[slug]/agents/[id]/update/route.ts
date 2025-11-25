@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthSession } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
-import { updateAgentAssistant } from '@/lib/vapi/agents'
+import { updateAgent } from '@/lib/agents'
 
 export async function PATCH(
   request: NextRequest,
@@ -44,10 +44,10 @@ export async function PATCH(
 
     const supabase = await createServiceClient()
 
-    // Get the agent
+    // Get the agent to verify ownership
     const { data: agent, error: agentError } = await supabase
       .from('agents')
-      .select('vapi_assistant_id, organization_id')
+      .select('organization_id')
       .eq('id', agentId)
       .single()
 
@@ -66,8 +66,8 @@ export async function PATCH(
       )
     }
 
-    // Update the assistant using the reusable function
-    await updateAgentAssistant(agent.vapi_assistant_id, {
+    // Update the agent using the unified function (works for both Vapi and ElevenLabs)
+    await updateAgent(agentId, {
       firstMessage,
       prompt,
       voiceId,

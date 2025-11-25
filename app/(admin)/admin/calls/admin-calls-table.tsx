@@ -55,10 +55,10 @@ export function AdminCallsTable({ calls, organizations }: AdminCallsTableProps) 
       <TooltipProvider>
         <TableBody>
           {calls.map((call) => {
-            const duration = getCallDuration(call.data)
+            const duration = getCallDuration(call.data, call.provider)
             const callerNumber = getCallerNumber(call)
             const calledNumber = getCalledNumber(call)
-            const assistantName = getAssistantName(call.data)
+            const assistantName = getAssistantName(call.data, call.provider)
             const callDate = new Date(call.created_at)
             const routingJourney = getRoutingJourney(call)
             const organization = orgMap.get(call.organization_id)

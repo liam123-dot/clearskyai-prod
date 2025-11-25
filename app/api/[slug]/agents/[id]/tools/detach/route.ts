@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthSession } from '@/lib/auth'
 import { getTool } from '@/lib/tools'
-import { unassignKnowledgeBaseFromAgent } from '@/lib/knowledge-bases'
-import { vapiClient } from '@/lib/vapi/VapiClients'
 import { createServiceClient } from '@/lib/supabase/server'
 
 export async function POST(
@@ -37,7 +35,7 @@ export async function POST(
     // Get the agent
     const { data: agent, error: agentError } = await supabase
       .from('agents')
-      .select('vapi_assistant_id, organization_id')
+      .select('external_agent_id, organization_id, provider')
       .eq('id', agentId)
       .single()
 
@@ -56,25 +54,13 @@ export async function POST(
       )
     }
 
-    // If this is a query tool, check if it's associated with a knowledge base
-    if (tool.type === 'query') {
-      // Check if there's an agent_knowledge_bases record with this vapi_tool_id
-      const { data: kbAssignment } = await supabase
-        .from('agent_knowledge_bases')
-        .select('knowledge_base_id')
-        .eq('agent_id', agentId)
-        .eq('vapi_tool_id', tool.external_tool_id)
-        .single()
-
-      if (kbAssignment) {
-        // This is a knowledge base query tool, use the special unassign function
-        await unassignKnowledgeBaseFromAgent(agentId, kbAssignment.knowledge_base_id)
-        return NextResponse.json({ success: true })
-      }
+    // For now, only support ElevenLabs
+    if (agent.provider !== 'elevenlabs') {
+      return NextResponse.json(
+        { error: 'Only ElevenLabs agents are supported currently' },
+        { status: 400 }
+      )
     }
-
-    // For non-query tools or query tools not associated with a knowledge base,
-    // proceed with normal detach
     
     // Check if tool is attached via agent_tools table
     const { data: agentTool, error: agentToolError } = await supabase
@@ -117,32 +103,39 @@ export async function POST(
 
       return NextResponse.json({ success: true })
     } else {
-      // VAPI-attached tool: remove from both VAPI and agent_tools
+      // ElevenLabs-attached tool: remove from both ElevenLabs and agent_tools
       if (!tool.external_tool_id) {
         return NextResponse.json(
-          { error: 'Tool does not have a VAPI tool ID and cannot be detached from VAPI' },
+          { error: 'Tool does not have an external tool ID and cannot be detached' },
           { status: 400 }
         )
       }
 
-      // Fetch assistant from VAPI
-      const assistant = await vapiClient.assistants.get(agent.vapi_assistant_id)
-      const currentToolIds = assistant.model?.toolIds || []
+      const { ElevenLabsClient } = await import('@elevenlabs/elevenlabs-js')
+      const elevenLabsClient = new ElevenLabsClient({
+        apiKey: process.env.ELEVEN_API_KEY,
+      })
 
-      // Check if tool is attached via VAPI
+      // Fetch agent from ElevenLabs
+      const elevenLabsAgent = await elevenLabsClient.conversationalAi.agents.get(agent.external_agent_id)
+      const currentToolIds = (elevenLabsAgent.conversationConfig?.agent as any)?.prompt?.toolIds || []
+
+      // Check if tool is attached
       if (!currentToolIds.includes(tool.external_tool_id)) {
-        // Tool not in VAPI but is in agent_tools - just remove from agent_tools
-        console.warn(`Tool ${toolId} not found in VAPI but was in agent_tools`)
+        console.warn(`Tool ${toolId} not found in ElevenLabs but was in agent_tools`)
       } else {
-        // Remove the tool ID from the assistant
-        const updatedToolIds = currentToolIds.filter(id => id !== tool.external_tool_id)
+        // Remove the tool ID from the agent
+        const updatedToolIds = currentToolIds.filter((id: string) => id !== tool.external_tool_id)
 
-        // Update the assistant without the tool
-        await vapiClient.assistants.update(agent.vapi_assistant_id, {
-          model: {
-            ...assistant.model,
-            toolIds: updatedToolIds
-          } as any
+        // Update the agent without the tool
+        await elevenLabsClient.conversationalAi.agents.update(agent.external_agent_id, {
+          conversationConfig: {
+            agent: {
+              prompt: {
+                toolIds: updatedToolIds
+              }
+            }
+          }
         })
       }
 
